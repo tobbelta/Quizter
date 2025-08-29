@@ -44,7 +44,8 @@ jobs:
         run: cat src/firebase.js
 
       - name: Build the project
-        run: npm run build
+        # Behandla varningar som fel i CI-miljön för att upptäcka problem tidigt.
+        run: CI=true npm run build
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
