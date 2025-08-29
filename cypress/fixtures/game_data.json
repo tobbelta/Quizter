@@ -1,0 +1,76 @@
+{
+  "gameDetails": {
+    "id": "DWbFCtYRutbn0KUM0I9u",
+    "finishTime": null,
+    "solvedObstacles": [],
+    "playersAtFinish": [],
+    "solvedBy": [],
+    "faultyObstacles": [
+      0
+    ],
+    "status": "pending",
+    "playerPositions": {},
+    "startTime": null,
+    "courseId": "4F7OnKfxvFcjHUrewn99",
+    "isTestMode": false,
+    "teamId": "AQhYNNM1ywBOkODHnNdj",
+    "teamName": "cypress",
+    "courseName": "ss"
+  },
+  "teamDetails": {
+    "currentGameId": null,
+    "createdAt": {
+      "seconds": 1755863057,
+      "nanoseconds": 601000000
+    },
+    "name": "cypress",
+    "joinCode": "C8F76F",
+    "leaderId": "xEO2zasIbjfkD5KLRbY9FX5Hgh13",
+    "memberIds": [
+      "xEO2zasIbjfkD5KLRbY9FX5Hgh13"
+    ]
+  },
+  "courseDetails": {
+    "finish": {
+      "lat": 59.33723860329165,
+      "lng": 18.06464354309405
+    },
+    "start": {
+      "lng": 18.065299987792972,
+      "lat": 59.33739180590685
+    },
+    "createdAt": {
+      "seconds": 1755846236,
+      "nanoseconds": 808000000
+    },
+    "creatorId": "0l4L8X6Q59fboiUD9IJvd8lWE7N2",
+    "obstacles": [
+      {
+        "position": {
+          "lat": 59.33713464398068,
+          "lng": 18.06544848006641
+        },
+        "details": {
+          "type": "riddle",
+          "createdAt": {
+            "seconds": 1756105143,
+            "nanoseconds": 558000000
+          },
+          "correctAnswer": 0,
+          "question": "Vem är vem ",
+          "options": [
+            "Tobias",
+            "Sven",
+            "Leoa",
+            "Koa"
+          ]
+        }
+      }
+    ],
+    "name": "ss",
+    "updatedAt": {
+      "seconds": 1756105165,
+      "nanoseconds": 661000000
+    }
+  }
+}
