@@ -1,3 +1,5 @@
+# .github/workflows/deploy.yml (UPPDATERAD VERSION)
+
 name: Deploy to Firebase Hosting on merge
 on:
   push:
@@ -7,14 +9,29 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - name: Check out the repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - run: npm ci
-      - run: echo "${{ secrets.REACT_APP_FIREBASE_CONFIG }}" > src/firebase.js
-      - run: npm run build
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+
+      - name: Install dependencies
+        run: npm ci
+      
+      # NY, SÄKRARE METOD FÖR ATT SKAPA FILEN
+      - name: Create Firebase config file
+        uses: atomic-actions/file-creator@v1
+        with:
+          file-path: "src/firebase.js"
+          content: ${{ secrets.REACT_APP_FIREBASE_CONFIG }}
+
+      - name: Build the project
+        run: npm run build
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST_1C461 }}'
