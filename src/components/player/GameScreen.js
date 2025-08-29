@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, arrayUnion, getDoc, collection, addDoc, query, where, documentId, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, ZoomControl } from 'react-leaflet';
@@ -55,14 +55,37 @@ const GameAreaOverlay = ({ center, radius }) => {
 
 const RiddleModal = ({ obstacle, onAnswer }) => {
     if (!obstacle || !Array.isArray(obstacle.options)) return null;
+
+    // Fix: Inline-stilar för att säkerställa att gåtan alltid renderas korrekt,
+    // oberoende av eventuella problem med externa CSS-filer.
+    const modalStyle = {
+        backgroundColor: '#2c2c2c',
+        border: '2px solid #f0f0f0',
+        borderRadius: '6px',
+        padding: '1.5rem',
+        boxShadow: '6px 6px 0 #f0f0f0'
+    };
+
+    const buttonStyle = {
+        backgroundColor: '#007BFF',
+        color: '#f0f0f0',
+        border: '2px solid #f0f0f0',
+        borderRadius: '4px',
+        fontWeight: '700',
+        padding: '0.75rem 1.5rem',
+        boxShadow: '4px 4px 0 #f0f0f0',
+        textTransform: 'uppercase',
+        cursor: 'pointer'
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[1001] p-4">
-            <div className="soft-ui-card w-full max-w-md">
-                <h2 className="text-2xl font-bold mb-4 text-gray-700">Gåta!</h2>
-                <p className="text-lg mb-6">{obstacle.question}</p>
+            <div className="w-full max-w-md" style={modalStyle}>
+                <h2 className="text-2xl font-bold mb-4" style={{ color: '#ffff00' }}>Gåta!</h2>
+                <p className="text-lg mb-6" style={{ color: '#f0f0f0' }}>{obstacle.question}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {obstacle.options.map((option, index) => (
-                        <button key={index} onClick={() => onAnswer(index)} className="soft-ui-button soft-ui-button-primary w-full">
+                        <button key={index} onClick={() => onAnswer(index)} className="w-full" style={buttonStyle}>
                             {option}
                         </button>
                     ))}
@@ -75,7 +98,6 @@ const RiddleModal = ({ obstacle, onAnswer }) => {
 const GameScreen = () => {
     const { gameId } = useParams();
     const navigate = useNavigate();
-    const location = useLocation();
     const user = auth.currentUser;
     const { position, status: geoStatus } = useGeolocation();
 
@@ -99,16 +121,6 @@ const GameScreen = () => {
             const timestamp = new Date().toLocaleTimeString();
             setLogHistory(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 100));
         }
-    };
-
-    const getRandomCoordinate = (startCoords, radiusInMeters) => {
-        const r = radiusInMeters * Math.sqrt(Math.random());
-        const theta = Math.random() * 2 * Math.PI;
-        const dy = r * Math.sin(theta);
-        const dx = r * Math.cos(theta);
-        const newLat = startCoords.lat + dy / 111132;
-        const newLng = startCoords.lng + dx / (111320 * Math.cos(startCoords.lat * Math.PI / 180));
-        return { lat: newLat, lng: newLng };
     };
 
     useEffect(() => {
@@ -144,36 +156,43 @@ const GameScreen = () => {
     }, [gameId, navigate, course, team]);
 
     useEffect(() => {
-        if (location.state?.randomizePosition && course && user && !simulatedPosition) {
-            const randomPos = getRandomCoordinate(course.start, 90);
-            setSimulatedPosition({ latitude: randomPos.lat, longitude: randomPos.lng });
-        }
-    }, [course, user, location.state, simulatedPosition]);
-
-    useEffect(() => {
         if (game && course && team && Object.keys(teamMembers).length > 0) {
             setLoading(false);
         }
     }, [game, course, team, teamMembers]);
 
+    // Robust uppdatering av spelarposition
     useEffect(() => {
-        if (!finalPosition || !user || !game) return;
+        if (!finalPosition || !user || !game || typeof finalPosition.latitude !== 'number' || typeof finalPosition.longitude !== 'number') {
+            return;
+        }
+
         const currentPos = L.latLng(finalPosition.latitude, finalPosition.longitude);
-        const playerPositions = { ...game.playerPositions, [user.uid]: { lat: finalPosition.latitude, lng: finalPosition.longitude } };
-        updateDoc(gameRef.current, { playerPositions });
+        const playerPositions = {
+            ...game.playerPositions,
+            [user.uid]: {
+                lat: finalPosition.latitude,
+                lng: finalPosition.longitude
+            }
+        };
+
+        const updateData = { playerPositions };
+
+        updateDoc(gameRef.current, updateData).catch(error => {
+            console.error("Fel vid uppdatering av position:", error);
+        });
+
         if (game.status === 'started') {
             const lastLoggedPos = lastLoggedPositionRef.current;
             if (!lastLoggedPos || currentPos.distanceTo(lastLoggedPos) > 5) {
-                const pathData = { type: 'move', userId: user.uid, lat: finalPosition.latitude, lng: finalPosition.longitude, timestamp: new Date() };
                 const replayPathRef = collection(db, 'replays', gameId, 'path');
-                addDoc(replayPathRef, pathData).then(() => {
+                addDoc(replayPathRef, { type: 'move', userId: user.uid, lat: finalPosition.latitude, lng: finalPosition.longitude, timestamp: new Date() }).then(() => {
                     lastLoggedPositionRef.current = currentPos;
-                    addLogMessage(`Logged coords for ${teamMembers[user.uid]?.displayName || user.uid.substring(0,6)}`);
                 });
             }
         }
-    }, [finalPosition, user, game, gameId, teamMembers]);
-    
+    }, [finalPosition, user, game, gameId]);
+
     useEffect(() => {
         if (loading || !game || !course || !course.start || !finalPosition || game.status === 'finished') return;
         const playerPos = L.latLng(finalPosition.latitude, finalPosition.longitude);
@@ -181,13 +200,6 @@ const GameScreen = () => {
             const startPos = L.latLng(course.start.lat, course.start.lng);
             if (playerPos.distanceTo(startPos) < 5) {
                 const updateData = { status: 'started', startTime: new Date() };
-                if (process.env.NODE_ENV === 'development' && team && team.memberIds) {
-                    const initialPositions = {};
-                    team.memberIds.forEach((memberId) => {
-                        initialPositions[memberId] = getRandomCoordinate(course.start, 90);
-                    });
-                    updateData.playerPositions = initialPositions;
-                }
                 updateDoc(gameRef.current, updateData);
             }
         }
@@ -216,11 +228,10 @@ const GameScreen = () => {
         if (allObstaclesSolved && course.finish) {
             const finishPos = L.latLng(course.finish.lat, course.finish.lng);
             if (playerPos.distanceTo(finishPos) < 5 && !game.playersAtFinish.includes(user.uid)) {
-                addLogMessage(`${teamMembers[user.uid]?.displayName} reached the finish line!`);
                 updateDoc(gameRef.current, { playersAtFinish: arrayUnion(user.uid) });
             }
         }
-    }, [loading, game, course, finalPosition, user, navigate, showRiddle, team, teamMembers]);
+    }, [loading, game, course, finalPosition, user, navigate, showRiddle, team]);
     
     useEffect(() => {
         let interval;
@@ -247,7 +258,6 @@ const GameScreen = () => {
     const handleAnswer = (selectedIndex) => {
         const nextObstacleIndex = game.solvedObstacles.findIndex(solved => !solved);
         if (selectedIndex === currentRiddle.correctAnswer) {
-            addLogMessage(`${teamMembers[user.uid]?.displayName} solved obstacle ${nextObstacleIndex + 1}.`);
             const replayEventRef = collection(db, 'replays', gameId, 'path');
             addDoc(replayEventRef, {
                 type: 'obstacleSolved',
@@ -288,36 +298,44 @@ const GameScreen = () => {
         
         return bounds.pad(0.5);
     }, [course, finalPosition]);
+    
+    const nextObstacleIndex = game ? game.solvedObstacles.findIndex(solved => !solved) : -1;
+    const allObstaclesSolved = nextObstacleIndex === -1;
+
+    const markers = useMemo(() => {
+        const markerList = [];
+        if (!course || !game) {
+            return markerList;
+        }
+
+        markerList.push({ pos: [course.start.lat, course.start.lng], icon: startIcon, popup: "Start" });
+        if (!allObstaclesSolved) {
+            const obstacle = course.obstacles[nextObstacleIndex];
+            if (obstacle) markerList.push({ pos: [obstacle.lat, obstacle.lng], icon: obstacleIcon, popup: `Hinder ${nextObstacleIndex + 1}` });
+        }
+        if (allObstaclesSolved && course.finish) {
+            markerList.push({ pos: [course.finish.lat, course.finish.lng], icon: finishIcon, popup: "Mål!" });
+        }
+        if (finalPosition && typeof finalPosition.latitude === 'number') {
+            markerList.push({ pos: [finalPosition.latitude, finalPosition.longitude], icon: selfIcon, popup: "Du är här" });
+        }
+        if (game.playerPositions) {
+            Object.entries(game.playerPositions).forEach(([uid, pos]) => {
+                if (uid !== user.uid && pos && typeof pos.lat === 'number') {
+                    const memberName = teamMembers[uid]?.displayName || 'Lagkamrat';
+                    markerList.push({ pos: [pos.lat, pos.lng], icon: teammateIcon, popup: memberName });
+                }
+            });
+        }
+        return markerList;
+    }, [course, game, finalPosition, allObstaclesSolved, nextObstacleIndex, teamMembers, user]);
 
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
     }
     
-    const startPosition = [course.start.lat, course.start.lng];
-    const nextObstacleIndex = game.solvedObstacles.findIndex(solved => !solved);
-    const allObstaclesSolved = nextObstacleIndex === -1;
-    const markers = [];
-    if (course) {
-        markers.push({ pos: [course.start.lat, course.start.lng], icon: startIcon, popup: "Start" });
-        if (!allObstaclesSolved) {
-            const obstacle = course.obstacles[nextObstacleIndex];
-            if (obstacle) markers.push({ pos: [obstacle.lat, obstacle.lng], icon: obstacleIcon, popup: `Hinder ${nextObstacleIndex + 1}` });
-        }
-        if (allObstaclesSolved && course.finish) {
-            markers.push({ pos: [course.finish.lat, course.finish.lng], icon: finishIcon, popup: "Mål!" });
-        }
-    }
-    if (finalPosition) {
-        markers.push({ pos: [finalPosition.latitude, finalPosition.longitude], icon: selfIcon, popup: "Du är här" });
-    }
-    if (game.playerPositions) {
-        Object.entries(game.playerPositions).forEach(([uid, pos]) => {
-            if (uid !== user.uid && pos) {
-                const memberName = teamMembers[uid]?.displayName || 'Lagkamrat';
-                markers.push({ pos: [pos.lat, pos.lng], icon: teammateIcon, popup: memberName });
-            }
-        });
-    }
+    const startPosition = course ? [course.start.lat, course.start.lng] : null;
+
     const formatTime = (seconds) => {
         const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
         const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
@@ -337,7 +355,7 @@ const GameScreen = () => {
                     <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xl font-mono">{formatTime(timer)}</div>
                     <button 
                         onClick={() => navigate('/teams')} 
-                        className="sc-button sc-button-red !p-2 !rounded-full w-10 h-10 flex items-center justify-center"
+                        className="neu-button !p-2 !rounded-full w-10 h-10 flex items-center justify-center !bg-accent-red"
                         aria-label="Avsluta spel"
                     >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -364,9 +382,6 @@ const GameScreen = () => {
             <DebugGameControls 
                 game={game} 
                 course={course} 
-                team={team} 
-                user={user} 
-                gameId={gameId}
                 onSimulatePosition={setSimulatedPosition}
                 addLogMessage={addLogMessage}
             />
@@ -376,3 +391,5 @@ const GameScreen = () => {
 };
 
 export default GameScreen;
+
+
