@@ -20,8 +20,7 @@ jobs:
           echo "const app = initializeApp(firebaseConfig);" >> src/firebase.js
           echo "export const auth = getAuth(app);" >> src/firebase.js
           echo "export const db = getFirestore(app);" >> src/firebase.js
-        
-        run: cat src/firebase.js
+      - run: cat src/firebase.js
       - run: npm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
