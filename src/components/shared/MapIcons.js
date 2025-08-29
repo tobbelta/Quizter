@@ -1,36 +1,68 @@
 import L from 'leaflet';
 
-const createIcon = (svg) => {
-    return L.divIcon({
-        html: svg,
-        className: '',
-        iconSize: [36, 48],
-        iconAnchor: [18, 48],
-        popupAnchor: [0, -50]
-    });
+const neuShadowFilter =
+  '<filter id="neu-shadow" x="-50%" y="-50%" width="200%" height="200%">' +
+    '<feOffset result="offset" in="SourceAlpha" dx="3" dy="3" />' +
+    '<feColorMatrix result="matrix" in="offset" type="matrix" values="0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 1 0" />' +
+    '<feMerge>' +
+      '<feMergeNode in="matrix" />' +
+      '<feMergeNode in="SourceGraphic" />' +
+    '</feMerge>' +
+  '</filter>';
+
+export const createPlayerIcon = (color) => {
+  const svg =
+    '<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">' +
+      '<defs>' + neuShadowFilter + '</defs>' +
+      '<g filter="url(#neu-shadow)">' +
+        '<circle cx="18" cy="18" r="12" fill="' + color + '" stroke="#f0f0f0" stroke-width="2"/>' +
+        '<circle cx="18" cy="18" r="16" fill="none" stroke="#f0f0f0" stroke-width="2" stroke-dasharray="4 4">' +
+          '<animateTransform attributeName="transform" type="rotate" from="0 18 18" to="360 18 18" dur="10s" repeatCount="indefinite" />' +
+        '</circle>' +
+      '</g>' +
+    '</svg>';
+
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -20],
+  });
 };
 
-export const startIcon = createIcon(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" style="filter: drop-shadow(0 0 3px #00ffff);">
-        <path d="M8,5.14V19.14L19,12.14L8,5.14Z" fill="#00ffff"/>
-    </svg>
-`);
+export const selfIcon = createPlayerIcon('#007BFF');
+export const teammateIcon = createPlayerIcon('#ff00ff');
 
-export const finishIcon = createIcon(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" style="filter: drop-shadow(0 0 3px #ffff00);">
-        <path d="M6,3V21H8V15H13V13H8V11H13V9H8V7H13V5H8V3H6M14,5H16V7H14V5M16,7H18V9H16V7M14,9H16V11H14V9M16,11H18V13H16V11M14,13H16V15H14V13Z" fill="#ffff00"/>
-    </svg>
-`);
+const createPoiIcon = (options) => {
+  return L.divIcon({
+    html: options.svg,
+    className: '',
+    iconSize: [38, 42],
+    iconAnchor: [19, 42],
+    popupAnchor: [0, -45],
+  });
+};
 
-export const obstacleIcon = createIcon(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" style="filter: drop-shadow(0 0 3px #ff00ff);">
-        <path d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10V14H13V10M11,16V18H13V16" fill="#ff00ff"/>
-    </svg>
-`);
+const poiSvg = (bgColor, text) =>
+  '<svg width="38" height="42" viewBox="0 0 38 42" xmlns="http://www.w3.org/2000/svg">' +
+    '<defs>' + neuShadowFilter + '</defs>' +
+    '<g filter="url(#neu-shadow)">' +
+      '<path d="M2 40V2H36V26H20L11 33L20 26" fill="' + bgColor + '" stroke="#f0f0f0" stroke-width="2" />' +
+      '<text x="19" y="18" font-family="monospace" font-size="16" fill="#1a1a1a" text-anchor="middle" font-weight="bold">' + text + '</text>' +
+    '</g>' +
+  '</svg>';
 
-export const createPlayerIcon = (color) => createIcon(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 48" width="36" height="48" style="filter: drop-shadow(0 0 3px ${color});">
-        <path d="M16,0 C7.163,0 0,7.163 0,16 C0,24.837 16,48 16,48 C16,48 32,24.837 32,16 C32,7.163 24.837,0 16,0 Z" fill="${color}" stroke="#0d0d1a" stroke-width="1.5"/>
-        <circle cx="16" cy="16" r="6" fill="#0d0d1a"/>
-    </svg>
-`);
+const finishSvg =
+  '<svg width="38" height="42" viewBox="0 0 38 42" xmlns="http://www.w3.org/2000/svg">' +
+    '<defs>' + neuShadowFilter + '</defs>' +
+    '<g filter="url(#neu-shadow)">' +
+      '<path d="M2 40V2H36V26H2V40" fill="#a3ff00" stroke="#f0f0f0" stroke-width="2" />' +
+      '<path d="M2 2H19V14H2V26H19V14Z" fill="#1a1a1a" />' +
+      '<path d="M19 2H36V14H19V26H36V14Z" fill="#f0f0f0" />' +
+    '</g>' +
+  '</svg>';
+
+export const startIcon = createPoiIcon({ svg: poiSvg('#a3ff00', 'S') });
+export const finishIcon = createPoiIcon({ svg: finishSvg });
+export const obstacleIcon = createPoiIcon({ svg: poiSvg('#ffff00', '!') });

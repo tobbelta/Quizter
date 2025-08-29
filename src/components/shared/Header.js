@@ -11,12 +11,12 @@ const Header = ({ title, user, userData, children }) => {
     );
 
     return (
-        <header className="container mx-auto flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 p-4">
+        <header className="container mx-auto flex flex-row justify-between items-center mb-8 gap-4 p-4">
             <div className="flex items-center gap-4">
                 <Logo size={60} />
-                <h1 className="text-4xl font-bold text-text-primary">{title}</h1>
+                <h1 className="text-2xl sm:text-4xl font-bold text-text-primary">{title}</h1>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="flex items-center gap-2 sm:w-auto justify-end">
                 <p className="hidden md:block text-text-secondary mr-4">
                     Välkommen, <span className="font-bold text-text-primary">{userData?.displayName || user.email}</span>!
                 </p>
@@ -34,3 +34,4 @@ const Header = ({ title, user, userData, children }) => {
 };
 
 export default Header;
+

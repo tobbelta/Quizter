@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import Logo from '../shared/Logo';
 import { doc, onSnapshot, updateDoc, arrayUnion, getDoc, collection, addDoc, query, where, documentId, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, ZoomControl } from 'react-leaflet';
@@ -257,13 +258,27 @@ const GameScreen = () => {
 
     const gameBounds = useMemo(() => {
         if (!course) return null;
-        const points = [
+
+        // Skapa en grundläggande gräns runt banans punkter
+        const coursePoints = [
             [course.start.lat, course.start.lng],
             [course.finish.lat, course.finish.lng],
             ...course.obstacles.map(o => [o.lat, o.lng])
         ];
-        return L.latLngBounds(points).pad(0.2);
-    }, [course]);
+        let bounds = L.latLngBounds(coursePoints);
+
+        // Om spelarens position finns, kontrollera om den är utanför banans gränser
+        if (finalPosition) {
+            const playerLatLng = L.latLng(finalPosition.latitude, finalPosition.longitude);
+            // Om spelaren är utanför, utöka gränserna till att inkludera spelaren
+            if (!bounds.contains(playerLatLng)) {
+                bounds.extend(playerLatLng);
+            }
+        }
+
+        // Lägg till en generös utfyllnad för att säkerställa att allt är synligt, speciellt cirkeln
+        return bounds.pad(0.5);
+    }, [course, finalPosition]);
 
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
@@ -305,15 +320,20 @@ const GameScreen = () => {
         <div className="h-screen w-screen flex flex-col relative">
             {showRiddle && <RiddleModal obstacle={currentRiddle} onAnswer={handleAnswer} />}
             <div className="absolute top-0 left-0 right-0 p-3 z-[1000] flex justify-between items-center bg-black/60 backdrop-blur-sm">
-                <h1 className="text-lg font-bold text-white truncate pr-2" style={{ textShadow: '1px 1px 2px black' }}>{course.name}</h1>
-                <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xl font-mono">{formatTime(timer)}</div>
-                <button 
-                    onClick={() => navigate('/teams')} 
-                    className="sc-button sc-button-red !p-2 !rounded-full w-10 h-10 flex items-center justify-center"
-                    aria-label="Avsluta spel"
-                >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
+                <div className="flex items-center gap-3">
+                    <Logo size={40} />
+                    <h1 className="text-lg font-bold text-white truncate" style={{ textShadow: '1px 1px 2px black' }}>{course.name}</h1>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-xl font-mono">{formatTime(timer)}</div>
+                    <button 
+                        onClick={() => navigate('/teams')} 
+                        className="sc-button sc-button-red !p-2 !rounded-full w-10 h-10 flex items-center justify-center"
+                        aria-label="Avsluta spel"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
             </div>
             <div className="flex-grow">
                 <MapContainer center={startPosition} zoom={15} scrollWheelZoom={true} className="h-full w-full" zoomControl={false}>
@@ -343,4 +363,6 @@ const GameScreen = () => {
 };
 
 export default GameScreen;
+
+
 
