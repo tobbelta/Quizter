@@ -1,4 +1,4 @@
-# .github/workflows/deploy.yml (UPPDATERAD VERSION)
+# .github/workflows/deploy.yml (UPPDATERAD & SÄKRARE VERSION)
 
 name: Deploy to Firebase Hosting on merge
 on:
@@ -22,10 +22,16 @@ jobs:
       
       # NY, SÄKRARE METOD FÖR ATT SKAPA FILEN
       - name: Create Firebase config file
-        uses: atomic-actions/file-creator@v1
-        with:
-          file-path: "src/firebase.js"
-          content: ${{ secrets.REACT_APP_FIREBASE_CONFIG }}
+        run: |
+          echo "import { initializeApp } from 'firebase/app';" > src/firebase.js
+          echo "import { getAuth } from 'firebase/auth';" >> src/firebase.js
+          echo "import { getFirestore } from 'firebase/firestore';" >> src/firebase.js
+          echo "" >> src/firebase.js
+          echo "const firebaseConfig = ${{ secrets.REACT_APP_FIREBASE_CONFIG }};" >> src/firebase.js
+          echo "" >> src/firebase.js
+          echo "const app = initializeApp(firebaseConfig);" >> src/firebase.js
+          echo "export const auth = getAuth(app);" >> src/firebase.js
+          echo "export const db = getFirestore(app);" >> src/firebase.js
 
       - name: Build the project
         run: npm run build
