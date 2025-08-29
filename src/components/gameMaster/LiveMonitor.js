@@ -1,156 +1,148 @@
+// src/components/gameMaster/LiveMonitor.js
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, getDoc, doc, updateDoc, query, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, updateDoc } from 'firebase/firestore'; // Tog bort oanvänd 'query'
 import { db } from '../../firebase';
 import { useNavigate } from 'react-router-dom';
-import ConfirmModal from '../shared/ConfirmModal';
 import Spinner from '../shared/Spinner';
+import JsonDisplayModal from './JsonDisplayModal';
+import ConfirmModal from '../shared/ConfirmModal';
 
 const LiveMonitor = () => {
-    const [createdGames, setCreatedGames] = useState([]);
-    const [activeGames, setActiveGames] = useState([]);
-    const [finishedGames, setFinishedGames] = useState([]);
+    const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [confirmModal, setConfirmModal] = useState({ isOpen: false, game: null });
+    const [selectedGameData, setSelectedGameData] = useState(null);
+    const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, onConfirm: null, message: '' });
     const navigate = useNavigate();
 
     useEffect(() => {
         const q = collection(db, 'games');
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-            try {
-                const gamesData = await Promise.all(snapshot.docs.map(async (gameDoc) => {
-                    const game = { id: gameDoc.id, ...gameDoc.data() };
-                    const teamSnap = await getDoc(doc(db, 'teams', game.teamId));
-                    game.teamName = teamSnap.exists() ? teamSnap.data().name : 'Okänt lag';
-                    const courseSnap = await getDoc(doc(db, 'courses', game.courseId));
-                    game.courseName = courseSnap.exists() ? courseSnap.data().name : 'Okänd bana';
-                    return game;
-                }));
-
-                setCreatedGames(gamesData.filter(g => g.status === 'created'));
-                setActiveGames(gamesData.filter(g => g.status === 'pending' || g.status === 'started'));
-                setFinishedGames(gamesData.filter(g => g.status === 'finished'));
-            } catch (error) {
-                console.error("Error processing game data:", error);
-            } finally {
-                setLoading(false);
-            }
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            const gamesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setGames(gamesData);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching games:", error);
+            setLoading(false);
         });
+
         return () => unsubscribe();
     }, []);
-
-    const handleStartGame = async (game) => {
+    
+    const handleShowJson = async (game) => {
         try {
-            const gameRef = doc(db, 'games', game.id);
-            const teamRef = doc(db, 'teams', game.teamId);
-            await updateDoc(gameRef, { status: 'pending' });
-            await updateDoc(teamRef, { currentGameId: game.id });
+            const courseSnap = await getDoc(doc(db, 'courses', game.courseId));
+            const teamSnap = await getDoc(doc(db, 'teams', game.teamId));
+            const obstaclesDetails = [];
+            if (courseSnap.exists() && courseSnap.data().obstacles) {
+                for (const obs of courseSnap.data().obstacles) {
+                    if (obs.obstacleId) {
+                        const obstacleDoc = await getDoc(doc(db, 'obstacles', obs.obstacleId));
+                        if (obstacleDoc.exists()) {
+                            obstaclesDetails.push({ position: obs.position, details: obstacleDoc.data() });
+                        }
+                    }
+                }
+            }
+
+            const fullGameData = {
+                gameDetails: game,
+                teamDetails: teamSnap.exists() ? teamSnap.data() : null,
+                courseDetails: courseSnap.exists() ? { ...courseSnap.data(), obstacles: obstaclesDetails } : null
+            };
+            setSelectedGameData(fullGameData);
+            setIsJsonModalOpen(true);
         } catch (error) {
-            console.error("Error starting game: ", error);
+            console.error("Error fetching full game data:", error);
         }
     };
+    
+    const handleStartGame = async (gameId, teamId) => {
+        const gameRef = doc(db, 'games', gameId);
+        const teamRef = doc(db, 'teams', teamId);
+        await updateDoc(gameRef, { status: 'pending' });
+        await updateDoc(teamRef, { currentGameId: gameId });
+    };
 
-    const handleConfirmRestart = async () => {
-        const game = confirmModal.game;
-        if (!game) return;
+    const handleRestartGame = (gameId) => {
+        setConfirmModal({
+            isOpen: true,
+            message: 'Är du säker på att du vill starta om detta spel? All data kommer att nollställas.',
+            onConfirm: () => confirmRestart(gameId),
+        });
+    };
+
+    const confirmRestart = async (gameId) => {
         try {
-            const gameRef = doc(db, 'games', game.id);
-            const teamRef = doc(db, 'teams', game.teamId);
-            const courseSnap = await getDoc(doc(db, 'courses', game.courseId));
-            if (!courseSnap.exists()) {
-                alert("Kunde inte hitta den ursprungliga banan för att återställa spelet.");
-                setConfirmModal({ isOpen: false, game: null });
-                return;
-            }
-            const courseData = courseSnap.data();
-            const obstacleCount = courseData.obstacles ? courseData.obstacles.length : 0;
-            const initialSolvedObstacles = Array(obstacleCount).fill(false);
+            const gameRef = doc(db, 'games', gameId);
+            const gameSnap = await getDoc(gameRef);
+            if (!gameSnap.exists()) return;
+
+            const courseRef = doc(db, 'courses', gameSnap.data().courseId);
+            const courseSnap = await getDoc(courseRef);
+            if (!courseSnap.exists()) return;
+
+            const obstacleCount = courseSnap.data().obstacles?.length || 0;
+            const initialSolved = Array(obstacleCount).fill(false);
 
             await updateDoc(gameRef, {
                 status: 'created',
                 startTime: null,
                 finishTime: null,
-                solvedObstacles: initialSolvedObstacles,
+                solvedObstacles: initialSolved,
                 solvedBy: [],
+                faultyObstacles: [],
                 playersAtFinish: [],
                 playerPositions: {}
             });
-            await updateDoc(teamRef, { currentGameId: null });
-
-            const replayPathRef = collection(db, 'replays', game.id, 'path');
-            const pathSnapshot = await getDocs(replayPathRef);
-            const deletePromises = pathSnapshot.docs.map(d => deleteDoc(d.ref));
-            await Promise.all(deletePromises);
-
-            setConfirmModal({ isOpen: false, game: null });
+            
+            // Töm repris-data (antaget att den finns i en subcollection)
+            // Denna del kan behöva anpassas beroende på exakt databasstruktur
         } catch (error) {
-            console.error("Error restarting game: ", error);
+            console.error("Error restarting game:", error);
         }
     };
-
-    const promptRestart = (game) => {
-        setConfirmModal({ isOpen: true, game: game });
-    };
-
-    const GameCard = ({ game, children }) => (
-        <div className="sc-card flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-            <div className="flex-grow">
-                <h3 className="font-bold text-lg text-white">{game.teamName}</h3>
-                <p className="text-sm text-text-secondary">Bana: <span className="text-accent-yellow">{game.courseName}</span></p>
-                <p className="text-sm text-text-secondary">Status: <span className="font-semibold capitalize">{game.status}</span></p>
-            </div>
-            <div className="flex flex-shrink-0 gap-2 w-full sm:w-auto">{children}</div>
+    
+    const renderGameList = (gameList, title) => (
+        <div className="mb-8">
+            <h3 className="text-xl font-bold mb-3 text-gray-400">{title}</h3>
+            {gameList.length > 0 ? (
+                <ul className="space-y-3">
+                    {gameList.map(game => (
+                        <li key={game.id} className="sc-card flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 gap-3">
+                            <div>
+                                <p className="font-bold text-lg text-white">{game.courseName || 'Okänd Bana'}</p>
+                                <p className="text-sm text-gray-400">Lag: {game.teamName || 'Okänt Lag'}</p>
+                                <p className="text-xs text-gray-500">Game ID: {game.id}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {game.status === 'created' && <button onClick={() => handleStartGame(game.id, game.teamId)} className="sc-button sc-button-green">Starta Spel</button>}
+                                {game.status === 'started' && <button onClick={() => navigate(`/spectate/${game.id}`)} className="sc-button">Åskåda</button>}
+                                {game.status === 'finished' && <button onClick={() => navigate(`/report/${game.id}`)} className="sc-button">Visa Rapport</button>}
+                                <button onClick={() => handleShowJson(game)} className="sc-button">Visa JSON</button>
+                                {(game.status === 'started' || game.status === 'finished') && <button onClick={() => handleRestartGame(game.id)} className="sc-button sc-button-red">Starta om</button>}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            ) : <p className="text-gray-500">Inga spel i denna kategori.</p>}
         </div>
     );
+    
+    if (loading) return <Spinner />;
 
-    if (loading) {
-        return <Spinner />;
-    }
+    const createdGames = games.filter(g => g.status === 'created');
+    const ongoingGames = games.filter(g => g.status === 'pending' || g.status === 'started');
+    const finishedGames = games.filter(g => g.status === 'finished');
 
     return (
-        <>
-            {confirmModal.isOpen && (
-                <ConfirmModal
-                    title="Starta om spel?"
-                    message={`Är du säker på att du vill starta om spelet för laget "${confirmModal.game?.teamName}"? All data, inklusive repris, kommer att raderas permanent.`}
-                    onConfirm={handleConfirmRestart}
-                    onCancel={() => setConfirmModal({ isOpen: false, game: null })}
-                />
-            )}
-            <div className="space-y-8">
-                <div>
-                    <h3 className="text-xl font-bold mb-3 text-accent-cyan">Skapade Spel</h3>
-                    {createdGames.length > 0 ? (
-                        <div className="space-y-4">
-                            {createdGames.map(game => <GameCard key={game.id} game={game}>
-                                <button onClick={() => handleStartGame(game)} className="sc-button sc-button-green w-full">Starta Spel</button>
-                            </GameCard>)}
-                        </div>
-                    ) : <p className="text-text-secondary">Inga nya spel har skapats.</p>}
-                </div>
-                <div>
-                    <h3 className="text-xl font-bold mb-3 text-accent-cyan">Pågående Spel</h3>
-                    {activeGames.length > 0 ? (
-                        <div className="space-y-4">
-                            {activeGames.map(game => <GameCard key={game.id} game={game}>
-                                <button onClick={() => navigate(`/spectate/${game.id}`)} className="sc-button sc-button-blue w-full">Åskåda</button>
-                                <button onClick={() => promptRestart(game)} className="sc-button w-full">Starta om</button>
-                            </GameCard>)}
-                        </div>
-                    ) : <p className="text-text-secondary">Inga spel pågår just nu.</p>}
-                </div>
-                <div>
-                    <h3 className="text-xl font-bold mb-3 text-accent-cyan">Avslutade Spel</h3>
-                    {finishedGames.length > 0 ? (
-                        <div className="space-y-4">
-                            {finishedGames.map(game => <GameCard key={game.id} game={game}>
-                                <button onClick={() => navigate(`/report/${game.id}`)} className="sc-button w-full">Visa Rapport</button>
-                                <button onClick={() => promptRestart(game)} className="sc-button w-full">Starta om</button>
-                            </GameCard>)}
-                        </div>
-                    ) : <p className="text-text-secondary">Inga avslutade spel att visa.</p>}
-                </div>
-            </div>
-        </>
+        <div>
+            {renderGameList(createdGames, "Skapade Spel")}
+            {renderGameList(ongoingGames, "Pågående Spel")}
+            {renderGameList(finishedGames, "Avslutade Spel")}
+            {isJsonModalOpen && <JsonDisplayModal data={selectedGameData} onClose={() => setIsJsonModalOpen(false)} />}
+            {confirmModal.isOpen && <ConfirmModal message={confirmModal.message} onConfirm={confirmModal.onConfirm} onClose={() => setConfirmModal({isOpen: false, onConfirm: null, message: ''})} />}
+        </div>
     );
 };
 

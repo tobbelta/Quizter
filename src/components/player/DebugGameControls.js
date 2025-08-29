@@ -1,125 +1,100 @@
-import React, { useState, useMemo } from 'react';
+// src/components/player/DebugGameControls.js
+import React, { useState, useMemo, useCallback } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
-const DebugGameControls = ({ game, course, team, user, gameId, onSimulatePosition }) => {
+const DebugGameControls = ({ game, course, team, user, gameId, onSimulatePosition, addLogMessage }) => {
     const [isSimulating, setIsSimulating] = useState(false);
 
-    const getRandomCoordinate = (startCoords, radiusInMeters) => {
-        const r = radiusInMeters * Math.sqrt(Math.random());
-        const theta = Math.random() * 2 * Math.PI;
-        const dy = r * Math.sin(theta);
-        const dx = r * Math.cos(theta);
-        const newLat = startCoords.lat + dy / 111132;
-        const newLng = startCoords.lng + dx / (111320 * Math.cos(startCoords.lat * Math.PI / 180));
-        return { lat: newLat, lng: newLng };
-    };
-
-    const simulatePlayerMovement = async (playerId, startCoords, endCoords, steps = 20, duration = 2000) => {
+    const simulatePlayerMovement = useCallback(async (playerId, startCoords, endCoords, steps = 20, duration = 2000) => {
         const latStep = (endCoords.lat - startCoords.lat) / steps;
         const lngStep = (endCoords.lng - startCoords.lng) / steps;
+
         for (let i = 1; i <= steps; i++) {
             const currentLat = startCoords.lat + latStep * i;
             const currentLng = startCoords.lng + lngStep * i;
             
-            // Om det är den inloggade användaren som rör sig, uppdatera den lokala state
             if (playerId === user.uid) {
-                onSimulatePosition({ latitude: currentLat, longitude: currentLng });
+                onSimulatePosition({ lat: currentLat, lng: currentLng });
             } else {
-                // Annars, uppdatera bara databasen för andra spelare
-                const gameRef = doc(db, 'games', gameId);
-                await updateDoc(gameRef, {
+                 const gameRef = doc(db, 'games', gameId);
+                 await updateDoc(gameRef, {
                     [`playerPositions.${playerId}`]: { lat: currentLat, lng: currentLng }
                 });
             }
             await new Promise(res => setTimeout(res, duration / steps));
         }
-    };
+    }, [user, gameId, onSimulatePosition]);
+    
+    // FIX: Lade till 'simulatePlayerMovement' i dependency array.
+    const turnInfo = useMemo(() => {
+        if (!game || !team || !course || !course.obstacles) return { canPlay: false, actionText: "Väntar på data..." };
 
-    const { buttonText, isDisabled, action } = useMemo(() => {
-        if (!game || !team || !course || !user) return { isDisabled: true, buttonText: 'Laddar...' };
-
+        const allMembers = team.memberIds || [];
         const leader = team.leaderId;
-        const otherMembers = team.memberIds.filter(id => id !== leader);
-        const nextUnsolvedIndex = game.solvedObstacles.findIndex(s => !s);
-        const allObstaclesSolved = nextUnsolvedIndex === -1;
-
-        if (game.status === 'pending') {
-            return {
-                buttonText: 'Gå till Start',
-                isDisabled: user.uid !== leader,
-                action: async () => {
-                    const startPosition = game.playerPositions[leader] || getRandomCoordinate(course.start, 90);
-                    await simulatePlayerMovement(leader, startPosition, course.start);
-                }
-            };
-        }
-
-        if (!allObstaclesSolved) {
-            let currentPlayerId;
-            if (nextUnsolvedIndex === 0) {
-                currentPlayerId = leader;
-            } else {
-                const memberIndex = nextUnsolvedIndex - 1;
-                currentPlayerId = (memberIndex < otherMembers.length) ? otherMembers[memberIndex] : leader;
-            }
+        const otherMembers = allMembers.filter(id => id !== leader);
+        const solvedCount = game.solvedObstacles.filter(Boolean).length;
+        
+        // Målgångsfasen
+        if (solvedCount === course.obstacles.length) {
+            const hasFinished = (game.playersAtFinish || []).includes(user.uid);
+            if (hasFinished) return { canPlay: false, actionText: "Du är i mål!" };
             
             return {
-                buttonText: `Gå till Hinder ${nextUnsolvedIndex + 1}`,
-                isDisabled: user.uid !== currentPlayerId,
+                canPlay: true,
+                actionText: `Gå till Mål`,
                 action: async () => {
-                    const targetObstacle = course.obstacles[nextUnsolvedIndex];
-                    const startPosition = game.playerPositions[currentPlayerId] || course.start;
-                    await simulatePlayerMovement(currentPlayerId, startPosition, { lat: targetObstacle.lat, lng: targetObstacle.lng });
+                    const startPos = game.playerPositions[user.uid] || course.start;
+                    await simulatePlayerMovement(user.uid, startPos, course.finish);
                 }
             };
         }
 
-        if (allObstaclesSolved) {
-            const playersNotAtFinish = team.memberIds.filter(id => !game.playersAtFinish.includes(id));
-            if (playersNotAtFinish.length > 0) {
-                let currentPlayerId;
-                if (playersNotAtFinish.includes(leader)) {
-                    currentPlayerId = leader;
-                } else {
-                    currentPlayerId = playersNotAtFinish[0];
+        // Hinderfasen
+        const nextPlayerIndex = solvedCount;
+        let currentPlayerId;
+        if (nextPlayerIndex === 0) {
+            currentPlayerId = leader;
+        } else {
+            const memberIndex = nextPlayerIndex - 1;
+            currentPlayerId = memberIndex < otherMembers.length ? otherMembers[memberIndex] : leader;
+        }
+        
+        if (user.uid === currentPlayerId) {
+             return {
+                canPlay: true,
+                actionText: `Gå till Hinder ${nextPlayerIndex + 1}`,
+                action: async () => {
+                    const startPos = game.playerPositions[user.uid] || course.start;
+                    await simulatePlayerMovement(user.uid, startPos, course.obstacles[nextPlayerIndex].position);
                 }
-
-                return {
-                    buttonText: 'Gå till Mål',
-                    isDisabled: user.uid !== currentPlayerId,
-                    action: async () => {
-                        const startPosition = game.playerPositions[currentPlayerId] || course.start;
-                        await simulatePlayerMovement(currentPlayerId, startPosition, course.finish);
-                    }
-                };
-            }
+            };
         }
 
-        return { buttonText: 'Spel Avklarat', isDisabled: true, action: () => {} };
-
-    }, [game, course, team, user]);
-
-    if (process.env.NODE_ENV !== 'development') {
+        return { canPlay: false, actionText: "Väntar på din tur..." };
+    }, [game, team, course, user.uid, simulatePlayerMovement]);
+    
+    if (process.env.NODE_ENV !== 'development' || !game || game.status !== 'started') {
         return null;
     }
 
-    const handleSimulate = async () => {
-        if (isDisabled || isSimulating || !action) return;
+    const handleSimulateNextStep = async () => {
+        if (!turnInfo.action || isSimulating) return;
         setIsSimulating(true);
-        await action();
+        addLogMessage(`Simulerar: ${turnInfo.actionText}...`);
+        await turnInfo.action();
         setIsSimulating(false);
     };
 
     return (
-        <div className="fixed bottom-4 right-4 z-[1000] bg-white p-3 rounded-lg shadow-lg border">
+        <div className="fixed bottom-4 right-4 z-[1000] p-3 sc-card">
             <h3 className="font-bold text-sm mb-2">Debug-panel</h3>
             <button
-                onClick={handleSimulate}
-                disabled={isDisabled || isSimulating}
-                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:bg-gray-400"
+                onClick={handleSimulateNextStep}
+                disabled={!turnInfo.canPlay || isSimulating}
+                className="sc-button"
             >
-                {isSimulating ? 'Simulerar...' : buttonText}
+                {isSimulating ? 'Simulerar...' : turnInfo.actionText}
             </button>
         </div>
     );
