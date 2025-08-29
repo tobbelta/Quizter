@@ -1,0 +1,20 @@
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+ apiKey: "AIzaSyCwPymSYI2ozAWxq_N7mTWbhLvQ6ygqUtk",
+    authDomain: "geoquest-1c461.firebaseapp.com",
+    projectId: "geoquest-1c461",
+    storageBucket: "geoquest-1c461.appspot.com",
+    messagingSenderId: "107222362587",
+    appId: "1:107222362587:web:b536e415d8dcbab6915ffe",
+    measurementId: "G-Y1XKWY8J4L"
+
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
