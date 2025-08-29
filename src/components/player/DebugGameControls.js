@@ -1,103 +1,66 @@
-// src/components/player/DebugGameControls.js
-import React, { useState, useMemo, useCallback } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useGameSimulation } from '../../hooks/useGameSimulation';
 
-const DebugGameControls = ({ game, course, team, user, gameId, onSimulatePosition, addLogMessage }) => {
-    const [isSimulating, setIsSimulating] = useState(false);
+const DebugGameControls = ({ game, course, onSimulatePosition, addLogMessage }) => {
+    const location = useLocation();
+    const [isDebugVisible, setIsDebugVisible] = useState(false);
 
-    const simulatePlayerMovement = useCallback(async (playerId, startCoords, endCoords, steps = 20, duration = 2000) => {
-        const latStep = (endCoords.lat - startCoords.lat) / steps;
-        const lngStep = (endCoords.lng - startCoords.lng) / steps;
+    // useEffect körs när komponenten laddas och när URL:en ändras.
+    useEffect(() => {
+        // Kontrollerar om ?debug=true finns i den aktuella URL:en.
+        const queryParams = new URLSearchParams(location.search);
+        const hasDebugQuery = queryParams.get('debug') === 'true';
 
-        for (let i = 1; i <= steps; i++) {
-            const currentLat = startCoords.lat + latStep * i;
-            const currentLng = startCoords.lng + lngStep * i;
-            
-            if (playerId === user.uid) {
-                onSimulatePosition({ lat: currentLat, lng: currentLng });
-            } else {
-                 const gameRef = doc(db, 'games', gameId);
-                 await updateDoc(gameRef, {
-                    [`playerPositions.${playerId}`]: { lat: currentLat, lng: currentLng }
-                });
-            }
-            await new Promise(res => setTimeout(res, duration / steps));
-        }
-    }, [user, gameId, onSimulatePosition]);
-    
-    // FIX: Lade till 'simulatePlayerMovement' i dependency array.
-    const turnInfo = useMemo(() => {
-        if (!game || !team || !course || !course.obstacles) return { canPlay: false, actionText: "Väntar på data..." };
-
-        const allMembers = team.memberIds || [];
-        const leader = team.leaderId;
-        const otherMembers = allMembers.filter(id => id !== leader);
-        const solvedCount = game.solvedObstacles.filter(Boolean).length;
-        
-        // Målgångsfasen
-        if (solvedCount === course.obstacles.length) {
-            const hasFinished = (game.playersAtFinish || []).includes(user.uid);
-            if (hasFinished) return { canPlay: false, actionText: "Du är i mål!" };
-            
-            return {
-                canPlay: true,
-                actionText: `Gå till Mål`,
-                action: async () => {
-                    const startPos = game.playerPositions[user.uid] || course.start;
-                    await simulatePlayerMovement(user.uid, startPos, course.finish);
-                }
-            };
+        // Om flaggan finns, spara den i webbläsarens minne för denna session.
+        if (hasDebugQuery) {
+            sessionStorage.setItem('geoquest-debug-mode', 'true');
         }
 
-        // Hinderfasen
-        const nextPlayerIndex = solvedCount;
-        let currentPlayerId;
-        if (nextPlayerIndex === 0) {
-            currentPlayerId = leader;
-        } else {
-            const memberIndex = nextPlayerIndex - 1;
-            currentPlayerId = memberIndex < otherMembers.length ? otherMembers[memberIndex] : leader;
-        }
-        
-        if (user.uid === currentPlayerId) {
-             return {
-                canPlay: true,
-                actionText: `Gå till Hinder ${nextPlayerIndex + 1}`,
-                action: async () => {
-                    const startPos = game.playerPositions[user.uid] || course.start;
-                    await simulatePlayerMovement(user.uid, startPos, course.obstacles[nextPlayerIndex].position);
-                }
-            };
-        }
+        // Hämta det sparade värdet från minnet.
+        const isDebugSession = sessionStorage.getItem('geoquest-debug-mode') === 'true';
 
-        return { canPlay: false, actionText: "Väntar på din tur..." };
-    }, [game, team, course, user.uid, simulatePlayerMovement]);
-    
-    if (process.env.NODE_ENV !== 'development' || !game || game.status !== 'started') {
+        // Knapparna ska visas om något av villkoren är uppfyllda.
+        const shouldBeVisible =
+            process.env.NODE_ENV === 'development' ||
+            window.location.hostname === 'localhost' ||
+            isDebugSession;
+
+        setIsDebugVisible(shouldBeVisible);
+    }, [location.search]); // Kör om effekten om URL:en ändras.
+
+    const { isSimulating, simulationStatus, startSimulation } = useGameSimulation(
+        game,
+        course,
+        (pos) => {
+            onSimulatePosition(pos);
+            addLogMessage(`Simulerar position: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`);
+        }
+    );
+
+    // Om vi inte ska visa kontrollerna, rendera ingenting.
+    if (!isDebugVisible) {
         return null;
     }
 
-    const handleSimulateNextStep = async () => {
-        if (!turnInfo.action || isSimulating) return;
-        setIsSimulating(true);
-        addLogMessage(`Simulerar: ${turnInfo.actionText}...`);
-        await turnInfo.action();
-        setIsSimulating(false);
-    };
-
     return (
-        <div className="fixed bottom-4 right-4 z-[1000] p-3 sc-card">
-            <h3 className="font-bold text-sm mb-2">Debug-panel</h3>
-            <button
-                onClick={handleSimulateNextStep}
-                disabled={!turnInfo.canPlay || isSimulating}
-                className="sc-button"
-            >
-                {isSimulating ? 'Simulerar...' : turnInfo.actionText}
-            </button>
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] p-2 neu-card flex flex-col items-center gap-2 w-11/12 max-w-sm">
+            <h3 className="font-bold text-lg text-accent-yellow">Debug-kontroller</h3>
+            <div className="w-full">
+                <button
+                    onClick={startSimulation}
+                    disabled={isSimulating}
+                    className="neu-button neu-button-green w-full"
+                >
+                    {isSimulating ? 'Simulerar...' : 'Nästa Sim-steg'}
+                </button>
+            </div>
+            <p className="text-sm text-text-secondary w-full text-center bg-background p-1 rounded">
+                Status: <span className="font-bold text-text-primary">{simulationStatus}</span>
+            </p>
         </div>
     );
 };
 
 export default DebugGameControls;
+
