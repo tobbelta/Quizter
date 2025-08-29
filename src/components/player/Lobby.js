@@ -1,140 +1,154 @@
+// src/components/player/Lobby.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { doc, onSnapshot, updateDoc, addDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '../../firebase'; // Tog bort oanvänd 'auth'
 import Spinner from '../shared/Spinner';
 import Header from '../shared/Header';
 
 const Lobby = ({ user, userData }) => {
     const { teamId } = useParams();
-    const navigate = useNavigate();
     const [team, setTeam] = useState(null);
     const [courses, setCourses] = useState([]);
-    const [selectedCourseId, setSelectedCourseId] = useState('');
+    const [selectedCourse, setSelectedCourse] = useState('');
     const [loading, setLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
-    const [error, setError] = useState('');
-    const [isTestMode, setIsTestMode] = useState(false);
-    
-    const isLeader = team && user && team.leaderId === user.uid;
+    const navigate = useNavigate();
 
     useEffect(() => {
-        const teamDocRef = doc(db, 'teams', teamId);
-        const unsubscribeTeam = onSnapshot(teamDocRef, (doc) => {
+        const teamRef = doc(db, 'teams', teamId);
+        const unsubscribeTeam = onSnapshot(teamRef, (doc) => {
             if (doc.exists()) {
-                setTeam({ id: doc.id, ...doc.data() });
+                const teamData = { id: doc.id, ...doc.data() };
+                setTeam(teamData);
+                // Om ett spel startas (status: pending), navigera till spelet
+                if (teamData.currentGameId && teamData.gameStatus === 'pending') {
+                    navigate(`/game/${teamData.currentGameId}`);
+                }
             } else {
-                setError("Laget hittades inte.");
+                navigate('/teams'); // Teamet finns inte, skicka tillbaka
             }
+        }, (error) => {
+            console.error("Error fetching team:", error);
+            navigate('/teams');
         });
 
         const fetchCourses = async () => {
-            try {
-                const coursesSnapshot = await getDocs(collection(db, 'courses'));
-                const coursesList = coursesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setCourses(coursesList);
-                if (coursesList.length > 0) {
-                    setSelectedCourseId(coursesList[0].id);
-                }
-            } catch (err) {
-                console.error("Error fetching courses:", err);
-                setError("Kunde inte ladda banor.");
-            } finally {
-                setLoading(false);
+            const coursesCollection = collection(db, 'courses');
+            const q = query(coursesCollection, orderBy('createdAt', 'desc'));
+            const courseSnapshot = await getDocs(q);
+            const courseList = courseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setCourses(courseList);
+            if (courseList.length > 0) {
+                setSelectedCourse(courseList[0].id);
             }
+            setLoading(false);
         };
 
         fetchCourses();
 
         return () => unsubscribeTeam();
-    }, [teamId]);
+    }, [teamId, navigate]);
 
     const handleCreateGame = async () => {
-        if (!selectedCourseId || !isLeader) return;
+        if (!selectedCourse || !team) return;
         setIsCreating(true);
-        setError('');
+
         try {
-            const q = query(collection(db, 'games'), where('teamId', '==', teamId));
-            const existingGames = await getDocs(q);
-            if (!existingGames.empty) {
-                setError("Det finns redan ett spel för detta lag. Starta om det från Game Master-panelen.");
-                setIsCreating(false);
-                return;
-            }
-            await addDoc(collection(db, 'games'), {
-                courseId: selectedCourseId,
-                teamId: teamId,
+            const selectedCourseData = courses.find(c => c.id === selectedCourse);
+            const obstacleCount = selectedCourseData.obstacles.length;
+
+            const newGame = {
+                courseId: selectedCourse,
+                courseName: selectedCourseData.name,
+                teamId: team.id,
+                teamName: team.name,
                 status: 'created',
+                createdAt: new Date(),
+                playerPositions: {},
+                solvedObstacles: Array(obstacleCount).fill(false),
+                solvedBy: [],
+                faultyObstacles: [],
+                playersAtFinish: [],
                 startTime: null,
                 finishTime: null,
-                solvedObstacles: [],
-                playerPositions: {},
-                playersAtFinish: [],
-                isTestMode: isTestMode,
+                isTestMode: false // Standard
+            };
+            const gameRef = await addDoc(collection(db, 'games'), newGame);
+            
+            // Uppdatera teamet med spelets status
+            await updateDoc(doc(db, 'teams', team.id), {
+                gameStatus: 'created',
+                currentGameId: gameRef.id
             });
+            
             navigate('/teams');
-        } catch (err) {
-            console.error("Error creating game:", err);
-            setError("Ett fel uppstod när spelet skulle skapas.");
+
+        } catch (error) {
+            console.error("Error creating game: ", error);
+            alert("Kunde inte skapa spelet.");
         } finally {
             setIsCreating(false);
         }
     };
 
-    if (loading || !team) {
-        return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
-    }
+    if (loading || !team) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
+
+    const isLeader = user.uid === team.leaderId;
 
     return (
-        <>
-            <Header title={`Skapa Spel: ${team?.name}`} user={user} userData={userData}>
-                <button onClick={() => navigate('/teams')} className="sc-button">Tillbaka till lag</button>
-            </Header>
-            {/* FIX: Använder nu samma layout som övriga sidor */}
-            <main className="container mx-auto p-4 max-w-2xl">
-                <div className="sc-card">
-                    {isLeader ? (
-                        <div className="space-y-6">
-                            <div>
-                                <label htmlFor="course-select" className="block text-lg font-semibold text-text-primary mb-2">Välj en bana</label>
-                                <select
-                                    id="course-select"
-                                    value={selectedCourseId}
-                                    onChange={(e) => setSelectedCourseId(e.target.value)}
-                                    className="sc-input"
-                                >
-                                    {courses.map(course => (
-                                        <option key={course.id} value={course.id}>{course.name}</option>
-                                    ))}
-                                </select>
+        <div className="min-h-screen">
+            <Header title={`Lobby för ${team.name}`} user={user} userData={userData} />
+            <main className="container mx-auto p-4">
+                <div className="sc-card max-w-2xl mx-auto">
+                    {team.gameStatus === 'created' ? (
+                        <div className="text-center">
+                            <h2 className="text-2xl font-bold mb-4">Spel Skapat!</h2>
+                            <p className="text-gray-400">Väntar på att Game Master ska starta spelet från sin panel.</p>
+                            <div className="mt-6">
+                                <Spinner />
                             </div>
-                            <div className="flex items-center">
-                                <input
-                                    id="test-mode"
-                                    type="checkbox"
-                                    checked={isTestMode}
-                                    onChange={(e) => setIsTestMode(e.target.checked)}
-                                    className="h-5 w-5 rounded"
-                                />
-                                <label htmlFor="test-mode" className="ml-3 block text-text-primary">
-                                    Testläge (1 spelare krävs för vinst)
-                                </label>
-                            </div>
-                            <button
-                                onClick={handleCreateGame}
-                                disabled={!selectedCourseId || isCreating}
-                                className="sc-button sc-button-blue w-full"
-                            >
-                                {isCreating ? 'Skapar...' : 'Skapa Spel'}
-                            </button>
-                            {error && <p className="text-red-500 text-center mt-2">{error}</p>}
                         </div>
                     ) : (
-                        <p className="text-center text-text-secondary">Endast lagledaren kan skapa ett spel.</p>
+                        isLeader ? (
+                            <div>
+                                <h2 className="text-2xl font-bold mb-4">Välj en bana för att skapa ett spel</h2>
+                                {courses.length > 0 ? (
+                                    <div className="space-y-4">
+                                        <select
+                                            value={selectedCourse}
+                                            onChange={(e) => setSelectedCourse(e.target.value)}
+                                            className="sc-input"
+                                        >
+                                            {courses.map(course => (
+                                                <option key={course.id} value={course.id}>{course.name}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={handleCreateGame}
+                                            disabled={isCreating}
+                                            className="sc-button sc-button-blue w-full"
+                                        >
+                                            {isCreating ? 'Skapar...' : 'Skapa Spel'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-400">Inga banor har skapats än.</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center">
+                                <h2 className="text-2xl font-bold mb-4">Välkommen till lobbyn!</h2>
+                                <p className="text-gray-400">Lagledaren väljer en bana. Spelet startar snart.</p>
+                                <div className="mt-6">
+                                    <Spinner />
+                                </div>
+                            </div>
+                        )
                     )}
                 </div>
             </main>
-        </>
+        </div>
     );
 };
 

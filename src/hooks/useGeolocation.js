@@ -1,56 +1,46 @@
-import { useState, useEffect } from 'react';
+// src/hooks/useGeolocation.js
+import { useState, useEffect, useMemo } from 'react';
 
-const useGeolocation = () => {
-  const [position, setPosition] = useState(null);
-  const [error, setError] = useState(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
+const useGeolocation = (options) => {
+    const [position, setPosition] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  // Fallback-position i Kalmar
-  const fallbackPosition = {
-    latitude: 56.6634, // Nygatan 13a, Kalmar
-    longitude: 16.3571,
-  };
+    const fallbackPosition = useMemo(() => ({ lat: 56.6634, lng: 16.3571 }), []);
 
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setError("Geolocation is not supported by your browser.");
-      setPosition(fallbackPosition);
-      return;
-    }
+    useEffect(() => {
+        let watchId;
 
-    const watcher = navigator.geolocation.watchPosition(
-      (pos) => {
-        setPosition({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
-        setError(null);
-        setPermissionDenied(false);
-      },
-      (err) => {
-        if (err.code === err.PERMISSION_DENIED) {
-          console.warn("User denied geolocation access.");
-          setPermissionDenied(true);
-          setError("User denied access to location.");
-          setPosition(fallbackPosition);
+        const success = (pos) => {
+            const { latitude, longitude } = pos.coords;
+            setPosition({ lat: latitude, lng: longitude });
+            setLoading(false);
+            setError(null);
+        };
+
+        const errorFunc = (err) => {
+            setError(`Geolocation Error: ${err.message}`);
+            setPosition(fallbackPosition);
+            setLoading(false);
+        };
+        
+        if (!navigator.geolocation) {
+            setError('Geolocation stöds inte av din webbläsare.');
+            setPosition(fallbackPosition);
+            setLoading(false);
         } else {
-          console.error("Geolocation error:", err);
-          setError(err.message);
-          setPosition(fallbackPosition); // Använd fallback även vid andra fel
+            watchId = navigator.geolocation.watchPosition(success, errorFunc, options);
         }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0,
-      }
-    );
 
-    // Städa upp watchern när komponenten avmonteras
-    return () => navigator.geolocation.clearWatch(watcher);
-  }, []); // Tom array säkerställer att effekten bara körs en gång
+        return () => {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        };
+    // FIX: Lade till 'fallbackPosition' i dependency array.
+    }, [options, fallbackPosition]);
 
-  return { position, error, permissionDenied };
+    return { position, loading, error };
 };
 
 export default useGeolocation;

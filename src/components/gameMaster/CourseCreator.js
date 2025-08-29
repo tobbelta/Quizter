@@ -1,180 +1,171 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap, Circle, ZoomControl } from 'react-leaflet';
+// src/components/gameMaster/CourseCreator.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'; // Tog bort oanvänd 'Circle'
 import L from 'leaflet';
-import { collection, addDoc, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
-import ObstacleSelectorModal from './ObstacleSelectorModal';
 import { startIcon, finishIcon, obstacleIcon } from '../shared/MapIcons';
+import ObstacleSelectorModal from './ObstacleSelectorModal';
 
-const MapClickHandler = ({ onMapClick }) => {
-    useMapEvents({
-        click(e) { onMapClick(e.latlng); },
-    });
-    return null;
-};
-
-const MapZoomController = ({ bounds }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (bounds) {
-            map.fitBounds(bounds, { padding: [50, 50] });
-        }
-    }, [bounds, map]);
-    return null;
-};
-
-const CourseCreator = ({ courseId, onSave }) => {
+const CourseCreator = ({ courseToEdit, onCourseSaved }) => {
     const [courseName, setCourseName] = useState('');
     const [start, setStart] = useState(null);
     const [finish, setFinish] = useState(null);
     const [obstacles, setObstacles] = useState([]);
-    const [placementMode, setPlacementMode] = useState('start');
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
-    const [info, setInfo] = useState('');
-    const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-    const [newObstacleCoords, setNewObstacleCoords] = useState(null);
-    const user = auth.currentUser;
-    const isEditing = !!courseId;
+    const [mode, setMode] = useState('start'); // 'start', 'finish', 'obstacle'
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [newObstaclePosition, setNewObstaclePosition] = useState(null);
+
+    const kalmarPosition = [56.6634, 16.3571];
+    const GAME_RADIUS = 100; // 100 meter
 
     useEffect(() => {
-        if (isEditing) {
-            const fetchCourse = async () => {
-                const courseRef = doc(db, 'courses', courseId);
-                const courseSnap = await getDoc(courseRef);
-                if (courseSnap.exists()) {
-                    const data = courseSnap.data();
-                    setCourseName(data.name);
-                    setStart(data.start);
-                    setFinish(data.finish);
-                    setObstacles(data.obstacles || []);
-                }
-            };
-            fetchCourse();
+        if (courseToEdit) {
+            setCourseName(courseToEdit.name || '');
+            setStart(courseToEdit.start || null);
+            setFinish(courseToEdit.finish || null);
+            setObstacles(courseToEdit.obstacles || []);
         }
-    }, [courseId, isEditing]);
+    }, [courseToEdit]);
 
-    useEffect(() => {
-        if (!start) return;
-        const startLatLng = L.latLng(start.lat, start.lng);
-        let pointsRemoved = false;
-        const validObstacles = obstacles.filter(obs => {
-            if (obs && typeof obs.lat === 'number' && typeof obs.lng === 'number') {
-                const obsLatLng = L.latLng(obs.lat, obs.lng);
-                return startLatLng.distanceTo(obsLatLng) <= 100;
-            }
-            pointsRemoved = true;
-            return false;
-        });
-        setObstacles(validObstacles);
-        if (finish && typeof finish.lat === 'number' && typeof finish.lng === 'number') {
-            const finishLatLng = L.latLng(finish.lat, finish.lng);
-            if (startLatLng.distanceTo(finishLatLng) > 100) {
-                setFinish(null);
-                pointsRemoved = true;
-            }
-        }
-        if (pointsRemoved) {
-            setInfo("Ett eller flera hinder/mål var utanför den nya 100m-radien och har tagits bort.");
-        } else {
-            setInfo("");
-        }
-    }, [start]);
-
-    const handleMapClick = (latlng) => {
-        const { lat, lng } = latlng;
-        setInfo('');
-        if (placementMode === 'start') {
-            setStart({ lat, lng });
-            setPlacementMode('obstacle');
-        } else if (placementMode === 'obstacle') {
-            setNewObstacleCoords({ lat, lng });
-            setIsSelectorOpen(true);
-        } else if (placementMode === 'finish') {
-            setFinish({ lat, lng });
-        }
+    const handleAddObstacle = (obstacleId) => {
+        setObstacles(prev => [...prev, { position: newObstaclePosition, obstacleId }]);
+        setIsModalOpen(false);
+        setNewObstaclePosition(null);
     };
 
-    const handleSelectObstacle = (obstacleId) => {
-        const newObstacle = { ...newObstacleCoords, obstacleId };
-        setObstacles([...obstacles, newObstacle]);
-        setIsSelectorOpen(false);
-        setNewObstacleCoords(null);
+    const MapEvents = () => {
+        useMapEvents({
+            click(e) {
+                const { lat, lng } = e.latlng;
+                
+                if (mode === 'start') {
+                    setStart({ lat, lng });
+                    setMode('obstacle'); // Gå vidare till att placera hinder
+                } else if (mode === 'finish') {
+                    if (start && L.latLng(start).distanceTo(e.latlng) <= GAME_RADIUS) {
+                        setFinish({ lat, lng });
+                    } else {
+                        alert(`Målet måste placeras inom ${GAME_RADIUS} meter från startpunkten.`);
+                    }
+                } else if (mode === 'obstacle') {
+                    if (start && L.latLng(start).distanceTo(e.latlng) <= GAME_RADIUS) {
+                        setNewObstaclePosition({ lat, lng });
+                        setIsModalOpen(true);
+                    } else {
+                        alert(`Hinder måste placeras inom ${GAME_RADIUS} meter från startpunkten.`);
+                    }
+                }
+            },
+        });
+        return null;
+    };
+    
+    // FIX: Lade till 'finish' och 'obstacles' i dependency array.
+    const calculateBounds = useCallback(() => {
+        if (!start) return null;
+        const points = [start];
+        if (finish) points.push(finish);
+        obstacles.forEach(o => points.push(o.position));
+        if (points.length > 0) {
+            return L.latLngBounds(points);
+        }
+        return L.latLng(start).toBounds(500); // Fallback om bara start finns
+    }, [start, finish, obstacles]);
+
+    const MapController = ({ bounds, start }) => { // FIX: Ta emot 'start' som en prop
+        const map = useMapEvents({});
+        useEffect(() => {
+            if (bounds && bounds.isValid()) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            } else if (start) {
+                map.setView(start, 16);
+            }
+        }, [map, bounds, start]); // FIX: Beroendet är nu korrekt eftersom 'start' är en prop
+        return null;
     };
 
     const handleSaveCourse = async () => {
-        setError('');
-        setSuccess('');
-        if (!courseName.trim() || !start || obstacles.length === 0 || !finish) {
-            setError("Alla fält (namn, start, minst ett hinder, mål) måste vara ifyllda.");
+        if (!courseName || !start || !finish || obstacles.length === 0) {
+            alert('En bana måste ha ett namn, en start, ett mål och minst ett hinder.');
             return;
         }
-        const courseData = { name: courseName, start, obstacles, finish, creatorId: user.uid, updatedAt: new Date() };
+        
+        const courseData = {
+            name: courseName,
+            start,
+            finish,
+            obstacles,
+            creatorId: auth.currentUser.uid,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
         try {
-            if (isEditing) {
-                await updateDoc(doc(db, 'courses', courseId), courseData);
-                setSuccess("Banan har uppdaterats!");
+            if (courseToEdit) {
+                const courseRef = doc(db, 'courses', courseToEdit.id);
+                await updateDoc(courseRef, courseData);
+                alert('Banan har uppdaterats!');
             } else {
-                await addDoc(collection(db, 'courses'), { ...courseData, createdAt: new Date() });
-                setSuccess("Banan har sparats!");
-                setCourseName(''); setStart(null); setFinish(null); setObstacles([]); setPlacementMode('start');
+                await addDoc(collection(db, 'courses'), courseData);
+                alert('Banan har sparats!');
             }
-            if(onSave) onSave();
-        } catch (err) {
-            setError("Ett fel uppstod när banan skulle sparas.");
+            if (onCourseSaved) onCourseSaved();
+            resetForm();
+        } catch (error) {
+            console.error("Fel vid sparande av bana: ", error);
+            alert('Kunde inte spara banan.');
         }
     };
     
-    const gameAreaBounds = useMemo(() => {
-        if (!start) return null;
-        return L.latLng(start.lat, start.lng).toBounds(200);
-    }, [start]);
+    const resetForm = () => {
+        setCourseName('');
+        setStart(null);
+        setFinish(null);
+        setObstacles([]);
+        setMode('start');
+    };
 
     return (
-        <div>
-            {isSelectorOpen && <ObstacleSelectorModal onSelect={handleSelectObstacle} onCancel={() => setIsSelectorOpen(false)} />}
-            <h2 className="text-2xl font-bold mb-4 text-gray-700">{isEditing ? 'Redigera Bana' : 'Skapa en ny bana'}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="md:col-span-1 space-y-4">
-                    <div className="soft-ui-card">
-                        <label className="block text-sm font-semibold mb-2 text-gray-600">Banans namn</label>
-                        <input type="text" value={courseName} onChange={(e) => setCourseName(e.target.value)} className="soft-ui-input" />
-                    </div>
-                    <div className="soft-ui-card space-y-2">
-                        <p className="font-semibold text-gray-700">Placeringsläge:</p>
-                        <div className="flex flex-col space-y-2">
-                            <button onClick={() => setPlacementMode('start')} className={`soft-ui-button w-full text-left ${placementMode === 'start' ? 'soft-ui-button-primary' : ''}`}>1. Sätt Startpunkt {start && '✅'}</button>
-                            <button onClick={() => setPlacementMode('obstacle')} className={`soft-ui-button w-full text-left ${placementMode === 'obstacle' ? 'soft-ui-button-primary' : ''}`}>2. Sätt Hinder ({obstacles.length})</button>
-                            <button onClick={() => setPlacementMode('finish')} className={`soft-ui-button w-full text-left ${placementMode === 'finish' ? 'soft-ui-button-primary' : ''}`}>3. Sätt Målpunkt {finish && '✅'}</button>
-                        </div>
-                    </div>
-                    {info && <p className="text-blue-600 bg-blue-100 p-2 rounded-md">{info}</p>}
-                    {error && <p className="text-red-600 bg-red-100 p-2 rounded-md">{error}</p>}
-                    {success && <p className="text-green-600 bg-green-100 p-2 rounded-md">{success}</p>}
-                    <button onClick={handleSaveCourse} className="soft-ui-button soft-ui-button-green w-full">{isEditing ? 'Uppdatera Bana' : 'Spara Bana'}</button>
-                </div>
-                <div className="md:col-span-2 soft-ui-card h-96 md:h-[600px] rounded-lg overflow-hidden">
-                    <MapContainer center={[56.6634, 16.3571]} zoom={16} scrollWheelZoom={true} className="h-full w-full rounded-lg" zoomControl={false}>
-                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                        <ZoomControl position="bottomleft" />
-                        <MapClickHandler onMapClick={handleMapClick} />
-                        <MapZoomController bounds={gameAreaBounds} />
-                        {start && <Marker position={[start.lat, start.lng]} icon={startIcon}><Popup>Start</Popup></Marker>}
-                        {finish && <Marker position={[finish.lat, finish.lng]} icon={finishIcon}><Popup>Mål</Popup></Marker>}
-                        {obstacles.map((obs, index) => (
-                            <Marker key={index} position={[obs.lat, obs.lng]} icon={obstacleIcon}>
-                                <Popup>
-                                    <b>Hinder {index + 1}</b><br/>ID: {obs.obstacleId}
-                                    <button onClick={() => setObstacles(obstacles.filter((_, i) => i !== index))} className="ml-2 text-red-500 font-bold">X</button>
-                                </Popup>
-                            </Marker>
-                        ))}
-                    </MapContainer>
+        <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-gray-800">{courseToEdit ? 'Redigera Bana' : 'Skapa Ny Bana'}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                    type="text"
+                    value={courseName}
+                    onChange={(e) => setCourseName(e.target.value)}
+                    placeholder="Namn på banan"
+                    className="soft-ui-input"
+                />
+                <div className="flex gap-2">
+                    <button onClick={() => setMode('start')} className={`soft-ui-button ${mode === 'start' ? 'soft-ui-button-primary' : ''} w-full`}>Sätt Start</button>
+                    <button onClick={() => setMode('obstacle')} className={`soft-ui-button ${mode === 'obstacle' ? 'soft-ui-button-primary' : ''} w-full`} disabled={!start}>Sätt Hinder</button>
+                    <button onClick={() => setMode('finish')} className={`soft-ui-button ${mode === 'finish' ? 'soft-ui-button-primary' : ''} w-full`} disabled={!start}>Sätt Mål</button>
                 </div>
             </div>
+            <div className="h-96 soft-ui-card p-0 overflow-hidden">
+                <MapContainer center={start ? [start.lat, start.lng] : kalmarPosition} zoom={15} style={{ height: '100%', width: '100%' }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <MapEvents />
+                    {start && <Marker position={[start.lat, start.lng]} icon={startIcon} />}
+                    {finish && <Marker position={[finish.lat, finish.lng]} icon={finishIcon} />}
+                    {obstacles.map((obs, index) => (
+                        <Marker key={index} position={[obs.position.lat, obs.position.lng]} icon={obstacleIcon} />
+                    ))}
+                    <MapController bounds={calculateBounds()} start={start} /> {/* FIX: Skicka med 'start' som en prop */}
+                </MapContainer>
+            </div>
+            <button onClick={handleSaveCourse} className="soft-ui-button soft-ui-button-green w-full">
+                {courseToEdit ? 'Uppdatera Bana' : 'Spara Bana'}
+            </button>
+            {isModalOpen && (
+                <ObstacleSelectorModal
+                    onClose={() => setIsModalOpen(false)}
+                    onSelect={handleAddObstacle}
+                />
+            )}
         </div>
     );
 };
 
 export default CourseCreator;
-
