@@ -1,46 +1,47 @@
-// src/hooks/useGeolocation.js
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 
-const useGeolocation = (options) => {
+const useGeolocation = () => {
     const [position, setPosition] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-
-    const fallbackPosition = useMemo(() => ({ lat: 56.6634, lng: 16.3571 }), []);
+    const [status, setStatus] = useState('pending'); // 'pending', 'granted', 'denied'
 
     useEffect(() => {
-        let watchId;
-
-        const success = (pos) => {
-            const { latitude, longitude } = pos.coords;
-            setPosition({ lat: latitude, lng: longitude });
-            setLoading(false);
-            setError(null);
-        };
-
-        const errorFunc = (err) => {
-            setError(`Geolocation Error: ${err.message}`);
-            setPosition(fallbackPosition);
-            setLoading(false);
-        };
-        
         if (!navigator.geolocation) {
             setError('Geolocation stöds inte av din webbläsare.');
-            setPosition(fallbackPosition);
-            setLoading(false);
-        } else {
-            watchId = navigator.geolocation.watchPosition(success, errorFunc, options);
+            setStatus('denied');
+            return;
         }
 
+        const onSuccess = (pos) => {
+            setPosition(pos.coords);
+            setError(null);
+            setStatus('granted');
+        };
+
+        const onError = (err) => {
+            setError(err.message);
+            setStatus('denied');
+        };
+
+        // Rensa gamla watchers för att undvika minnesläckor
+        let watcherId;
+        navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+            enableHighAccuracy: true,
+        });
+        watcherId = navigator.geolocation.watchPosition(onSuccess, onError, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+        });
+
         return () => {
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
+            if (watcherId) {
+                navigator.geolocation.clearWatch(watcherId);
             }
         };
-    // FIX: Lade till 'fallbackPosition' i dependency array.
-    }, [options, fallbackPosition]);
+    }, []);
 
-    return { position, loading, error };
+    return { position, error, status };
 };
 
 export default useGeolocation;

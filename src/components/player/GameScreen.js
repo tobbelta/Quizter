@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import Logo from '../shared/Logo';
 import { doc, onSnapshot, updateDoc, arrayUnion, getDoc, collection, addDoc, query, where, documentId, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, ZoomControl } from 'react-leaflet';
@@ -9,10 +8,25 @@ import useGeolocation from '../../hooks/useGeolocation';
 import Spinner from '../shared/Spinner';
 import DebugGameControls from './DebugGameControls';
 import DebugLogDisplay from './DebugLogDisplay';
-import { startIcon, finishIcon, obstacleIcon, createPlayerIcon } from '../shared/MapIcons';
+import { startIcon, finishIcon, obstacleIcon, selfIcon, teammateIcon } from '../shared/MapIcons';
+import Logo from '../shared/Logo';
 
-const selfIcon = createPlayerIcon('#4a90e2');
-const teammateIcon = createPlayerIcon('#7e57c2');
+
+const GeolocationStatus = ({ status }) => {
+    let message = 'Väntar på GPS-signal...';
+    if (status === 'denied') {
+        message = 'Du måste godkänna platstjänster för att spela.';
+    }
+
+    return (
+        <div className="flex flex-col items-center justify-center h-full w-full bg-background">
+            <div className="neu-card text-center">
+                <p className="text-lg font-semibold mb-4">{message}</p>
+                <Spinner />
+            </div>
+        </div>
+    );
+};
 
 const MapController = ({ bounds }) => {
     const map = useMap();
@@ -63,7 +77,7 @@ const GameScreen = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const user = auth.currentUser;
-    const { position } = useGeolocation();
+    const { position, status: geoStatus } = useGeolocation();
 
     const [game, setGame] = useState(null);
     const [course, setCourse] = useState(null);
@@ -136,7 +150,6 @@ const GameScreen = () => {
         }
     }, [course, user, location.state, simulatedPosition]);
 
-    // FIX: Mer robust laddningskontroll som inte är beroende av position
     useEffect(() => {
         if (game && course && team && Object.keys(teamMembers).length > 0) {
             setLoading(false);
@@ -259,7 +272,6 @@ const GameScreen = () => {
     const gameBounds = useMemo(() => {
         if (!course) return null;
 
-        // Skapa en grundläggande gräns runt banans punkter
         const coursePoints = [
             [course.start.lat, course.start.lng],
             [course.finish.lat, course.finish.lng],
@@ -267,16 +279,13 @@ const GameScreen = () => {
         ];
         let bounds = L.latLngBounds(coursePoints);
 
-        // Om spelarens position finns, kontrollera om den är utanför banans gränser
         if (finalPosition) {
             const playerLatLng = L.latLng(finalPosition.latitude, finalPosition.longitude);
-            // Om spelaren är utanför, utöka gränserna till att inkludera spelaren
             if (!bounds.contains(playerLatLng)) {
                 bounds.extend(playerLatLng);
             }
         }
-
-        // Lägg till en generös utfyllnad för att säkerställa att allt är synligt, speciellt cirkeln
+        
         return bounds.pad(0.5);
     }, [course, finalPosition]);
 
@@ -320,7 +329,7 @@ const GameScreen = () => {
         <div className="h-screen w-screen flex flex-col relative">
             {showRiddle && <RiddleModal obstacle={currentRiddle} onAnswer={handleAnswer} />}
             <div className="absolute top-0 left-0 right-0 p-3 z-[1000] flex justify-between items-center bg-black/60 backdrop-blur-sm">
-                <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-3">
                     <Logo size={40} />
                     <h1 className="text-lg font-bold text-white truncate" style={{ textShadow: '1px 1px 2px black' }}>{course.name}</h1>
                 </div>
@@ -336,17 +345,21 @@ const GameScreen = () => {
                 </div>
             </div>
             <div className="flex-grow">
-                <MapContainer center={startPosition} zoom={15} scrollWheelZoom={true} className="h-full w-full" zoomControl={false}>
-                    <MapController bounds={gameBounds} />
-                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    <ZoomControl position="bottomleft" />
-                    <GameAreaOverlay center={startPosition} radius={100} />
-                    {markers.map((marker, idx) => (
-                        <Marker key={idx} position={marker.pos} icon={marker.icon}>
-                            <Popup>{marker.popup}</Popup>
-                        </Marker>
-                    ))}
-                </MapContainer>
+                {finalPosition ? (
+                    <MapContainer center={[finalPosition.latitude, finalPosition.longitude]} zoom={15} scrollWheelZoom={true} className="h-full w-full" zoomControl={false}>
+                        <MapController bounds={gameBounds} />
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                        <ZoomControl position="bottomleft" />
+                        <GameAreaOverlay center={startPosition} radius={100} />
+                        {markers.map((marker, idx) => (
+                            <Marker key={idx} position={marker.pos} icon={marker.icon}>
+                                <Popup>{marker.popup}</Popup>
+                            </Marker>
+                        ))}
+                    </MapContainer>
+                ) : (
+                    <GeolocationStatus status={geoStatus} />
+                )}
             </div>
             <DebugGameControls 
                 game={game} 
@@ -363,6 +376,3 @@ const GameScreen = () => {
 };
 
 export default GameScreen;
-
-
-
