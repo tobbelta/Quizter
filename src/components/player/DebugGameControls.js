@@ -1,45 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import React from 'react';
+// Importera den nya genvägen för att hämta debug-status
+import { useDebug } from '../../context/DebugContext';
 import { useGameSimulation } from '../../hooks/useGameSimulation';
 
 const DebugGameControls = ({ game, course, onSimulatePosition, addLogMessage }) => {
-    const location = useLocation();
-    const [isDebugVisible, setIsDebugVisible] = useState(false);
-
-    // useEffect körs när komponenten laddas och när URL:en ändras.
-    useEffect(() => {
-        // Kontrollerar om ?debug=true finns i den aktuella URL:en.
-        const queryParams = new URLSearchParams(location.search);
-        const hasDebugQuery = queryParams.get('debug') === 'true';
-
-        // Om flaggan finns, spara den i webbläsarens minne för denna session.
-        if (hasDebugQuery) {
-            sessionStorage.setItem('geoquest-debug-mode', 'true');
-        }
-
-        // Hämta det sparade värdet från minnet.
-        const isDebugSession = sessionStorage.getItem('geoquest-debug-mode') === 'true';
-
-        // Knapparna ska visas om något av villkoren är uppfyllda.
-        const shouldBeVisible =
-            process.env.NODE_ENV === 'development' ||
-            window.location.hostname === 'localhost' ||
-            isDebugSession;
-
-        setIsDebugVisible(shouldBeVisible);
-    }, [location.search]); // Kör om effekten om URL:en ändras.
+    // Använd den centrala statusen istället för lokal logik
+    const { isDebugMode } = useDebug();
 
     const { isSimulating, simulationStatus, startSimulation } = useGameSimulation(
         game,
         course,
         (pos) => {
             onSimulatePosition(pos);
+            // **KORRIGERING:** Lade till backticks (`) för att skapa en korrekt
+            // JavaScript-sträng (template literal). Detta löser syntaxfelet.
             addLogMessage(`Simulerar position: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`);
         }
     );
 
-    // Om vi inte ska visa kontrollerna, rendera ingenting.
-    if (!isDebugVisible) {
+    // Om vi inte är i debug-läge, rendera ingenting
+    if (!isDebugMode) {
         return null;
     }
 

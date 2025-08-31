@@ -1,81 +1,65 @@
-// src/components/gameMaster/GameMasterDashboard.js
-import React, { useState } from 'react';
-import CourseCreator from './CourseCreator';
-import CourseManagement from './CourseManagement';
-import UserManagement from './UserManagement';
-import LiveMonitor from './LiveMonitor';
-import TeamManagement from './TeamManagement';
-import VersionHistory from './VersionHistory';
-import ObstacleBank from './ObstacleBank';
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import Header from '../shared/Header';
+import { auth } from '../../firebase';
 
 const GameMasterDashboard = ({ user, userData }) => {
-  const [activeTab, setActiveTab] = useState('monitor');
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const navigate = useNavigate();
 
-  const handleTabClick = (tabName) => {
-    setActiveTab(tabName);
-    setIsMenuOpen(false);
-  };
+    const handleLogout = async () => {
+        try {
+            await auth.signOut();
+            navigate('/');
+        } catch (error) {
+            console.error("Fel vid utloggning:", error);
+        }
+    };
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'monitor': return <LiveMonitor />;
-      case 'courses': return <CourseManagement />;
-      case 'teams': return <TeamManagement />;
-      case 'users': return <UserManagement />;
-      case 'obstacles': return <ObstacleBank />;
-      case 'versions': return <VersionHistory />;
-      case 'creator':
-      default: return <CourseCreator />;
-    }
-  };
+    return (
+        // **KORRIGERING:** Hela sidan slås in i en container, precis som på den
+        // fungerande TeamsPage.js. Detta garanterar en konsekvent och centrerad layout.
+        <div className="container mx-auto p-4">
+            <Header title="Game Master Panel" user={user} userData={userData}>
+                <Link to="/teams" className="neu-button">Spelarsida</Link>
+                <button onClick={handleLogout} className="neu-button neu-button-red">
+                    Logga ut
+                </button>
+            </Header>
 
-  const getTabClass = (tabName) => {
-    const isActive = activeTab === tabName;
-    return `px-4 py-2 font-semibold rounded-lg transition-all duration-200 capitalize text-sm
-            ${isActive ? 'sc-button-blue' : 'sc-button'}`;
-  };
+            <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
+                {/* Kort för banhantering */}
+                <Link to="/gm/courses" className="neu-card hover:shadow-lg transition-shadow duration-300">
+                    <h2 className="text-2xl font-bold text-accent-lime mb-2">Hantera Banor</h2>
+                    <p className="text-text-secondary">Skapa, redigera och visa alla tillgängliga banor.</p>
+                </Link>
 
-  const tabs = ['monitor', 'creator', 'courses', 'obstacles', 'teams', 'users', 'versions'];
+                {/* Kort för hinderbank */}
+                <Link to="/gm/obstacles" className="neu-card hover:shadow-lg transition-shadow duration-300">
+                    <h2 className="text-2xl font-bold text-accent-yellow mb-2">Hinderbank</h2>
+                    <p className="text-text-secondary">Administrera alla återanvändbara hinder och gåtor.</p>
+                </Link>
 
-  return (
-    <div className="min-h-screen">
-      <Header title="Game Master Panel" user={user} userData={userData} />
-      
-      <main className="container mx-auto p-4">
-        <div className="mb-6">
-          <nav className="hidden sm:flex flex-wrap gap-2">
-            {tabs.map(tab => (
-                 <button key={tab} onClick={() => handleTabClick(tab)} className={getTabClass(tab)}>
-                    {tab.replace('-', ' ')}
-                 </button>
-            ))}
-          </nav>
+                {/* Kort för användarhantering */}
+                <Link to="/gm/users" className="neu-card hover:shadow-lg transition-shadow duration-300">
+                    <h2 className="text-2xl font-bold text-accent-cyan mb-2">Användare</h2>
+                    <p className="text-text-secondary">Hantera användarroller och se registrerade spelare.</p>
+                </Link>
 
-          <div className="sm:hidden relative">
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="sc-button w-full flex justify-between items-center">
-                <span className="capitalize">{activeTab.replace('-', ' ')}</span>
-                <svg className={`w-5 h-5 transition-transform ${isMenuOpen ? 'transform rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-            </button>
-            {isMenuOpen && (
-                <div className="absolute top-full left-0 right-0 mt-2 sc-card z-20 p-2 space-y-2">
-                    {tabs.map(tab => (
-                        <button key={tab} onClick={() => handleTabClick(tab)} className="sc-button w-full text-left">
-                            {tab.replace('-', ' ')}
-                        </button>
-                    ))}
-                </div>
-            )}
-          </div>
+                {/* Kort för laghantering */}
+                <Link to="/gm/teams" className="neu-card hover:shadow-lg transition-shadow duration-300">
+                    <h2 className="text-2xl font-bold text-accent-magenta mb-2">Lag</h2>
+                    <p className="text-text-secondary">Se och hantera alla skapade lag.</p>
+                </Link>
+
+                {/* Kort för live-övervakning */}
+                <Link to="/gm/monitor" className="neu-card hover:shadow-lg transition-shadow duration-300">
+                    <h2 className="text-2xl font-bold text-accent-red mb-2">Live-övervakning</h2>
+                    <p className="text-text-secondary">Övervaka pågående spel i realtid.</p>
+                </Link>
+            </main>
         </div>
-        
-        <div className="sc-card">
-          {renderContent()}
-        </div>
-      </main>
-    </div>
-  );
+    );
 };
 
 export default GameMasterDashboard;
+
