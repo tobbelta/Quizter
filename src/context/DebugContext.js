@@ -1,43 +1,47 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { createContext, useState, useContext, useCallback } from 'react';
 
-// Skapar en central plats (Context) för att lagra debug-status
-const DebugContext = createContext();
+export const DebugContext = createContext();
 
-// Skapar en genväg (custom hook) för att enkelt komma åt statusen
-export const useDebug = () => {
-    return useContext(DebugContext);
-};
-
-// Detta är komponenten som kommer att hålla koll på och dela ut debug-statusen
 export const DebugProvider = ({ children }) => {
-    const [isDebugMode, setIsDebugMode] = useState(false);
-    const location = useLocation();
+    const [isDebug, setIsDebug] = useState(() => sessionStorage.getItem('isDebug') === 'true');
+    const [logs, setLogs] = useState([]);
+    const [simulationSpeed, setSimulationSpeed] = useState('normal');
 
-    useEffect(() => {
-        // Känner av om ?debug=true finns i URL:en
-        const queryParams = new URLSearchParams(location.search);
-        const hasDebugQuery = queryParams.get('debug') === 'true';
+    const setDebugMode = useCallback((enabled) => {
+        setIsDebug(enabled);
+        sessionStorage.setItem('isDebug', enabled);
+    }, []);
 
-        // Om ja, spara det i webbläsarens minne
-        if (hasDebugQuery) {
-            sessionStorage.setItem('geoquest-debug-mode', 'true');
-        }
+    const addLog = useCallback((message) => {
+        setLogs(prevLogs => {
+            const timestamp = new Date().toLocaleTimeString();
+            const newLog = `[${timestamp}] ${message}`;
+            return [newLog, ...prevLogs].slice(0, 50);
+        });
+    }, []);
 
-        // Kontrollerar alla villkor för att se om debug-läget ska vara aktivt
-        const isDebugSession = sessionStorage.getItem('geoquest-debug-mode') === 'true';
-        const shouldBeDebug =
-            process.env.NODE_ENV === 'development' ||
-            window.location.hostname === 'localhost' ||
-            isDebugSession;
+    const value = {
+        isDebug,
+        setDebugMode,
+        logs,
+        addLog,
+        simulationSpeed,
+        setSimulationSpeed,
+    };
 
-        setIsDebugMode(shouldBeDebug);
-    }, [location.search]);
-
-    // Gör isDebugMode-värdet tillgängligt för hela appen
     return (
-        <DebugContext.Provider value={{ isDebugMode }}>
+        <DebugContext.Provider value={value}>
             {children}
         </DebugContext.Provider>
     );
 };
+
+export const useDebug = () => {
+    const context = useContext(DebugContext);
+    // **KORRIGERING:** Tar bort felsökningsloggen nu när problemet är hittat.
+    if (context === undefined) {
+        throw new Error('useDebug must be used within a DebugProvider');
+    }
+    return context;
+};
+

@@ -1,45 +1,48 @@
 import React from 'react';
-// Importera den nya genvägen för att hämta debug-status
 import { useDebug } from '../../context/DebugContext';
-import { useGameSimulation } from '../../hooks/useGameSimulation';
 
-const DebugGameControls = ({ game, course, onSimulatePosition, addLogMessage }) => {
-    // Använd den centrala statusen istället för lokal logik
-    const { isDebugMode } = useDebug();
+const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObstacle, game }) => {
+  const { simulationSpeed, setSimulationSpeed } = useDebug();
 
-    const { isSimulating, simulationStatus, startSimulation } = useGameSimulation(
-        game,
-        course,
-        (pos) => {
-            onSimulatePosition(pos);
-            // **KORRIGERING:** Lade till backticks (`) för att skapa en korrekt
-            // JavaScript-sträng (template literal). Detta löser syntaxfelet.
-            addLogMessage(`Simulerar position: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`);
-        }
-    );
+  const getSpeedButtonClass = (speed) => {
+    return simulationSpeed === speed 
+      ? "sc-button sc-button-blue text-xs px-2 py-1" 
+      : "sc-button text-xs px-2 py-1";
+  };
+  
+  const isMoving = simulationState.stage.startsWith('MOVING');
 
-    // Om vi inte är i debug-läge, rendera ingenting
-    if (!isDebugMode) {
-        return null;
-    }
-
-    return (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] p-2 neu-card flex flex-col items-center gap-2 w-11/12 max-w-sm">
-            <h3 className="font-bold text-lg text-accent-yellow">Debug-kontroller</h3>
-            <div className="w-full">
-                <button
-                    onClick={startSimulation}
-                    disabled={isSimulating}
-                    className="neu-button neu-button-green w-full"
-                >
-                    {isSimulating ? 'Simulerar...' : 'Nästa Sim-steg'}
-                </button>
-            </div>
-            <p className="text-sm text-text-secondary w-full text-center bg-background p-1 rounded">
-                Status: <span className="font-bold text-text-primary">{simulationStatus}</span>
-            </p>
+  return (
+    <div className="bg-black bg-opacity-70 text-white p-4 rounded-lg w-full flex flex-col gap-4">
+      <div>
+        <h4 className="font-bold text-accent-yellow mb-2 border-b border-gray-600">Simulering</h4>
+        <div className="flex flex-col gap-2">
+            <button 
+              onClick={onAdvanceSimulation} 
+              disabled={isMoving || simulationState.stage === 'AT_FINISH'}
+              className="sc-button sc-button-blue w-full text-sm"
+            >
+              {isMoving ? 'Reser...' : simulationState.description}
+            </button>
+            <button 
+              onClick={onCompleteObstacle} 
+              disabled={!game.activeObstacleId || simulationState.stage !== 'AT_OBSTACLE'}
+              className="sc-button sc-button-green w-full text-sm"
+            >
+              Slutför Hinder
+            </button>
         </div>
-    );
+      </div>
+      <div>
+        <h4 className="font-bold text-accent-yellow mb-2 border-b border-gray-600">Simuleringshastighet</h4>
+        <div className="flex justify-around">
+          <button onClick={() => setSimulationSpeed('slow')} className={getSpeedButtonClass('slow')}>Långsam</button>
+          <button onClick={() => setSimulationSpeed('normal')} className={getSpeedButtonClass('normal')}>Normal</button>
+          <button onClick={() => setSimulationSpeed('fast')} className={getSpeedButtonClass('fast')}>Snabb</button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default DebugGameControls;

@@ -1,155 +1,217 @@
-// src/components/player/Lobby.js
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, addDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase'; // Tog bort oanvänd 'auth'
+// **KORRIGERING:** Tar bort oanvända 'serverTimestamp' från importen.
+import { doc, onSnapshot, collection, getDocs, addDoc, updateDoc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import Spinner from '../shared/Spinner';
 import Header from '../shared/Header';
+import { useDebug } from '../../context/DebugContext';
+import { debugLog } from '../../utils/logger';
+
+const calculateBounds = (course) => {
+    const points = [];
+    const startPoint = course.startPoint || course.start;
+    const finishPoint = course.finishPoint || course.finish;
+
+    if (startPoint) points.push({ lat: startPoint.latitude || startPoint.lat, lng: startPoint.longitude || startPoint.lng });
+    if (finishPoint) points.push({ lat: finishPoint.latitude || finishPoint.lat, lng: finishPoint.longitude || finishPoint.lng });
+
+    if (course.obstacles && Array.isArray(course.obstacles)) {
+        course.obstacles.forEach(o => {
+            const lat = o.location?.latitude || o.lat;
+            const lng = o.location?.longitude || o.lng;
+            if (typeof lat === 'number' && typeof lng === 'number') {
+                points.push({ lat, lng });
+            }
+        });
+    }
+
+    if (points.length === 0) return null;
+
+    const latitudes = points.map(p => p.lat);
+    const longitudes = points.map(p => p.lng);
+
+    return {
+        minLat: Math.min(...latitudes),
+        maxLat: Math.max(...latitudes),
+        minLng: Math.min(...longitudes),
+        maxLng: Math.max(...longitudes),
+    };
+};
+
 
 const Lobby = ({ user, userData }) => {
-    const { teamId } = useParams();
+    const { gameId: teamId } = useParams();
+    const navigate = useNavigate();
+    const { isDebug } = useDebug();
+
     const [team, setTeam] = useState(null);
     const [courses, setCourses] = useState([]);
     const [selectedCourse, setSelectedCourse] = useState('');
+    const [game, setGame] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [isCreating, setIsCreating] = useState(false);
-    const navigate = useNavigate();
+    const [error, setError] = useState('');
 
     useEffect(() => {
+        if (!teamId) return;
+
+        let unsubscribeGame = () => {};
         const teamRef = doc(db, 'teams', teamId);
-        const unsubscribeTeam = onSnapshot(teamRef, (doc) => {
-            if (doc.exists()) {
-                const teamData = { id: doc.id, ...doc.data() };
-                setTeam(teamData);
-                // Om ett spel startas (status: pending), navigera till spelet
-                if (teamData.currentGameId && teamData.gameStatus === 'pending') {
-                    navigate(`/game/${teamData.currentGameId}`);
-                }
-            } else {
-                navigate('/teams'); // Teamet finns inte, skicka tillbaka
+        
+        const unsubscribeTeam = onSnapshot(teamRef, (teamDoc) => {
+            if (!teamDoc.exists()) {
+                setError("Laget hittades inte.");
+                setLoading(false);
+                return;
             }
-        }, (error) => {
-            console.error("Error fetching team:", error);
-            navigate('/teams');
+
+            const teamData = { id: teamDoc.id, ...teamDoc.data() };
+            setTeam(teamData);
+            unsubscribeGame();
+
+            if (teamData.currentGameId) {
+                const gameRef = doc(db, 'games', teamData.currentGameId);
+                unsubscribeGame = onSnapshot(gameRef, (gameDoc) => {
+                    setGame(gameDoc.exists() ? { id: gameDoc.id, ...gameDoc.data() } : null);
+                    setLoading(false);
+                });
+            } else {
+                setGame(null);
+                setLoading(false);
+            }
         });
 
         const fetchCourses = async () => {
-            const coursesCollection = collection(db, 'courses');
-            const q = query(coursesCollection, orderBy('createdAt', 'desc'));
-            const courseSnapshot = await getDocs(q);
-            const courseList = courseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setCourses(courseList);
-            if (courseList.length > 0) {
-                setSelectedCourse(courseList[0].id);
+            try {
+                const coursesCollection = collection(db, 'courses');
+                const courseSnapshot = await getDocs(coursesCollection);
+                const courseList = courseSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setCourses(courseList);
+                if (courseList.length > 0) {
+                    setSelectedCourse(courseList[0].id);
+                }
+            } catch (err) {
+                console.error("Kunde inte hämta banor:", err);
+                setError("Kunde inte ladda tillgängliga banor.");
             }
-            setLoading(false);
         };
 
         fetchCourses();
 
-        return () => unsubscribeTeam();
-    }, [teamId, navigate]);
-
+        return () => {
+            unsubscribeTeam();
+            unsubscribeGame();
+        };
+    }, [teamId]);
+    
     const handleCreateGame = async () => {
-        if (!selectedCourse || !team) return;
-        setIsCreating(true);
+        if (!selectedCourse) {
+            setError("Vänligen välj en bana.");
+            return;
+        }
+
+        const courseData = courses.find(c => c.id === selectedCourse);
+        if (!courseData) {
+            setError("Vald bana är ogiltig.");
+            return;
+        }
 
         try {
-            const selectedCourseData = courses.find(c => c.id === selectedCourse);
-            const obstacleCount = selectedCourseData.obstacles.length;
+            debugLog(isDebug, "LOBBY: Vald bandata", courseData);
+            const bounds = calculateBounds(courseData);
+            debugLog(isDebug, "LOBBY: Beräknade bounds", bounds);
+
+            if (!bounds) {
+                throw new Error("Kunde inte beräkna spelområdets gränser. Kontrollera att banan har start/slut/hinder-punkter.");
+            }
+            
+            const enrichedCourseData = { ...courseData, bounds };
 
             const newGame = {
-                courseId: selectedCourse,
-                courseName: selectedCourseData.name,
                 teamId: team.id,
-                teamName: team.name,
+                course: enrichedCourseData,
                 status: 'created',
-                createdAt: new Date(),
-                playerPositions: {},
-                solvedObstacles: Array(obstacleCount).fill(false),
-                solvedBy: [],
-                faultyObstacles: [],
-                playersAtFinish: [],
                 startTime: null,
-                finishTime: null,
-                isTestMode: false // Standard
+                endTime: null,
+                completedObstacles: [],
+                activeObstacleId: courseData.obstacles[0]?.obstacleId || null,
             };
-            const gameRef = await addDoc(collection(db, 'games'), newGame);
             
-            // Uppdatera teamet med spelets status
-            await updateDoc(doc(db, 'teams', team.id), {
-                gameStatus: 'created',
-                currentGameId: gameRef.id
+            debugLog(isDebug, "LOBBY: Objekt som sparas i databasen", newGame);
+            
+            const gameDocRef = await addDoc(collection(db, 'games'), newGame);
+            
+            const playerCreationPromises = team.memberIds.map(memberId => {
+                const playerDocRef = doc(db, 'games', gameDocRef.id, 'players', memberId);
+                return setDoc(playerDocRef, {
+                    uid: memberId,
+                    position: null,
+                    lastUpdate: null
+                });
             });
-            
-            navigate('/teams');
+            await Promise.all(playerCreationPromises);
 
-        } catch (error) {
-            console.error("Error creating game: ", error);
-            alert("Kunde inte skapa spelet.");
-        } finally {
-            setIsCreating(false);
+            const teamRef = doc(db, 'teams', team.id);
+            await updateDoc(teamRef, { currentGameId: gameDocRef.id });
+
+        } catch (err) {
+            console.error(err);
+            setError(`Kunde inte skapa spelet: ${err.message}`);
         }
     };
 
-    if (loading || !team) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
+    if (loading) return <Spinner />;
+    if (error) return <p className="text-red-500 p-4">{error}</p>;
+    if (!team) return <p>Laddar lag...</p>;
 
     const isLeader = user.uid === team.leaderId;
 
-    return (
-        <div className="min-h-screen">
-            <Header title={`Lobby för ${team.name}`} user={user} userData={userData} />
-            <main className="container mx-auto p-4">
-                <div className="sc-card max-w-2xl mx-auto">
-                    {team.gameStatus === 'created' ? (
-                        <div className="text-center">
-                            <h2 className="text-2xl font-bold mb-4">Spel Skapat!</h2>
-                            <p className="text-gray-400">Väntar på att Game Master ska starta spelet från sin panel.</p>
-                            <div className="mt-6">
-                                <Spinner />
-                            </div>
-                        </div>
-                    ) : (
-                        isLeader ? (
-                            <div>
-                                <h2 className="text-2xl font-bold mb-4">Välj en bana för att skapa ett spel</h2>
-                                {courses.length > 0 ? (
-                                    <div className="space-y-4">
-                                        <select
-                                            value={selectedCourse}
-                                            onChange={(e) => setSelectedCourse(e.target.value)}
-                                            className="sc-input"
-                                        >
-                                            {courses.map(course => (
-                                                <option key={course.id} value={course.id}>{course.name}</option>
-                                            ))}
-                                        </select>
-                                        <button
-                                            onClick={handleCreateGame}
-                                            disabled={isCreating}
-                                            className="sc-button sc-button-blue w-full"
-                                        >
-                                            {isCreating ? 'Skapar...' : 'Skapa Spel'}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <p className="text-gray-400">Inga banor har skapats än.</p>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="text-center">
-                                <h2 className="text-2xl font-bold mb-4">Välkommen till lobbyn!</h2>
-                                <p className="text-gray-400">Lagledaren väljer en bana. Spelet startar snart.</p>
-                                <div className="mt-6">
-                                    <Spinner />
-                                </div>
-                            </div>
-                        )
-                    )}
+    if (game && game.status !== 'finished') {
+        return (
+            <div className="container mx-auto p-4 max-w-2xl text-center">
+                 <Header title={`Lobby: ${team.name}`} user={user} userData={userData} />
+                 <div className="sc-card mt-8">
+                    <h2 className="text-2xl font-bold text-accent-cyan mb-4">Ett spel pågår redan!</h2>
+                    <p className="mb-6">Bana: {game.course.name}</p>
+                    <button onClick={() => navigate(`/game/${game.id}`)} className="sc-button sc-button-blue w-full">Gå till spelet</button>
                 </div>
-            </main>
+            </div>
+        );
+    }
+
+    return (
+        <div className="container mx-auto p-4 max-w-2xl text-center">
+            <Header title={`Lobby: ${team.name}`} user={user} userData={userData} />
+            <div className="sc-card mt-8">
+                {isLeader ? (
+                    <>
+                        <h2 className="text-2xl font-bold text-accent-cyan mb-4">Skapa ett nytt spel</h2>
+                        <div className="text-left mb-4">
+                            <label htmlFor="course-select" className="block text-sm font-medium text-text-secondary mb-2">Välj bana:</label>
+                            <select 
+                                id="course-select"
+                                value={selectedCourse} 
+                                onChange={(e) => setSelectedCourse(e.target.value)} 
+                                className="sc-input"
+                            >
+                                {courses.map(course => (
+                                    <option key={course.id} value={course.id}>{course.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <button onClick={handleCreateGame} className="sc-button w-full">Skapa spel</button>
+                    </>
+                ) : (
+                    <>
+                        <h2 className="text-2xl font-bold text-accent-yellow mb-4">Väntar...</h2>
+                        <p>Lagledaren förbereder spelet.</p>
+                        <Spinner />
+                    </>
+                )}
+            </div>
         </div>
     );
 };
 
 export default Lobby;
+

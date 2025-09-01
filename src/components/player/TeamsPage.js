@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from '../../firebase';
+// **KORRIGERING:** Tar bort oanvända 'serverTimestamp' från importen.
 import { collection, doc, updateDoc, onSnapshot, query, where, addDoc, getDocs, arrayUnion } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
@@ -16,29 +17,23 @@ const TeamCard = ({ team, user }) => {
     const isLeader = user.uid === team.leaderId;
 
     useEffect(() => {
-        const q = query(collection(db, 'games'), where('teamId', '==', team.id));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setGame(snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+        // Om det inte finns något aktivt spel, behöver vi inte lyssna.
+        if (!team.currentGameId) {
+            setGame(null);
+            setLoadingGame(false);
+            return;
+        }
+        const gameRef = doc(db, 'games', team.currentGameId);
+        const unsubscribe = onSnapshot(gameRef, (doc) => {
+            setGame(doc.exists() ? { id: doc.id, ...doc.data() } : null);
             setLoadingGame(false);
         });
         return () => unsubscribe();
-    }, [team.id]);
+    }, [team.currentGameId]);
 
-    const handleStartGame = async () => {
-        if (!game || !isLeader) return;
-        try {
-            const gameRef = doc(db, 'games', game.id);
-            const teamRef = doc(db, 'teams', team.id);
-            await updateDoc(gameRef, { status: 'pending' });
-            await updateDoc(teamRef, { currentGameId: game.id });
-        } catch (error) {
-            console.error("Error starting game:", error);
-        }
-    };
-    
     const handleGoToGame = () => {
         if (!game) return;
-        navigate(`/game/${game.id}`, { state: { randomizePosition: process.env.NODE_ENV === 'development' } });
+        navigate(`/game/${game.id}`);
     };
 
     const renderAction = () => {
@@ -47,23 +42,27 @@ const TeamCard = ({ team, user }) => {
         const buttonClass = "sc-button w-full sm:w-auto text-sm py-2 px-4";
 
         if (isLeader) {
+            // Om inget spel finns, visa "Skapa Spel"-knapp
             if (!game) return <button onClick={() => navigate(`/lobby/${team.id}`)} className={buttonClass}>Skapa Spel</button>;
-            switch (game.status) {
-                case 'created': return <button onClick={handleStartGame} className={`${buttonClass} sc-button-green`}>Starta Spel</button>;
-                case 'pending':
-                case 'started': return <button onClick={handleGoToGame} className={`${buttonClass} sc-button-blue`}>Gå till Spel</button>;
-                case 'finished': return <button onClick={() => navigate(`/report/${game.id}`)} className={buttonClass}>Visa Rapport</button>;
-                default: return null;
+            
+            // Om spelet är slut, visa rapport-knappen
+            if (game.status === 'finished') {
+                return <button onClick={() => navigate(`/report/${game.id}`)} className={buttonClass}>Visa Rapport</button>;
             }
-        } else {
+            // Annars, visa "Gå till Spel"-knappen
+            return <button onClick={handleGoToGame} className={`${buttonClass} sc-button-blue`}>Gå till Spel</button>;
+
+        } else { // Om man inte är ledare
             if (!game) return <p className="text-sm text-text-secondary text-left sm:text-right">Väntar på ledare...</p>;
-            switch (game.status) {
-                case 'created': return <p className="text-sm text-accent-cyan text-left sm:text-right">Väntar på start...</p>;
-                case 'pending':
-                case 'started': return <button onClick={handleGoToGame} className={`${buttonClass} sc-button-blue`}>Gå till Spel</button>;
-                case 'finished': return <button onClick={() => navigate(`/report/${game.id}`)} className={buttonClass}>Visa Rapport</button>;
-                default: return null;
+            
+            if (game.status === 'finished') {
+                return <button onClick={() => navigate(`/report/${game.id}`)} className={buttonClass}>Visa Rapport</button>;
             }
+            // Om spelet är skapat men inte startat, visa meddelande
+            if (game.status === 'created') return <p className="text-sm text-accent-cyan text-left sm:text-right">Väntar på start...</p>;
+            
+            // Annars, låt medlemmen gå till spelet
+            return <button onClick={handleGoToGame} className={`${buttonClass} sc-button-blue`}>Gå till Spel</button>;
         }
     };
 
@@ -110,7 +109,7 @@ const TeamsPage = ({ user, userData }) => {
         leaderId: user.uid,
         memberIds: [user.uid],
         joinCode: uuidv4().substring(0, 6).toUpperCase(),
-        createdAt: new Date(),
+        createdAt: new Date(), // Använder JS Date-objekt, Firestore konverterar det.
         currentGameId: null
       });
       setTeamName('');
@@ -124,7 +123,7 @@ const TeamsPage = ({ user, userData }) => {
     if (!joinCode.trim()) return;
     setError('');
     try {
-      const q = query(collection(db, 'teams'), where('joinCode', '==', joinCode.trim()));
+      const q = query(collection(db, 'teams'), where('joinCode', '==', joinCode.trim().toUpperCase()));
       const querySnapshot = await getDocs(q);
       if (querySnapshot.empty) {
         setError("Inget lag hittades med den koden.");
@@ -144,7 +143,7 @@ const TeamsPage = ({ user, userData }) => {
     }
   };
 
-  const handleLogout = () => signOut(auth).then(() => navigate('/login'));
+  const handleLogout = () => signOut(auth).then(() => navigate('/'));
 
   return (
     <>
@@ -194,3 +193,4 @@ const TeamsPage = ({ user, userData }) => {
 };
 
 export default TeamsPage;
+

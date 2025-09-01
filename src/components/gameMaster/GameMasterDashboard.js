@@ -1,10 +1,12 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import Header from '../shared/Header';
 import { auth } from '../../firebase';
 
+// Denna komponent blir nu en permanent "ram" för alla GM-sidor.
 const GameMasterDashboard = ({ user, userData }) => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     const handleLogout = async () => {
         try {
@@ -15,51 +17,37 @@ const GameMasterDashboard = ({ user, userData }) => {
         }
     };
 
+    // En hjälpfunktion för att styla den aktiva knappen
+    const getButtonClass = (path) => {
+        return location.pathname === path
+            ? 'sc-button sc-button-blue' // Aktiv knapp-stil
+            : 'sc-button';
+    };
+
     return (
-        // **KORRIGERING:** Hela sidan slås in i en container, precis som på den
-        // fungerande TeamsPage.js. Detta garanterar en konsekvent och centrerad layout.
-        <div className="container mx-auto p-4">
+        <div className="container mx-auto p-4 max-w-7xl">
+            {/* Header och knappar som alltid visas */}
             <Header title="Game Master Panel" user={user} userData={userData}>
-                <Link to="/teams" className="neu-button">Spelarsida</Link>
-                <button onClick={handleLogout} className="neu-button neu-button-red">
+                <Link to="/teams" className="sc-button">Spelarsida</Link>
+                <button onClick={handleLogout} className="sc-button sc-button-red">
                     Logga ut
                 </button>
             </Header>
 
-            <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-                {/* Kort för banhantering */}
-                <Link to="/gm/courses" className="neu-card hover:shadow-lg transition-shadow duration-300">
-                    <h2 className="text-2xl font-bold text-accent-lime mb-2">Hantera Banor</h2>
-                    <p className="text-text-secondary">Skapa, redigera och visa alla tillgängliga banor.</p>
-                </Link>
+            <nav className="my-6 p-4 bg-gray-900/50 rounded-lg border border-gray-700 flex flex-wrap gap-4 justify-center">
+                <Link to="/gm" className={getButtonClass('/gm')}>Live-övervakning</Link>
+                <Link to="/gm/courses" className={getButtonClass('/gm/courses')}>Hantera Banor</Link>
+                <Link to="/gm/obstacles" className={getButtonClass('/gm/obstacles')}>Hinderbank</Link>
+                <Link to="/gm/users" className={getButtonClass('/gm/users')}>Användare</Link>
+                <Link to="/gm/teams" className={getButtonClass('/gm/teams')}>Lag</Link>
+            </nav>
 
-                {/* Kort för hinderbank */}
-                <Link to="/gm/obstacles" className="neu-card hover:shadow-lg transition-shadow duration-300">
-                    <h2 className="text-2xl font-bold text-accent-yellow mb-2">Hinderbank</h2>
-                    <p className="text-text-secondary">Administrera alla återanvändbara hinder och gåtor.</p>
-                </Link>
-
-                {/* Kort för användarhantering */}
-                <Link to="/gm/users" className="neu-card hover:shadow-lg transition-shadow duration-300">
-                    <h2 className="text-2xl font-bold text-accent-cyan mb-2">Användare</h2>
-                    <p className="text-text-secondary">Hantera användarroller och se registrerade spelare.</p>
-                </Link>
-
-                {/* Kort för laghantering */}
-                <Link to="/gm/teams" className="neu-card hover:shadow-lg transition-shadow duration-300">
-                    <h2 className="text-2xl font-bold text-accent-magenta mb-2">Lag</h2>
-                    <p className="text-text-secondary">Se och hantera alla skapade lag.</p>
-                </Link>
-
-                {/* Kort för live-övervakning */}
-                <Link to="/gm/monitor" className="neu-card hover:shadow-lg transition-shadow duration-300">
-                    <h2 className="text-2xl font-bold text-accent-red mb-2">Live-övervakning</h2>
-                    <p className="text-text-secondary">Övervaka pågående spel i realtid.</p>
-                </Link>
+            <main>
+                {/* Här kommer undersidorna (LiveMonitor, CourseManagement, etc.) att renderas */}
+                <Outlet />
             </main>
         </div>
     );
 };
 
 export default GameMasterDashboard;
-
