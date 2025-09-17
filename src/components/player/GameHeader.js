@@ -1,35 +1,72 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useDebug } from '../../context/DebugContext'; // Importerar debug-verktyget
 
-const GameHeader = ({ gameName, startTime, teamName }) => {
-    const [elapsedTime, setElapsedTime] = useState('00:00:00');
+// Funktion för att formatera sekunder till HH:MM:SS
+const formatTime = (seconds) => {
+    // Skyddsnät ifall värdet är ogiltigt eller negativt
+    if (isNaN(seconds) || seconds < 0) {
+        return '00:00:00';
+    }
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (Math.floor(seconds) % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+};
+
+const GameHeader = ({ gameName, teamName, startTime }) => {
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const navigate = useNavigate();
+    const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
 
     useEffect(() => {
-        if (!startTime) return;
+        // Loggar varje gång komponenten uppdateras och vad 'startTime' är
+        addLog(`GameHeader renderar. startTime: ${startTime ? startTime.toISOString() : 'ej satt'}`);
 
-        const timerInterval = setInterval(() => {
-            const now = new Date();
-            const diff = now - startTime;
+        let timerInterval = null;
 
-            const hours = String(Math.floor(diff / 3600000)).padStart(2, '0');
-            const minutes = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
-            const seconds = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+        // Kontrollerar att startTime är ett giltigt Datum-objekt
+        if (startTime instanceof Date && !isNaN(startTime)) {
+            addLog('Giltig starttid mottagen. Startar timer...');
+            
+            // Sätter igång en timer som uppdateras varje sekund
+            timerInterval = setInterval(() => {
+                const now = new Date();
+                const elapsed = Math.floor((now - startTime) / 1000);
+                setElapsedTime(elapsed);
+            }, 1000);
 
-            setElapsedTime(`${hours}:${minutes}:${seconds}`);
-        }, 1000);
+        } else if (startTime) {
+            // Loggar en varning om vi får ett startTime som inte är ett giltigt datum
+            addLog(`VARNING: Mottog startTime som inte är ett giltigt datum: ${startTime}`);
+        }
 
-        return () => clearInterval(timerInterval);
-    }, [startTime]);
+        // "Städfunktion" som körs när komponenten försvinner eller 'startTime' ändras
+        return () => {
+            if (timerInterval) {
+                addLog('Rensar och stoppar timer-intervallet.');
+                clearInterval(timerInterval);
+            }
+        };
+    }, [startTime, addLog]); // Effekt-hooken körs om när 'startTime' eller 'addLog' ändras
 
     return (
-        <header className="absolute top-0 left-0 right-0 z-[1000] p-4 bg-black bg-opacity-50 text-white flex justify-between items-center">
+        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-3 shadow-lg flex justify-between items-center border-b-4 border-primary">
             <div>
-                <h1 className="text-xl font-bold">{gameName}</h1>
-                <p className="text-sm text-gray-300">{teamName}</p>
+                <h1 className="text-xl font-bold text-text-primary">{gameName}</h1>
+                <p className="text-sm text-text-secondary">{teamName}</p>
             </div>
-            <div className="text-2xl font-mono bg-gray-900 px-4 py-2 rounded-lg shadow-lg">
-                {elapsedTime}
+            <div className="text-3xl font-mono text-accent-blue font-bold tracking-wider">
+                {formatTime(elapsedTime)}
             </div>
-        </header>
+            <button
+                onClick={() => navigate('/teams')}
+                className="sc-button sc-button-red"
+                aria-label="Avsluta spelet"
+            >
+                Avsluta
+            </button>
+        </div>
     );
 };
 

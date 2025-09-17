@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+// KORRIGERING: Importerar 'useMemo' från react
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -10,7 +11,7 @@ import { calculateDistance } from '../../utils/location';
 import { useGeolocation } from '../../hooks/useGeolocation';
 
 import GameHeader from './GameHeader';
-import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon } from '../shared/MapIcons';
+import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon } from '../shared/MapIcons';
 import Spinner from '../shared/Spinner';
 import DebugLogDisplay from './DebugLogDisplay';
 import DebugGameControls from './DebugGameControls';
@@ -40,7 +41,6 @@ const GameScreen = ({ user, userData }) => {
 
     const mapRef = useRef();
     
-    // Pausar geolocation tills vi har ett spelobjekt
     const isGeolocationPaused = !game;
 
     const { position, error: geoError, advanceSimulation, simulationState } = useGeolocation(
@@ -49,6 +49,13 @@ const GameScreen = ({ user, userData }) => {
         game,
         isGeolocationPaused
     );
+
+    // KORRIGERING: Använder useMemo för att förhindra att ett nytt Date-objekt skapas vid varje rendering.
+    // Detta stabiliserar GameHeader och ser till att timern bara startas en gång.
+    const startTimeDate = useMemo(() => {
+        return game?.startTime ? game.startTime.toDate() : undefined;
+    }, [game?.startTime]);
+
 
     useEffect(() => {
         if (geoError) {
@@ -65,12 +72,14 @@ const GameScreen = ({ user, userData }) => {
         }
 
         let unsubscribeTeam = () => {};
+        let unsubscribePlayers = () => {};
 
         const gameRef = doc(db, 'games', gameId);
         const unsubscribeGame = onSnapshot(gameRef, (gameDoc) => {
             if (!gameDoc.exists()) {
                 setError('Spelet hittades inte.');
                 setLoading(false);
+                navigate('/teams');
                 return;
             }
 
@@ -78,6 +87,7 @@ const GameScreen = ({ user, userData }) => {
             setGame(gameData);
 
             unsubscribeTeam();
+            unsubscribePlayers();
 
             if (gameData.teamId) {
                 const teamRef = doc(db, 'teams', gameData.teamId);
@@ -88,11 +98,31 @@ const GameScreen = ({ user, userData }) => {
                             const teamData = { id: teamDoc.id, ...teamDoc.data() };
                             setTeam(teamData);
 
+                            if (user?.uid && teamData.leaderId) {
+                                const isLeader = user.uid === teamData.leaderId;
+                                addLog(`Kontrollerar lagledarstatus: Du är ${isLeader ? 'lagledare' : 'inte lagledare'}.`);
+                            }
+
                             if (teamData.memberIds?.length > 0) {
-                                const memberPromises = teamData.memberIds.map(id => getDoc(doc(db, 'users', id)));
-                                const memberDocs = await Promise.all(memberPromises);
-                                const validMembers = memberDocs.filter(mdoc => mdoc.exists()).map(mdoc => ({ uid: mdoc.id, ...mdoc.data() }));
-                                setTeamMembers(validMembers);
+                                const playerPositionsRef = collection(db, 'games', gameId, 'players');
+                                unsubscribePlayers = onSnapshot(playerPositionsRef, async (playersSnapshot) => {
+                                    const playerPositions = {};
+                                    playersSnapshot.forEach(playerDoc => {
+                                        playerPositions[playerDoc.id] = playerDoc.data().position;
+                                    });
+
+                                    const memberPromises = teamData.memberIds.map(id => getDoc(doc(db, 'users', id)));
+                                    const memberDocs = await Promise.all(memberPromises);
+                                    
+                                    const validMembers = memberDocs
+                                        .filter(mdoc => mdoc.exists())
+                                        .map(mdoc => ({ 
+                                            uid: mdoc.id, 
+                                            ...mdoc.data(),
+                                            position: playerPositions[mdoc.id] || null
+                                        }));
+                                    setTeamMembers(validMembers);
+                                });
                             } else {
                                 setTeamMembers([]);
                             }
@@ -115,13 +145,12 @@ const GameScreen = ({ user, userData }) => {
         return () => {
             unsubscribeGame();
             unsubscribeTeam();
+            unsubscribePlayers();
         };
-    }, [gameId]);
+    }, [gameId, navigate, user, addLog]);
 
-    // **NYTT:** Denna effekt hanterar automatisk start av spelet.
     useEffect(() => {
         const isLeader = user?.uid === team?.leaderId;
-        // Villkor: spelet har inte startat, vi har en position, och användaren är lagledare.
         if (game && !game.startTime && position && isLeader) {
             const startPoint = game.course?.startPoint || game.course?.start;
             if (!startPoint) return;
@@ -130,7 +159,7 @@ const GameScreen = ({ user, userData }) => {
             const startLng = startPoint.longitude || startPoint.lng;
             const { latitude, longitude } = position.coords;
 
-            const START_RADIUS = 20; // 20 meters radie för att starta spelet
+            const START_RADIUS = 20;
             const distance = calculateDistance(latitude, longitude, startLat, startLng);
 
             if (distance <= START_RADIUS) {
@@ -146,7 +175,6 @@ const GameScreen = ({ user, userData }) => {
             }
         }
     }, [position, game, team, user, gameId, addLog]);
-
 
     const completeObstacle = useCallback(async (obstacleId) => {
         if (!game || !obstacleId || game.completedObstacles.includes(obstacleId)) return;
@@ -173,7 +201,6 @@ const GameScreen = ({ user, userData }) => {
     }, [game, gameId, addLog, navigate]);
 
     const checkObstacleProximity = useCallback((lat, lon) => {
-        // **KORRIGERING:** Kollar närhet först när spelet faktiskt har startat.
         if (!game || !game.startTime || !game.activeObstacleId) return;
 
         const activeObstacle = game.course.obstacles.find(o => o.obstacleId === game.activeObstacleId);
@@ -184,7 +211,7 @@ const GameScreen = ({ user, userData }) => {
         if (typeof obstacleLat !== 'number' || typeof obstacleLng !== 'number') return;
         
         const distance = calculateDistance(lat, lon, obstacleLat, obstacleLng);
-        const obstacleRadius = activeObstacle.radius || 15; // Standardradie på 15m
+        const obstacleRadius = activeObstacle.radius || 15;
 
         if (distance <= obstacleRadius) {
             completeObstacle(activeObstacle.obstacleId);
@@ -201,7 +228,6 @@ const GameScreen = ({ user, userData }) => {
             lastUpdate: serverTimestamp()
         }, { merge: true }).catch(err => console.error("Kunde inte uppdatera position:", err));
         
-        // Kör närhetskontroll för alla spelare, inte bara ledaren.
         checkObstacleProximity(latitude, longitude);
     }, [position, game, team, user, gameId, checkObstacleProximity]);
     
@@ -238,11 +264,12 @@ const GameScreen = ({ user, userData }) => {
     const center = currentPosition || [startLat, startLng];
     
     return (
-        <div style={{ height: '100vh', width: '100vw' }}>
+        <div style={{ height: '100vh', width: '100vw' }} className="relative">
             <GameHeader 
                 gameName={game.course.name}
                 teamName={team.name}
-                startTime={game.startTime?.toDate()}
+                // Använder det memoiserade värdet
+                startTime={startTimeDate}
             />
             <MapContainer center={center} zoom={15} ref={mapRef} style={{ height: '100%', width: '100%' }}>
                 <TileLayer
@@ -261,11 +288,17 @@ const GameScreen = ({ user, userData }) => {
                 ))}
 
                 {currentPosition && (
-                    <Marker position={currentPosition} icon={selfIcon}><Popup>Du</Popup></Marker>
+                    <Marker position={currentPosition} icon={user.uid === team?.leaderId ? leaderIcon : selfIcon}>
+                        <Popup>Du {user.uid === team?.leaderId && '(Lagledare)'}</Popup>
+                    </Marker>
                 )}
 
                 {teamMembers.filter(m => m.uid !== user.uid).map(member => (
-                    member.position && <TeamMarker key={member.uid} position={[member.position.latitude, member.position.longitude]} />
+                    <TeamMarker 
+                        key={member.uid} 
+                        member={member}
+                        isLeader={member.uid === team?.leaderId}
+                    />
                 ))}
             </MapContainer>
             
@@ -285,4 +318,3 @@ const GameScreen = ({ user, userData }) => {
 };
 
 export default GameScreen;
-
