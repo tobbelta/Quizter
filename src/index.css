@@ -28,6 +28,12 @@ body {
   animation: gradient-animation 25s ease infinite;
   color: var(--text-primary);
   font-family: 'Roboto Mono', monospace;
+  /* Mobile optimizations */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .sc-card {
@@ -50,6 +56,13 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 0 5px var(--glow-color);
+  /* Mobile touch optimizations */
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .sc-button:hover {
   background-color: var(--accent-cyan);
@@ -66,6 +79,7 @@ body {
 .sc-button-blue { background-color: var(--accent-blue); color: white; border-color: var(--accent-blue); }
 .sc-button-red { background-color: var(--accent-red); color: white; border-color: var(--accent-red); }
 .sc-button-green { background-color: #2ECC71; color: white; border-color: #2ECC71; }
+.sc-button-yellow { background-color: var(--accent-yellow); color: black; border-color: var(--accent-yellow); }
 
 
 .sc-input {
@@ -93,4 +107,103 @@ body {
 }
 .leaflet-popup-tip {
     background-color: var(--card-bg) !important;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  body {
+    /* Reduce animation intensity on mobile to save battery */
+    animation: gradient-animation 45s ease infinite;
+  }
+
+  .sc-card {
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  .sc-button {
+    padding: 1rem 1.25rem;
+    font-size: 0.875rem;
+    min-height: 48px;
+  }
+
+  .sc-input {
+    padding: 1rem;
+    font-size: 16px; /* Prevents zoom on iOS */
+    min-height: 44px;
+  }
+
+  /* Better navigation for mobile */
+  nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  nav .flex {
+    flex-wrap: nowrap !important;
+    min-width: max-content;
+  }
+
+  /* Optimize map for mobile */
+  .leaflet-container {
+    height: 50vh !important;
+    min-height: 300px;
+  }
+
+  /* Improve modal experience on mobile */
+  .fixed.inset-0 {
+    padding: 0.5rem;
+  }
+
+  /* Better touch targets for checkboxes */
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--accent-cyan);
+  }
+
+  /* Optimize tables for mobile */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Ultra small screens */
+@media (max-width: 480px) {
+  .container {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  .sc-button {
+    padding: 0.875rem 1rem;
+    font-size: 0.8rem;
+  }
+
+  .sc-card {
+    padding: 0.75rem;
+  }
+
+  /* Stack buttons vertically on very small screens */
+  .flex.gap-2 {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .flex.gap-3 {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* Full width buttons on mobile */
+  .sc-button.w-full.sm\\:w-auto {
+    width: 100% !important;
+  }
+}
+
+/* Landscape mobile optimization */
+@media (max-width: 768px) and (orientation: landscape) {
+  .leaflet-container {
+    height: 40vh !important;
+  }
 }

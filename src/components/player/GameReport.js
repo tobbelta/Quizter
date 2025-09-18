@@ -55,7 +55,36 @@ const GameReport = ({ user, userData }) => {
     if (loading) return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
     if (!report) return <div className="text-center mt-10 p-4 sc-card max-w-md mx-auto">Kunde inte ladda spelrapport.</div>;
     
-    const totalTime = (report.game.finishTime.seconds - report.game.startTime.seconds);
+    // Säker beräkning av total tid
+    let totalTime = 0;
+    try {
+        if (report.game.finishTime && report.game.startTime) {
+            let finishSeconds, startSeconds;
+
+            // Hantera Firestore Timestamp
+            if (report.game.finishTime.seconds) {
+                finishSeconds = report.game.finishTime.seconds;
+            } else if (report.game.finishTime.toDate) {
+                finishSeconds = report.game.finishTime.toDate().getTime() / 1000;
+            } else {
+                finishSeconds = new Date(report.game.finishTime).getTime() / 1000;
+            }
+
+            if (report.game.startTime.seconds) {
+                startSeconds = report.game.startTime.seconds;
+            } else if (report.game.startTime.toDate) {
+                startSeconds = report.game.startTime.toDate().getTime() / 1000;
+            } else {
+                startSeconds = new Date(report.game.startTime).getTime() / 1000;
+            }
+
+            totalTime = Math.max(0, finishSeconds - startSeconds);
+        }
+    } catch (error) {
+        console.error('Fel vid beräkning av total tid:', error);
+        console.log('finishTime:', report.game.finishTime);
+        console.log('startTime:', report.game.startTime);
+    }
 
     return (
         <>
@@ -91,20 +120,16 @@ const GameReport = ({ user, userData }) => {
                         <h2 className="text-2xl font-bold uppercase mb-3 text-accent-cyan">Hinderöversikt</h2>
                         <ul className="space-y-3">
                             {(report.course.obstacles || []).map((obstacle, index) => {
-                                const solvedByEntry = (report.game.solvedBy || []).find(entry => entry.obstacleIndex === index);
-                                const wasFaulty = (report.game.faultyObstacles || []).includes(index);
+                                const isCompleted = (report.game.completedObstacles || []).includes(obstacle.obstacleId);
                                 let status;
-                                if (wasFaulty) {
-                                    status = <span className="font-semibold text-yellow-400">Felaktigt (hoppades över)</span>;
-                                } else if (solvedByEntry) {
-                                    const solverName = report.users[solvedByEntry.userId]?.displayName || 'Okänd';
-                                    status = <>Klarades av <span className="font-semibold text-green-400">{solverName}</span></>;
+                                if (isCompleted) {
+                                    status = <span className="font-semibold text-green-400">Klarad</span>;
                                 } else {
                                     status = <span className="font-semibold text-red-500">Ej klarad</span>;
                                 }
                                 return (
                                     <li key={index} className="p-3 bg-black/20 rounded-md">
-                                        <p className="font-bold">{obstacle.question}</p>
+                                        <p className="font-bold">Hinder {index + 1}: {obstacle.obstacleId}</p>
                                         <p className="text-sm text-text-secondary">{status}</p>
                                     </li>
                                 );
