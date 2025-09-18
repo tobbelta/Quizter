@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const RiddleEditorModal = ({ onSave, onCancel }) => {
+const RiddleEditorModal = ({ obstacle, onSave, onCancel }) => {
     const [question, setQuestion] = useState('');
     const [options, setOptions] = useState(['', '', '', '']);
     const [correctAnswer, setCorrectAnswer] = useState(0);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (obstacle) {
+            setQuestion(obstacle.question || '');
+            setOptions(obstacle.options || ['', '', '', '']);
+            setCorrectAnswer(obstacle.correctAnswer || 0);
+        }
+    }, [obstacle]);
 
     const handleOptionChange = (index, value) => {
         const newOptions = [...options];
@@ -25,7 +33,7 @@ const RiddleEditorModal = ({ onSave, onCancel }) => {
     return (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[1001] p-4">
             <div className="neu-card w-full max-w-lg">
-                <h2 className="text-2xl font-bold mb-4 uppercase">Skapa/Redigera Gåta</h2>
+                <h2 className="text-2xl font-bold mb-4 uppercase">{obstacle ? 'Redigera Gåta' : 'Skapa Gåta'}</h2>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-bold mb-2 uppercase">Fråga:</label>

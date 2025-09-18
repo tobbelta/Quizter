@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../firebase';
 import { DebugContext } from '../../context/DebugContext';
@@ -12,7 +12,6 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [localIsDebug, setLocalIsDebug] = useState(false); // Lokalt state för checkboxen
     const { setDebugMode } = useContext(DebugContext);
-    const navigate = useNavigate();
 
     const handleLogin = async (e) => {
         e.preventDefault();

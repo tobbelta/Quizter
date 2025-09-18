@@ -85,7 +85,7 @@ function App() {
 
                     {/* Spelare Routes */}
                     <Route path="/teams" element={<PrivateRoute isAuth={isAuthenticated}><TeamsPage user={user} userData={userData} /></PrivateRoute>} />
-                    <Route path="/lobby/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><Lobby user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/lobby" element={<PrivateRoute isAuth={isAuthenticated}><Lobby user={user} userData={userData} /></PrivateRoute>} />
                     <Route path="/game/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><GameScreen user={user} userData={userData} /></PrivateRoute>} />
                     <Route path="/json-data" element={<PrivateRoute isAuth={isAuthenticated}><JsonDataScreen user={user} userData={userData} /></PrivateRoute>} />
                     <Route path="/report/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><GameReport user={user} userData={userData} /></PrivateRoute>} />

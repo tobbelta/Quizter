@@ -35,9 +35,9 @@ const GameMasterDashboard = ({ user, userData }) => {
             </Header>
 
             <nav className="my-6 p-4 bg-gray-900/50 rounded-lg border border-gray-700 flex flex-wrap gap-4 justify-center">
-                <Link to="/gm" className={getButtonClass('/gm')}>Live-övervakning</Link>
-                <Link to="/gm/courses" className={getButtonClass('/gm/courses')}>Hantera Banor</Link>
-                <Link to="/gm/obstacles" className={getButtonClass('/gm/obstacles')}>Hinderbank</Link>
+                <Link to="/gm" className={getButtonClass('/gm')}>Spel</Link>
+                <Link to="/gm/courses" className={getButtonClass('/gm/courses')}>Banor</Link>
+                <Link to="/gm/obstacles" className={getButtonClass('/gm/obstacles')}>Hinder</Link>
                 <Link to="/gm/users" className={getButtonClass('/gm/users')}>Användare</Link>
                 <Link to="/gm/teams" className={getButtonClass('/gm/teams')}>Lag</Link>
             </nav>

@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../shared/Spinner';
 import { useDebug } from '../../context/DebugContext';
+import Header from '../shared/Header';
 
 const Lobby = ({ user, userData }) => {
     const [courses, setCourses] = useState([]);
@@ -17,7 +18,12 @@ const Lobby = ({ user, userData }) => {
 
     const navigate = useNavigate();
     const location = useLocation();
-    const { addLog } = useDebug();
+    const { addLog, clearLogs } = useDebug();
+
+    // Check if coming from a specific team
+    const fromTeamPage = location.state?.fromTeamPage;
+    const preselectedTeamId = location.state?.teamId;
+    const preselectedTeamName = location.state?.teamName;
 
     // Fetch courses
     useEffect(() => {
@@ -32,7 +38,6 @@ const Lobby = ({ user, userData }) => {
     useEffect(() => {
         if (!user) return;
 
-        const preselectedTeamId = location.state?.teamId;
         if (preselectedTeamId) {
             addLog(`Mottog förvalt lag-ID: ${preselectedTeamId}`);
             setSelectedTeamId(preselectedTeamId);
@@ -56,9 +61,11 @@ const Lobby = ({ user, userData }) => {
             setLoading(false);
         });
         return unsubscribe;
-    }, [user, location.state, addLog]);
+    }, [user, location.state, addLog, preselectedTeamId]);
 
     const handleCreateGame = async () => {
+        // Rensa loggen för det nya spelet
+        clearLogs();
         addLog("1. 'Skapa Spel' klickad. Startar processen.");
         if (!selectedCourseId || !selectedTeamId) {
             const errorMsg = 'Du måste välja både en bana och ett lag.';
@@ -110,49 +117,101 @@ const Lobby = ({ user, userData }) => {
     if (loading) return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
 
     return (
-        <div className="container mx-auto p-8">
-            <h1 className="text-3xl font-bold mb-6">Lobby</h1>
-            {error && <p className="mb-4 text-red-500">{error}</p>}
-            <div className="space-y-4">
-                <div>
-                    <label htmlFor="course" className="block text-sm font-medium text-gray-700">Välj bana</label>
-                    <select
-                        id="course" value={selectedCourseId}
-                        onChange={(e) => setSelectedCourseId(e.target.value)}
-                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                    >
-                        <option value="" disabled>Välj en bana...</option>
-                        {courses.map(course => <option key={course.id} value={course.id}>{course.name}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label htmlFor="team" className="block text-sm font-medium text-gray-700">Välj lag</label>
-                    <select
-                        id="team" value={selectedTeamId}
-                        onChange={(e) => setSelectedTeamId(e.target.value)}
-                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                    >
-                        <option value="" disabled>Välj ett lag...</option>
-                        {teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
-                    </select>
-                </div>
-                <div className="flex items-center">
-                    <input id="test-mode" name="test-mode" type="checkbox" checked={isTestMode}
-                        onChange={(e) => setIsTestMode(e.target.checked)}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="test-mode" className="ml-2 block text-sm text-gray-900">Testläge</label>
-                </div>
-            </div>
-            <div className="mt-6">
+        <div className="container mx-auto p-4 max-w-4xl">
+            <Header
+                title={fromTeamPage ? `Skapa Spel för ${preselectedTeamName}` : "Skapa Nytt Spel"}
+                user={user}
+                userData={userData}
+            >
                 <button
-                    onClick={handleCreateGame}
-                    disabled={!selectedCourseId || !selectedTeamId || isCreating}
-                    className="w-full sc-button sc-button-blue disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    onClick={() => navigate('/teams')}
+                    className="sc-button"
                 >
-                    {isCreating ? 'Skapar spel...' : 'Skapa Spel'}
+                    Tillbaka till Lag
                 </button>
-            </div>
+            </Header>
+
+            <main>
+                {error && (
+                    <div className="mb-4 text-red-500 bg-red-900/50 p-3 rounded-lg">
+                        {error}
+                    </div>
+                )}
+
+                <div className="sc-card">
+                    <div className="space-y-6">
+                        {fromTeamPage && (
+                            <div className="bg-accent-cyan/10 border border-accent-cyan/20 rounded-lg p-4">
+                                <h3 className="text-lg font-bold text-accent-cyan mb-2">Valt Lag</h3>
+                                <p className="text-text-primary">{preselectedTeamName}</p>
+                                <p className="text-text-secondary text-sm">Detta lag är förvalt och kan inte ändras från denna sida.</p>
+                            </div>
+                        )}
+
+                        <div>
+                            <label htmlFor="course" className="block text-sm font-bold mb-2 text-accent-cyan uppercase">
+                                Välj Bana
+                            </label>
+                            <select
+                                id="course"
+                                value={selectedCourseId}
+                                onChange={(e) => setSelectedCourseId(e.target.value)}
+                                className="sc-input"
+                            >
+                                <option value="" disabled>Välj en bana...</option>
+                                {courses.map(course => (
+                                    <option key={course.id} value={course.id}>
+                                        {course.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {!fromTeamPage && (
+                            <div>
+                                <label htmlFor="team" className="block text-sm font-bold mb-2 text-accent-cyan uppercase">
+                                    Välj Lag
+                                </label>
+                                <select
+                                    id="team"
+                                    value={selectedTeamId}
+                                    onChange={(e) => setSelectedTeamId(e.target.value)}
+                                    className="sc-input"
+                                >
+                                    <option value="" disabled>Välj ett lag...</option>
+                                    {teams.map(team => (
+                                        <option key={team.id} value={team.id}>
+                                            {team.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        <div className="flex items-center space-x-3">
+                            <input
+                                id="test-mode"
+                                name="test-mode"
+                                type="checkbox"
+                                checked={isTestMode}
+                                onChange={(e) => setIsTestMode(e.target.checked)}
+                                className="h-5 w-5 bg-gray-800 border-gray-600 rounded text-accent-cyan focus:ring-accent-cyan focus:ring-offset-gray-900"
+                            />
+                            <label htmlFor="test-mode" className="text-text-primary">
+                                Testläge (för utveckling)
+                            </label>
+                        </div>
+
+                        <button
+                            onClick={handleCreateGame}
+                            disabled={!selectedCourseId || !selectedTeamId || isCreating}
+                            className="sc-button sc-button-blue w-full text-lg py-3"
+                        >
+                            {isCreating ? 'Skapar spel...' : 'Skapa Spel'}
+                        </button>
+                    </div>
+                </div>
+            </main>
         </div>
     );
 };

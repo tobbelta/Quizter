@@ -20,7 +20,7 @@ const Header = ({ title, user, userData, children }) => {
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <p className="hidden md:block text-text-secondary mr-4">
-                    Välkommen, <span className="font-bold text-text-primary">{userData?.displayName || user.email}</span>!
+                    Välkommen, <span className="font-bold text-text-primary">{userData?.displayName || user?.email || 'Användare'}</span>!
                 </p>
                 {/* Meny för stora skärmar */}
                 <div className="hidden sm:flex items-center gap-2">

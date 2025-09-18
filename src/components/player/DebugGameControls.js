@@ -17,20 +17,33 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
       <div>
         <h4 className="font-bold text-accent-yellow mb-2 border-b border-gray-600">Simulering</h4>
         <div className="flex flex-col gap-2">
-            <button 
-              onClick={onAdvanceSimulation} 
-              disabled={isMoving || simulationState.stage === 'AT_FINISH'}
+            <button
+              onClick={onAdvanceSimulation}
+              disabled={isMoving || simulationState.stage === 'AT_FINISH' || simulationState.description.startsWith('Vid ')}
               className="sc-button sc-button-blue w-full text-sm"
             >
               {isMoving ? 'Reser...' : simulationState.description}
             </button>
-            <button 
-              onClick={onCompleteObstacle} 
+            <button
+              onClick={onCompleteObstacle}
               disabled={!game.activeObstacleId || simulationState.stage !== 'AT_OBSTACLE'}
               className="sc-button sc-button-green w-full text-sm"
             >
-              Slutför Hinder
+              Visa Gåta
             </button>
+            {simulationState.stage === 'AT_FINISH' && (
+              <button
+                onClick={() => {
+                  // Simulera att man når målet
+                  if (typeof onCompleteObstacle === 'function') {
+                    onCompleteObstacle('finish');
+                  }
+                }}
+                className="sc-button sc-button-blue w-full text-sm"
+              >
+                Avsluta Spel
+              </button>
+            )}
         </div>
       </div>
       <div>

@@ -20,11 +20,16 @@ export const DebugProvider = ({ children }) => {
         });
     }, []);
 
+    const clearLogs = useCallback(() => {
+        setLogs([]);
+    }, []);
+
     const value = {
         isDebug,
         setDebugMode,
         logs,
         addLog,
+        clearLogs,
         simulationSpeed,
         setSimulationSpeed,
     };

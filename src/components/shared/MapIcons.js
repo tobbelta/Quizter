@@ -117,11 +117,15 @@ export const TeamMarker = ({ member, isLeader }) => {
 
 // ObstacleMarker-komponent
 export const ObstacleMarker = ({ obstacle, isCompleted }) => {
-    const lat = obstacle.location?.latitude || obstacle.lat;
-    const lng = obstacle.location?.longitude || obstacle.lng;
+    // Försök hitta koordinater i olika strukturer
+    const lat = obstacle.location?.latitude || obstacle.position?.lat || obstacle.lat;
+    const lng = obstacle.location?.longitude || obstacle.position?.lng || obstacle.lng;
     const radius = obstacle.radius || 15;
 
-    if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+        console.log('ObstacleMarker: Ogiltiga koordinater för obstacle:', obstacle);
+        return null;
+    }
 
     const icon = isCompleted ? completedObstacleIcon : activeObstacleIcon;
     const color = isCompleted ? 'purple' : 'orange';

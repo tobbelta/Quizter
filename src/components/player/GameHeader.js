@@ -51,21 +51,28 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
     }, [startTime, addLog]); // Effekt-hooken körs om när 'startTime' eller 'addLog' ändras
 
     return (
-        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-3 shadow-lg flex justify-between items-center border-b-4 border-primary">
-            <div>
+        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-4 shadow-lg flex justify-between items-center border-b-4 border-primary">
+            <div className="flex-1">
                 <h1 className="text-xl font-bold text-text-primary">{gameName}</h1>
-                <p className="text-sm text-text-secondary">{teamName}</p>
+                <p className="text-xl font-bold text-white bg-accent-cyan px-3 py-1 rounded-md inline-block">{teamName}</p>
             </div>
-            <div className="text-3xl font-mono text-accent-blue font-bold tracking-wider">
-                {formatTime(elapsedTime)}
+            <div className="flex-1 text-center">
+                <div className="inline-block bg-black bg-opacity-80 px-6 py-3 rounded-lg border-2 border-accent-yellow">
+                    <div className="text-xs uppercase text-accent-yellow font-bold mb-1">TID</div>
+                    <div className="text-4xl font-mono text-white font-bold tracking-wider">
+                        {formatTime(elapsedTime)}
+                    </div>
+                </div>
             </div>
-            <button
-                onClick={() => navigate('/teams')}
-                className="sc-button sc-button-red"
-                aria-label="Avsluta spelet"
-            >
-                Avsluta
-            </button>
+            <div className="flex-1 flex justify-end">
+                <button
+                    onClick={() => navigate('/teams')}
+                    className="sc-button sc-button-red"
+                    aria-label="Avsluta spelet"
+                >
+                    Avsluta
+                </button>
+            </div>
         </div>
     );
 };
