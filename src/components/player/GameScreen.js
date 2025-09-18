@@ -447,21 +447,26 @@ const GameScreen = ({ user, userData }) => {
     const center = currentPosition || [startLat, startLng];
     
     return (
-        <div style={{ height: '100vh', width: '100vw' }} className="relative">
-            <GameHeader 
+        <div className="h-screen w-screen overflow-hidden">
+            <GameHeader
                 gameName={game.course.name}
                 teamName={team.name}
                 // Använder det memoiserade värdet
                 startTime={startTimeDate}
             />
-            <MapContainer
-                center={center}
-                zoom={15}
-                ref={mapRef}
-                style={{ height: '100%', width: '100%' }}
-                preferCanvas={adaptiveLoading.shouldReduceData} // Use canvas for better performance on slow devices
-                zoomControl={false} // Dölj zoom-kontroller för renare UI
-            >
+            <div className="w-full" style={{ height: 'calc(100vh - 32px)' }}>
+                <MapContainer
+                    center={center}
+                    zoom={15}
+                    ref={mapRef}
+                    style={{ height: '100%', width: '100%' }}
+                    preferCanvas={adaptiveLoading.shouldReduceData} // Use canvas for better performance on slow devices
+                    zoomControl={false} // Dölj zoom-kontroller för renare UI
+                    whenCreated={(map) => {
+                        // Force map to resize after creation
+                        setTimeout(() => map.invalidateSize(), 100);
+                    }}
+                >
                 <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -503,12 +508,13 @@ const GameScreen = ({ user, userData }) => {
                     />
                 ))}
             </MapContainer>
-            
+            </div>
+
             {/* Always show debug settings button */}
             <DebugSettings />
 
             {isDebug && (
-                <div className={`absolute ${minimalControls ? 'bottom-4 left-4' : 'bottom-12 left-0 right-0'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
+                <div className={`fixed ${minimalControls ? 'bottom-4 left-4' : 'bottom-4 left-4 right-4'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
                     {!minimalControls && showDebugInfo && <DebugLogDisplay />}
                     <DebugGameControls
                         onAdvanceSimulation={advanceSimulation}
