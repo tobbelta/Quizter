@@ -235,29 +235,28 @@ const TeamsPage = ({ user, userData }) => {
     }
   }, [joinCode, user.uid]);
 
-  // Bekräftelsefunktioner
-  const confirmDeleteTeam = useCallback(async (teamId) => {
-    try {
-      await deleteDoc(doc(db, 'teams', teamId));
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    } catch (error) {
-      console.error("Error deleting team:", error);
-      setError("Kunde inte radera laget.");
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    }
-  }, []);
-
   // Raderingsfunktioner
   const handleDeleteTeam = useCallback((teamId) => {
     const team = teams.find(t => t.id === teamId);
     if (!team || team.leaderId !== user.uid) return; // Säkerhetskoll
 
+    const deleteTeam = async () => {
+      try {
+        await deleteDoc(doc(db, 'teams', teamId));
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      } catch (error) {
+        console.error("Error deleting team:", error);
+        setError("Kunde inte radera laget.");
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      }
+    };
+
     setConfirmModal({
       isOpen: true,
       message: `Är du säker på att du vill radera laget "${team.name}" permanent? Denna åtgärd kan inte ångras.`,
-      onConfirm: () => confirmDeleteTeam(teamId),
+      onConfirm: deleteTeam,
     });
-  }, [teams, user.uid, confirmDeleteTeam]);
+  }, [teams, user.uid]);
 
   const handleToggleTeam = useCallback((teamId) => {
     const team = teams.find(t => t.id === teamId);
@@ -283,68 +282,68 @@ const TeamsPage = ({ user, userData }) => {
     setSelectedTeams(newSelected);
   }, [teams, user.uid, selectedTeams]);
 
-  const confirmBulkDelete = useCallback(async () => {
-    try {
-      const deletePromises = Array.from(selectedTeams)
-        .filter(teamId => {
-          const team = teams.find(t => t.id === teamId);
-          return team && team.leaderId === user.uid; // Säkerhetskoll
-        })
-        .map(teamId => deleteDoc(doc(db, 'teams', teamId)));
-
-      await Promise.all(deletePromises);
-      setSelectedTeams(new Set());
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    } catch (error) {
-      console.error("Error bulk deleting teams:", error);
-      setError("Kunde inte radera lagen.");
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    }
-  }, [selectedTeams, teams, user.uid]);
-
   const handleBulkDelete = useCallback(() => {
     if (selectedTeams.size === 0) return;
+
+    const bulkDelete = async () => {
+      try {
+        const deletePromises = Array.from(selectedTeams)
+          .filter(teamId => {
+            const team = teams.find(t => t.id === teamId);
+            return team && team.leaderId === user.uid; // Säkerhetskoll
+          })
+          .map(teamId => deleteDoc(doc(db, 'teams', teamId)));
+
+        await Promise.all(deletePromises);
+        setSelectedTeams(new Set());
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      } catch (error) {
+        console.error("Error bulk deleting teams:", error);
+        setError("Kunde inte radera lagen.");
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      }
+    };
 
     setConfirmModal({
       isOpen: true,
       message: `Är du säker på att du vill radera ${selectedTeams.size} lag permanent? Denna åtgärd kan inte ångras.`,
-      onConfirm: confirmBulkDelete,
+      onConfirm: bulkDelete,
     });
-  }, [selectedTeams.size, confirmBulkDelete]);
-
-  const confirmRestartGame = useCallback(async (gameId) => {
-    try {
-      // Rensa loggen för det nya spelet
-      clearLogs();
-
-      // Återställ spelet till ursprungligt tillstånd
-      await updateDoc(doc(db, 'games', gameId), {
-        status: 'created',
-        startTime: null,
-        finishTime: null,
-        activeObstacleId: null,
-        completedObstacles: [],
-        // Behåll courseId, teamId och createdAt
-      });
-
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    } catch (error) {
-      console.error("Error restarting game:", error);
-      setError("Kunde inte starta om spelet.");
-      setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
-    }
-  }, [clearLogs]);
+  }, [selectedTeams, teams, user.uid]);
 
   const handleRestartGame = useCallback(async (gameId) => {
     const game = teams.find(t => t.currentGameId === gameId);
     if (!game || game.leaderId !== user.uid) return; // Säkerhetskoll
 
+    const restartGame = async () => {
+      try {
+        // Rensa loggen för det nya spelet
+        clearLogs();
+
+        // Återställ spelet till ursprungligt tillstånd
+        await updateDoc(doc(db, 'games', gameId), {
+          status: 'created',
+          startTime: null,
+          finishTime: null,
+          activeObstacleId: null,
+          completedObstacles: [],
+          // Behåll courseId, teamId och createdAt
+        });
+
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      } catch (error) {
+        console.error("Error restarting game:", error);
+        setError("Kunde inte starta om spelet.");
+        setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
+      }
+    };
+
     setConfirmModal({
       isOpen: true,
       message: `Är du säker på att du vill starta om spelet? All speldata kommer att nollställas och spelet återgår till vänteläge.`,
-      onConfirm: () => confirmRestartGame(gameId),
+      onConfirm: restartGame,
     });
-  }, [teams, user.uid, confirmRestartGame]);
+  }, [teams, user.uid, clearLogs]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -372,7 +371,7 @@ const TeamsPage = ({ user, userData }) => {
       />
     )}
     <div className="container mx-auto p-4 max-w-5xl">
-      <Header title="Mina Lag" user={user} userData={userData}>
+      <Header title={`Lag för ${userData?.displayName || user?.email || 'Användare'}`} user={user} userData={userData}>
         <button onClick={() => setIsInstructionsOpen(true)} className="sc-button">Instruktioner</button>
         <button onClick={() => setIsProfileOpen(true)} className="sc-button">Profil</button>
         <button onClick={handleLogout} className="sc-button sc-button-red">Logga ut</button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDebug } from '../../context/DebugContext'; // Importerar debug-verktyget
+import Logo from '../shared/Logo';
 
 // Funktion för att formatera sekunder till HH:MM:SS
 const formatTime = (seconds) => {
@@ -51,26 +52,34 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
     }, [startTime, addLog]); // Effekt-hooken körs om när 'startTime' eller 'addLog' ändras
 
     return (
-        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-4 shadow-lg flex justify-between items-center border-b-4 border-primary">
-            <div className="flex-1">
-                <h1 className="text-xl font-bold text-text-primary">{gameName}</h1>
-                <p className="text-xl font-bold text-white bg-accent-cyan px-3 py-1 rounded-md inline-block">{teamName}</p>
+        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-2 shadow-lg flex justify-between items-center border-b-2 border-primary">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Logo size={28} className="flex-shrink-0" />
+                <div className="flex items-center gap-2 min-w-0">
+                    <div className="bg-black bg-opacity-80 px-2 py-1 rounded border border-primary">
+                        <h1 className="text-xs sm:text-sm font-bold text-white truncate">{gameName}</h1>
+                    </div>
+                    <div className="bg-cyan-500 px-2 py-1 rounded border border-cyan-500">
+                        <p className="text-xs sm:text-sm font-bold text-white truncate">{teamName}</p>
+                    </div>
+                </div>
             </div>
-            <div className="flex-1 text-center">
-                <div className="inline-block bg-black bg-opacity-80 px-6 py-3 rounded-lg border-2 border-accent-yellow">
-                    <div className="text-xs uppercase text-accent-yellow font-bold mb-1">TID</div>
-                    <div className="text-4xl font-mono text-white font-bold tracking-wider">
+            <div className="flex-shrink-0 text-center mx-2">
+                <div className="inline-block bg-black bg-opacity-80 px-3 py-1 rounded border border-accent-yellow">
+                    <div className="text-sm sm:text-base font-mono text-white font-bold tracking-wider">
                         {formatTime(elapsedTime)}
                     </div>
                 </div>
             </div>
-            <div className="flex-1 flex justify-end">
+            <div className="flex-shrink-0 flex justify-end">
                 <button
                     onClick={() => navigate('/teams')}
-                    className="sc-button sc-button-red"
-                    aria-label="Avsluta spelet"
+                    className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full transition-colors duration-200"
+                    aria-label="Stäng spelet"
                 >
-                    Avsluta
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
                 </button>
             </div>
         </div>

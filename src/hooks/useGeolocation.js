@@ -22,6 +22,8 @@ export const useGeolocation = (options, isDebug, game, paused = false) => {
     const [position, setPosition] = useState(null);
     const [error, setError] = useState(null);
     const [simulationState, setSimulationState] = useState({ stage: 'IDLE', description: 'Starta simulering' });
+    // eslint-disable-next-line no-unused-vars
+    const permissionDenied = useRef(false);
 
     const animationRef = useRef({ target: null, startPos: null, startTime: null, duration: 0 });
     const frameRef = useRef();
@@ -249,10 +251,16 @@ export const useGeolocation = (options, isDebug, game, paused = false) => {
             return;
         }
 
+        // Don't try to get geolocation if permission was previously denied
+        if (permissionDenied.current) {
+            return;
+        }
+
         if (!('geolocation' in navigator)) {
             setError(new Error('Geolocation is not supported.'));
             return;
         }
+
         // Optimera för mobil - längre timeout och mindre precision när inte aktivt spelande
         const mobileOptimizedOptions = {
             ...options,
@@ -262,12 +270,25 @@ export const useGeolocation = (options, isDebug, game, paused = false) => {
         };
 
         const watcher = navigator.geolocation.watchPosition(
-            setPosition,
-            setError,
+            (pos) => {
+                // Reset permission denied flag on successful position
+                permissionDenied.current = false;
+                setPosition(pos);
+            },
+            (err) => {
+                // Mark permission as denied to stop further attempts
+                if (err.code === 1) { // PERMISSION_DENIED
+                    permissionDenied.current = true;
+                }
+                // Only set error once to prevent continuous logging
+                if (!error || error.code !== err.code || error.message !== err.message) {
+                    setError(err);
+                }
+            },
             mobileOptimizedOptions
         );
         return () => navigator.geolocation.clearWatch(watcher);
-    }, [isDebug, paused, options, position, game?.status]); // Lade till game.status för att optimera för spelstatus
+    }, [isDebug, paused, options, position, game?.status, error]); // Lade till error för att fixa ESLint-varning
 
     return { position, error, advanceSimulation, simulationState };
 };
