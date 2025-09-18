@@ -155,14 +155,13 @@ export const useGeolocation = (options, isDebug, game, paused = false) => {
                 const hinderName = hinderNames[currentIndex] || `${currentIndex + 1}:e`;
 
                 // Kontrollera om det här verkligen är ett nytt hinder (inte samma som vi redan är vid)
-                const expectedCurrentDescription = `Vid ${hinderName} hindret`;
                 if (!simulationState.description.includes(hinderName)) {
                     // Det är ett nytt hinder -> ändra till "Gå till X hindret"
                     setSimulationState({ stage: 'AT_OBSTACLE', description: `Gå till ${hinderName} hindret` });
                 }
             }
         }
-    }, [game?.activeObstacleId, game?.completedObstacles, isDebug, simulationState.stage, simulationState.description, game?.course]);
+    }, [game, isDebug, simulationState.stage, simulationState.description]);
 
     // Track animation target separately to trigger useEffect properly
     const [animationTarget, setAnimationTarget] = useState(null);

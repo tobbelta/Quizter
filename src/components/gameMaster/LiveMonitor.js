@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useNavigate } from 'react-router-dom';
-import Spinner from '../shared/Spinner';
 import SkeletonLoader from '../shared/SkeletonLoader';
 import JsonDisplayModal from './JsonDisplayModal';
 import ConfirmModal from '../shared/ConfirmModal';

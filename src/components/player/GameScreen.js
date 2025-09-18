@@ -9,7 +9,7 @@ import 'leaflet/dist/leaflet.css';
 import { useDebug } from '../../context/DebugContext';
 import { calculateDistance } from '../../utils/location';
 import { useGeolocation } from '../../hooks/useGeolocation';
-import { useAdaptiveLoading, useBatteryStatus } from '../../hooks/useNetworkStatus';
+import { useAdaptiveLoading } from '../../hooks/useNetworkStatus';
 
 import GameHeader from './GameHeader';
 import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon } from '../shared/MapIcons';
@@ -35,7 +35,7 @@ const GameScreen = ({ user, userData }) => {
     const navigate = useNavigate();
     const { isDebug, addLog } = useDebug();
     const adaptiveLoading = useAdaptiveLoading();
-    const batteryStatus = useBatteryStatus();
+    // const batteryStatus = useBatteryStatus(); // Currently unused
 
     const [game, setGame] = useState(null);
     const [team, setTeam] = useState(null);
@@ -271,7 +271,7 @@ const GameScreen = ({ user, userData }) => {
             console.error("Fel vid hämtning av hinderdata:", error);
             addLog(`Fel vid hämtning av gåta för hinder: ${obstacleId} - ${error.message}`);
         }
-    }, [game?.activeObstacleId, addLog]);
+    }, [game, riddleShownFor, showRiddle, addLog]);
 
     const handleRiddleAnswer = useCallback(async (isCorrect) => {
         if (!game || !game.activeObstacleId) return;
@@ -306,7 +306,7 @@ const GameScreen = ({ user, userData }) => {
 
             // Låt advanceSimulation hantera övergången till mål automatiskt
         }
-    }, [game, gameId, addLog, isDebug]);
+    }, [game, gameId, addLog]);
 
     const checkObstacleProximity = useCallback((lat, lon) => {
         if (!game || !game.startTime || !game.activeObstacleId) return;
@@ -334,7 +334,7 @@ const GameScreen = ({ user, userData }) => {
                 addLog(`Nått hinder ${activeObstacle.obstacleId}. Klicka 'Visa Gåta' för att fortsätta.`);
             }
         }
-    }, [game, showObstacleRiddle]);
+    }, [game, showObstacleRiddle, addLog, isDebug]);
 
     const checkFinishProximity = useCallback(async (lat, lon) => {
         if (!game || !game.startTime || game.activeObstacleId || game.status === 'finished') return;
@@ -375,7 +375,7 @@ const GameScreen = ({ user, userData }) => {
                 }, delay);
             }
         }
-    }, [game, team, user, gameId, addLog, navigate]);
+    }, [game, team, user, gameId, addLog, navigate, isDebug]);
 
     useEffect(() => {
         if (!position || !game || !team || !user) return;
@@ -394,7 +394,7 @@ const GameScreen = ({ user, userData }) => {
         if (!isDebug) {
             checkFinishProximity(latitude, longitude);
         }
-    }, [position, game, team, user, gameId, checkObstacleProximity, checkFinishProximity]);
+    }, [position, game, team, user, gameId, checkObstacleProximity, checkFinishProximity, isDebug]);
     
     if (!isDebug && geoError && geoError.code === 1) return <GeolocationDeniedScreen />;
     if (loading) return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;

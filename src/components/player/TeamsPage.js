@@ -235,18 +235,7 @@ const TeamsPage = ({ user, userData }) => {
     }
   }, [joinCode, user.uid]);
 
-  // Raderingsfunktioner
-  const handleDeleteTeam = useCallback((teamId) => {
-    const team = teams.find(t => t.id === teamId);
-    if (!team || team.leaderId !== user.uid) return; // Säkerhetskoll
-
-    setConfirmModal({
-      isOpen: true,
-      message: `Är du säker på att du vill radera laget "${team.name}" permanent? Denna åtgärd kan inte ångras.`,
-      onConfirm: () => confirmDeleteTeam(teamId),
-    });
-  }, [teams, user.uid]);
-
+  // Bekräftelsefunktioner
   const confirmDeleteTeam = useCallback(async (teamId) => {
     try {
       await deleteDoc(doc(db, 'teams', teamId));
@@ -257,6 +246,18 @@ const TeamsPage = ({ user, userData }) => {
       setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
     }
   }, []);
+
+  // Raderingsfunktioner
+  const handleDeleteTeam = useCallback((teamId) => {
+    const team = teams.find(t => t.id === teamId);
+    if (!team || team.leaderId !== user.uid) return; // Säkerhetskoll
+
+    setConfirmModal({
+      isOpen: true,
+      message: `Är du säker på att du vill radera laget "${team.name}" permanent? Denna åtgärd kan inte ångras.`,
+      onConfirm: () => confirmDeleteTeam(teamId),
+    });
+  }, [teams, user.uid, confirmDeleteTeam]);
 
   const handleToggleTeam = useCallback((teamId) => {
     const team = teams.find(t => t.id === teamId);
@@ -282,16 +283,6 @@ const TeamsPage = ({ user, userData }) => {
     setSelectedTeams(newSelected);
   }, [teams, user.uid, selectedTeams]);
 
-  const handleBulkDelete = useCallback(() => {
-    if (selectedTeams.size === 0) return;
-
-    setConfirmModal({
-      isOpen: true,
-      message: `Är du säker på att du vill radera ${selectedTeams.size} lag permanent? Denna åtgärd kan inte ångras.`,
-      onConfirm: confirmBulkDelete,
-    });
-  }, [selectedTeams.size]);
-
   const confirmBulkDelete = useCallback(async () => {
     try {
       const deletePromises = Array.from(selectedTeams)
@@ -311,16 +302,15 @@ const TeamsPage = ({ user, userData }) => {
     }
   }, [selectedTeams, teams, user.uid]);
 
-  const handleRestartGame = useCallback(async (gameId) => {
-    const game = teams.find(t => t.currentGameId === gameId);
-    if (!game || game.leaderId !== user.uid) return; // Säkerhetskoll
+  const handleBulkDelete = useCallback(() => {
+    if (selectedTeams.size === 0) return;
 
     setConfirmModal({
       isOpen: true,
-      message: `Är du säker på att du vill starta om spelet? All speldata kommer att nollställas och spelet återgår till vänteläge.`,
-      onConfirm: () => confirmRestartGame(gameId),
+      message: `Är du säker på att du vill radera ${selectedTeams.size} lag permanent? Denna åtgärd kan inte ångras.`,
+      onConfirm: confirmBulkDelete,
     });
-  }, [teams, user.uid]);
+  }, [selectedTeams.size, confirmBulkDelete]);
 
   const confirmRestartGame = useCallback(async (gameId) => {
     try {
@@ -344,6 +334,17 @@ const TeamsPage = ({ user, userData }) => {
       setConfirmModal({ isOpen: false, onConfirm: null, message: '' });
     }
   }, [clearLogs]);
+
+  const handleRestartGame = useCallback(async (gameId) => {
+    const game = teams.find(t => t.currentGameId === gameId);
+    if (!game || game.leaderId !== user.uid) return; // Säkerhetskoll
+
+    setConfirmModal({
+      isOpen: true,
+      message: `Är du säker på att du vill starta om spelet? All speldata kommer att nollställas och spelet återgår till vänteläge.`,
+      onConfirm: () => confirmRestartGame(gameId),
+    });
+  }, [teams, user.uid, confirmRestartGame]);
 
   const handleLogout = useCallback(async () => {
     try {
