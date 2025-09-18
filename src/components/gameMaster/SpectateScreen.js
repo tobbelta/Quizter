@@ -88,40 +88,84 @@ const SpectateScreen = ({ user, userData }) => {
     }, [game, course, team, teamMembers]);
 
     const gameBounds = useMemo(() => {
-        if (!course) return null;
+        if (!course || !course.start || !course.finish) return null;
         const points = [
             [course.start.lat, course.start.lng],
-            [course.finish.lat, course.finish.lng],
-            ...course.obstacles.map(o => [o.lat, o.lng])
+            [course.finish.lat, course.finish.lng]
         ];
-        return L.latLngBounds(points).pad(0.2);
+
+        // Lägg till obstacles bara om de har giltiga koordinater
+        if (course.obstacles && Array.isArray(course.obstacles)) {
+            course.obstacles.forEach(o => {
+                if (o && typeof o.lat === 'number' && typeof o.lng === 'number') {
+                    points.push([o.lat, o.lng]);
+                }
+            });
+        }
+
+        return points.length >= 2 ? L.latLngBounds(points).pad(0.2) : null;
     }, [course]);
 
     if (loading) {
         return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
     }
 
-    const solvedObstacles = game.solvedObstacles || [];
 
     return (
         <div className="h-screen w-screen flex flex-col">
             <Header title={`Åskådar: ${team.name}`} user={user} userData={userData}>
-                 <button onClick={() => navigate('/gamemaster')} className="sc-button">Tillbaka</button>
+                 <button onClick={() => navigate('/gm')} className="sc-button">Tillbaka</button>
             </Header>
             <div className="flex-grow relative -mt-16 pt-16">
-                <MapContainer center={[course.start.lat, course.start.lng]} zoom={16} scrollWheelZoom={true} className="h-full w-full" zoomControl={false}>
+                <MapContainer center={course.start && course.start.lat && course.start.lng ? [course.start.lat, course.start.lng] : [59.3293, 18.0686]} zoom={16} scrollWheelZoom={true} className="h-full w-full" zoomControl={false}>
                     <MapController bounds={gameBounds} />
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <ZoomControl position="bottomleft" />
-                    <GameAreaOverlay center={[course.start.lat, course.start.lng]} radius={100} />
+                    {course.start && course.start.lat && course.start.lng && (
+                        <GameAreaOverlay center={[course.start.lat, course.start.lng]} radius={100} />
+                    )}
                     
-                    <Marker position={[course.start.lat, course.start.lng]} icon={startIcon}><Popup>Start</Popup></Marker>
-                    {course.obstacles.map((obs, index) => (
-                        <Marker key={`obs-${index}`} position={[obs.lat, obs.lng]} icon={obstacleIcon} opacity={solvedObstacles[index] ? 0.5 : 1.0}>
-                            <Popup>Hinder {index + 1}</Popup>
-                        </Marker>
-                    ))}
-                    <Marker position={[course.finish.lat, course.finish.lng]} icon={finishIcon}><Popup>Mål</Popup></Marker>
+                    {course.start && course.start.lat && course.start.lng && (
+                        <Marker position={[course.start.lat, course.start.lng]} icon={startIcon}><Popup>Start</Popup></Marker>
+                    )}
+
+                    {/* Visa bara aktivt hinder */}
+                    {game.activeObstacleId && course.obstacles && Array.isArray(course.obstacles) &&
+                        course.obstacles
+                            .filter(obs => obs.obstacleId === game.activeObstacleId)
+                            .map((obs, index) => {
+                                if (obs && typeof obs.lat === 'number' && typeof obs.lng === 'number') {
+                                    return (
+                                        <Marker key={`active-obs-${obs.obstacleId}`} position={[obs.lat, obs.lng]} icon={obstacleIcon}>
+                                            <Popup>Aktivt hinder: {obs.obstacleId}</Popup>
+                                        </Marker>
+                                    );
+                                }
+                                return null;
+                            })
+                    }
+
+                    {/* Visa klarade hinder med halvtransparens */}
+                    {game.completedObstacles && course.obstacles && Array.isArray(course.obstacles) &&
+                        course.obstacles
+                            .filter(obs => game.completedObstacles.includes(obs.obstacleId))
+                            .map((obs) => {
+                                if (obs && typeof obs.lat === 'number' && typeof obs.lng === 'number') {
+                                    return (
+                                        <Marker key={`completed-obs-${obs.obstacleId}`} position={[obs.lat, obs.lng]} icon={obstacleIcon} opacity={0.5}>
+                                            <Popup>Klarat hinder: {obs.obstacleId}</Popup>
+                                        </Marker>
+                                    );
+                                }
+                                return null;
+                            })
+                    }
+
+                    {/* Visa mål bara när alla hinder är klarade */}
+                    {!game.activeObstacleId && game.completedObstacles?.length > 0 &&
+                     course.finish && course.finish.lat && course.finish.lng && (
+                        <Marker position={[course.finish.lat, course.finish.lng]} icon={finishIcon}><Popup>Mål</Popup></Marker>
+                    )}
 
                     {game.playerPositions && Object.entries(game.playerPositions).map(([uid, pos]) => (
                         <Marker key={`player-${uid}`} position={[pos.lat, pos.lng]} icon={playerIcons[uid] || createPlayerIcon('grey')}>

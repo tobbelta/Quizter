@@ -1,68 +1,145 @@
 import L from 'leaflet';
+import { Marker, Popup, Circle } from 'react-leaflet';
+import React from 'react';
 
-const neuShadowFilter =
-  '<filter id="neu-shadow" x="-50%" y="-50%" width="200%" height="200%">' +
-    '<feOffset result="offset" in="SourceAlpha" dx="3" dy="3" />' +
-    '<feColorMatrix result="matrix" in="offset" type="matrix" values="0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 1 0" />' +
-    '<feMerge>' +
-      '<feMergeNode in="matrix" />' +
-      '<feMergeNode in="SourceGraphic" />' +
-    '</feMerge>' +
-  '</filter>';
+// Ikon för startpunkten
+export const startIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
 
-export const createPlayerIcon = (color) => {
-  const svg =
-    '<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">' +
-      '<defs>' + neuShadowFilter + '</defs>' +
-      '<g filter="url(#neu-shadow)">' +
-        '<circle cx="18" cy="18" r="12" fill="' + color + '" stroke="#f0f0f0" stroke-width="2"/>' +
-        '<circle cx="18" cy="18" r="16" fill="none" stroke="#f0f0f0" stroke-width="2" stroke-dasharray="4 4">' +
-          '<animateTransform attributeName="transform" type="rotate" from="0 18 18" to="360 18 18" dur="10s" repeatCount="indefinite" />' +
-        '</circle>' +
-      '</g>' +
-    '</svg>';
+// Ikon för slutpunkten (mål)
+export const finishIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
 
-  return L.divIcon({
-    html: svg,
-    className: '',
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -20],
-  });
+// Ikon för den egna spelaren
+export const selfIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
+
+// Ikon för lagledare
+export const leaderIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
+
+// Ikon för vanliga lagkamrater
+const teamIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
+
+// Ikon för ett aktivt hinder
+const activeObstacleIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
+
+// KORRIGERING: Exporterar nu `activeObstacleIcon` under det gamla namnet `obstacleIcon` för bakåtkompatibilitet
+export { activeObstacleIcon as obstacleIcon };
+
+// Ikon för ett avklarat hinder
+const completedObstacleIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-violet.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    shadowSize: [41, 41]
+});
+
+// KORRIGERING: Tillagd funktion som saknades för att skapa spelarikoner med olika färger.
+const playerColors = ['violet', 'orange', 'yellow', 'red', 'grey', 'black'];
+const playerIconCache = {};
+
+export const createPlayerIcon = (index) => {
+    const colorIndex = index % playerColors.length;
+    const color = playerColors[colorIndex];
+
+    if (playerIconCache[color]) {
+        return playerIconCache[color];
+    }
+
+    const icon = new L.Icon({
+        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+        shadowSize: [41, 41]
+    });
+
+    playerIconCache[color] = icon;
+    return icon;
 };
 
-export const selfIcon = createPlayerIcon('#007BFF');
-export const teammateIcon = createPlayerIcon('#ff00ff');
+// TeamMarker-komponent
+export const TeamMarker = ({ member, isLeader }) => {
+    if (!member.position || typeof member.position.latitude !== 'number' || typeof member.position.longitude !== 'number') {
+        return null;
+    }
+    const iconToUse = isLeader ? leaderIcon : teamIcon;
+    const popupText = `${member.displayName || 'Okänd spelare'}${isLeader ? ' (Lagledare)' : ''}`;
 
-const createPoiIcon = (options) => {
-  return L.divIcon({
-    html: options.svg,
-    className: '',
-    iconSize: [38, 42],
-    iconAnchor: [19, 42],
-    popupAnchor: [0, -45],
-  });
+    return (
+        <Marker position={[member.position.latitude, member.position.longitude]} icon={iconToUse}>
+            <Popup>{popupText}</Popup>
+        </Marker>
+    );
 };
 
-const poiSvg = (bgColor, text) =>
-  '<svg width="38" height="42" viewBox="0 0 38 42" xmlns="http://www.w3.org/2000/svg">' +
-    '<defs>' + neuShadowFilter + '</defs>' +
-    '<g filter="url(#neu-shadow)">' +
-      '<path d="M2 40V2H36V26H20L11 33L20 26" fill="' + bgColor + '" stroke="#f0f0f0" stroke-width="2" />' +
-      '<text x="19" y="18" font-family="monospace" font-size="16" fill="#1a1a1a" text-anchor="middle" font-weight="bold">' + text + '</text>' +
-    '</g>' +
-  '</svg>';
+// ObstacleMarker-komponent
+export const ObstacleMarker = ({ obstacle, isCompleted }) => {
+    // Försök hitta koordinater i olika strukturer
+    const lat = obstacle.location?.latitude || obstacle.position?.lat || obstacle.lat;
+    const lng = obstacle.location?.longitude || obstacle.position?.lng || obstacle.lng;
+    const radius = obstacle.radius || 15;
 
-const finishSvg =
-  '<svg width="38" height="42" viewBox="0 0 38 42" xmlns="http://www.w3.org/2000/svg">' +
-    '<defs>' + neuShadowFilter + '</defs>' +
-    '<g filter="url(#neu-shadow)">' +
-      '<path d="M2 40V2H36V26H2V40" fill="#a3ff00" stroke="#f0f0f0" stroke-width="2" />' +
-      '<path d="M2 2H19V14H2V26H19V14Z" fill="#1a1a1a" />' +
-      '<path d="M19 2H36V14H19V26H36V14Z" fill="#f0f0f0" />' +
-    '</g>' +
-  '</svg>';
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+        console.log('ObstacleMarker: Ogiltiga koordinater för obstacle:', obstacle);
+        return null;
+    }
 
-export const startIcon = createPoiIcon({ svg: poiSvg('#a3ff00', 'S') });
-export const finishIcon = createPoiIcon({ svg: finishSvg });
-export const obstacleIcon = createPoiIcon({ svg: poiSvg('#ffff00', '!') });
+    const icon = isCompleted ? completedObstacleIcon : activeObstacleIcon;
+    const color = isCompleted ? 'purple' : 'orange';
+
+    return (
+        <React.Fragment>
+            <Marker position={[lat, lng]} icon={icon}>
+                <Popup>
+                    {obstacle.name || `Hinder`}
+                    <br />
+                    {isCompleted ? 'Avklarat' : 'Aktivt'}
+                </Popup>
+            </Marker>
+            <Circle center={[lat, lng]} radius={radius} pathOptions={{ color, fillColor: color, fillOpacity: 0.2 }} />
+        </React.Fragment>
+    );
+};

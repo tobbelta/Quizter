@@ -1,103 +1,62 @@
-// src/components/player/DebugGameControls.js
-import React, { useState, useMemo, useCallback } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import React from 'react';
+import { useDebug } from '../../context/DebugContext';
 
-const DebugGameControls = ({ game, course, team, user, gameId, onSimulatePosition, addLogMessage }) => {
-    const [isSimulating, setIsSimulating] = useState(false);
+const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObstacle, game }) => {
+  const { simulationSpeed, setSimulationSpeed } = useDebug();
 
-    const simulatePlayerMovement = useCallback(async (playerId, startCoords, endCoords, steps = 20, duration = 2000) => {
-        const latStep = (endCoords.lat - startCoords.lat) / steps;
-        const lngStep = (endCoords.lng - startCoords.lng) / steps;
+  const getSpeedButtonClass = (speed) => {
+    return simulationSpeed === speed 
+      ? "sc-button sc-button-blue text-xs px-2 py-1" 
+      : "sc-button text-xs px-2 py-1";
+  };
+  
+  const isMoving = simulationState.stage.startsWith('MOVING');
 
-        for (let i = 1; i <= steps; i++) {
-            const currentLat = startCoords.lat + latStep * i;
-            const currentLng = startCoords.lng + lngStep * i;
-            
-            if (playerId === user.uid) {
-                onSimulatePosition({ lat: currentLat, lng: currentLng });
-            } else {
-                 const gameRef = doc(db, 'games', gameId);
-                 await updateDoc(gameRef, {
-                    [`playerPositions.${playerId}`]: { lat: currentLat, lng: currentLng }
-                });
-            }
-            await new Promise(res => setTimeout(res, duration / steps));
-        }
-    }, [user, gameId, onSimulatePosition]);
-    
-    // FIX: Lade till 'simulatePlayerMovement' i dependency array.
-    const turnInfo = useMemo(() => {
-        if (!game || !team || !course || !course.obstacles) return { canPlay: false, actionText: "Väntar på data..." };
-
-        const allMembers = team.memberIds || [];
-        const leader = team.leaderId;
-        const otherMembers = allMembers.filter(id => id !== leader);
-        const solvedCount = game.solvedObstacles.filter(Boolean).length;
-        
-        // Målgångsfasen
-        if (solvedCount === course.obstacles.length) {
-            const hasFinished = (game.playersAtFinish || []).includes(user.uid);
-            if (hasFinished) return { canPlay: false, actionText: "Du är i mål!" };
-            
-            return {
-                canPlay: true,
-                actionText: `Gå till Mål`,
-                action: async () => {
-                    const startPos = game.playerPositions[user.uid] || course.start;
-                    await simulatePlayerMovement(user.uid, startPos, course.finish);
-                }
-            };
-        }
-
-        // Hinderfasen
-        const nextPlayerIndex = solvedCount;
-        let currentPlayerId;
-        if (nextPlayerIndex === 0) {
-            currentPlayerId = leader;
-        } else {
-            const memberIndex = nextPlayerIndex - 1;
-            currentPlayerId = memberIndex < otherMembers.length ? otherMembers[memberIndex] : leader;
-        }
-        
-        if (user.uid === currentPlayerId) {
-             return {
-                canPlay: true,
-                actionText: `Gå till Hinder ${nextPlayerIndex + 1}`,
-                action: async () => {
-                    const startPos = game.playerPositions[user.uid] || course.start;
-                    await simulatePlayerMovement(user.uid, startPos, course.obstacles[nextPlayerIndex].position);
-                }
-            };
-        }
-
-        return { canPlay: false, actionText: "Väntar på din tur..." };
-    }, [game, team, course, user.uid, simulatePlayerMovement]);
-    
-    if (process.env.NODE_ENV !== 'development' || !game || game.status !== 'started') {
-        return null;
-    }
-
-    const handleSimulateNextStep = async () => {
-        if (!turnInfo.action || isSimulating) return;
-        setIsSimulating(true);
-        addLogMessage(`Simulerar: ${turnInfo.actionText}...`);
-        await turnInfo.action();
-        setIsSimulating(false);
-    };
-
-    return (
-        <div className="fixed bottom-4 right-4 z-[1000] p-3 sc-card">
-            <h3 className="font-bold text-sm mb-2">Debug-panel</h3>
+  return (
+    <div className="bg-black bg-opacity-70 text-white p-4 rounded-lg w-full flex flex-col gap-4">
+      <div>
+        <h4 className="font-bold text-accent-yellow mb-2 border-b border-gray-600">Simulering</h4>
+        <div className="flex flex-col gap-2">
             <button
-                onClick={handleSimulateNextStep}
-                disabled={!turnInfo.canPlay || isSimulating}
-                className="sc-button"
+              onClick={onAdvanceSimulation}
+              disabled={isMoving || simulationState.stage === 'AT_FINISH' || simulationState.description.startsWith('Vid ')}
+              className="sc-button sc-button-blue w-full text-sm"
             >
-                {isSimulating ? 'Simulerar...' : turnInfo.actionText}
+              {isMoving ? 'Reser...' : simulationState.description}
             </button>
+            <button
+              onClick={onCompleteObstacle}
+              disabled={!game.activeObstacleId || simulationState.stage !== 'AT_OBSTACLE'}
+              className="sc-button sc-button-green w-full text-sm"
+            >
+              Visa Gåta
+            </button>
+            {simulationState.stage === 'AT_FINISH' && (
+              <button
+                onClick={() => {
+                  // Simulera att man når målet
+                  if (typeof onCompleteObstacle === 'function') {
+                    onCompleteObstacle('finish');
+                  }
+                }}
+                className="sc-button sc-button-blue w-full text-sm"
+              >
+                Avsluta Spel
+              </button>
+            )}
         </div>
-    );
+      </div>
+      <div>
+        <h4 className="font-bold text-accent-yellow mb-2 border-b border-gray-600">Simuleringshastighet</h4>
+        <div className="flex justify-around">
+          <button onClick={() => setSimulationSpeed('slow')} className={getSpeedButtonClass('slow')}>Långsam</button>
+          <button onClick={() => setSimulationSpeed('normal')} className={getSpeedButtonClass('normal')}>Normal</button>
+          <button onClick={() => setSimulationSpeed('fast')} className={getSpeedButtonClass('fast')}>Snabb</button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default DebugGameControls;
+

@@ -1,93 +1,125 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+// 'Outlet' är borttagen härifrån eftersom den inte används direkt i denna fil
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { auth, db } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
+import { DebugProvider } from './context/DebugContext';
+import DebugBanner from './components/shared/DebugBanner';
+
+import Spinner from './components/shared/Spinner';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import TeamsPage from './components/player/TeamsPage';
 import Lobby from './components/player/Lobby';
 import GameScreen from './components/player/GameScreen';
-import GameMasterDashboard from './components/gameMaster/GameMasterDashboard';
-import Spinner from './components/shared/Spinner';
-import SpectateScreen from './components/gameMaster/SpectateScreen';
+import JsonDataScreen from './components/player/JsonDataScreen';
 import GameReport from './components/player/GameReport';
 import ReplayScreenV2 from './components/player/ReplayScreenV2';
 
+// Game Master Importer
+import GameMasterDashboard from './components/gameMaster/GameMasterDashboard';
+import CourseManagement from './components/gameMaster/CourseManagement';
+import UserManagement from './components/gameMaster/UserManagement';
+import TeamManagement from './components/gameMaster/TeamManagement';
+import LiveMonitor from './components/gameMaster/LiveMonitor';
+import CourseCreator from './components/gameMaster/CourseCreator';
+import ObstacleBank from './components/gameMaster/ObstacleBank';
+import SpectateScreen from './components/gameMaster/SpectateScreen';
+import VersionHistory from './components/gameMaster/VersionHistory';
+
+
+const PrivateRoute = ({ isAuth, children }) => {
+    return isAuth ? children : <Navigate to="/" />;
+};
+
+const AdminRoute = ({ isAuth, isGM, children }) => {
+    if (!isAuth) {
+        return <Navigate to="/" />;
+    }
+    return isGM ? children : <Navigate to="/teams" />;
+};
+
+const PublicRoute = ({ isAuth, isGM, children }) => {
+    if (isAuth) {
+        return isGM ? <Navigate to="/gm" /> : <Navigate to="/teams" />;
+    }
+    return children;
+};
+
 function App() {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState(null);
+    const [userData, setUserData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        const userDoc = await getDoc(userDocRef);
+    useEffect(() => {
+        const unsubscribe = auth.onAuthStateChanged(async (userAuth) => {
+            if (userAuth) {
+                const userRef = doc(db, 'users', userAuth.uid);
+                const userSnap = await getDoc(userRef);
+                const data = userSnap.exists() ? userSnap.data() : null;
+                setUser(userAuth);
+                setUserData(data);
+            } else {
+                setUser(null);
+                setUserData(null);
+            }
+            setIsLoading(false);
+        });
+        return unsubscribe;
+    }, []);
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setUserData(data);
-          setUserRole(data.role);
-        } else {
-          const defaultUserData = {
-            email: currentUser.email,
-            displayName: currentUser.email.split('@')[0],
-            role: 'player',
-            createdAt: new Date(),
-          };
-          await setDoc(userDocRef, defaultUserData);
-          setUserData(defaultUserData);
-          setUserRole(defaultUserData.role);
-        }
-      } else {
-        setUser(null);
-        setUserRole(null);
-        setUserData(null);
-      }
-      setLoading(false);
-    });
+    if (isLoading) {
+        return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
+    }
 
-    return () => unsubscribe();
-  }, []);
+    const isAuthenticated = !!user;
+    const isGameMaster = userData?.role === 'gameMaster';
 
-  if (loading) {
-    return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
-  }
+    return (
+        <DebugProvider>
+            <div className="min-h-screen bg-background text-text-primary flex flex-col">
+                <Routes>
+                    <Route path="/" element={<PublicRoute isAuth={isAuthenticated} isGM={isGameMaster}><Login /></PublicRoute>} />
+                    <Route path="/register" element={<PublicRoute isAuth={isAuthenticated} isGM={isGameMaster}><Register /></PublicRoute>} />
 
-  const ProtectedRoute = ({ children, allowedRoles }) => {
-    if (!user) return <Navigate to="/login" />;
-    if (allowedRoles && !allowedRoles.includes(userRole)) return <Navigate to="/" />;
-    return React.cloneElement(children, { user, userData });
-  };
-  
-  const AuthRedirect = () => {
-      if (!user) return <Navigate to="/login" />;
-      if (userRole === 'gameMaster') return <Navigate to="/gamemaster" />;
-      if (userRole === 'player') return <Navigate to="/teams" />;
-      return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
-  }
+                    {/* Spelare Routes */}
+                    <Route path="/teams" element={<PrivateRoute isAuth={isAuthenticated}><TeamsPage user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/lobby" element={<PrivateRoute isAuth={isAuthenticated}><Lobby user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/game/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><GameScreen user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/json-data" element={<PrivateRoute isAuth={isAuthenticated}><JsonDataScreen user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/report/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><GameReport user={user} userData={userData} /></PrivateRoute>} />
+                    <Route path="/replay/:gameId" element={<PrivateRoute isAuth={isAuthenticated}><ReplayScreenV2 user={user} userData={userData} /></PrivateRoute>} />
 
-  return (
-    <div className="min-h-screen">
-      <Routes>
-        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" />} />
-        <Route path="/" element={<AuthRedirect />} />
-        <Route path="/teams" element={<ProtectedRoute allowedRoles={['player']}><TeamsPage /></ProtectedRoute>} />
-        <Route path="/lobby/:teamId" element={<ProtectedRoute allowedRoles={['player']}><Lobby /></ProtectedRoute>} />
-        <Route path="/game/:gameId" element={<ProtectedRoute allowedRoles={['player']}><GameScreen /></ProtectedRoute>} />
-        <Route path="/report/:gameId" element={<ProtectedRoute allowedRoles={['player', 'gameMaster']}><GameReport /></ProtectedRoute>} />
-        <Route path="/replay-v2/:gameId" element={<ProtectedRoute allowedRoles={['player', 'gameMaster']}><ReplayScreenV2 /></ProtectedRoute>} />
-        <Route path="/gamemaster" element={<ProtectedRoute allowedRoles={['gameMaster']}><GameMasterDashboard /></ProtectedRoute>} />
-        <Route path="/spectate/:gameId" element={<ProtectedRoute allowedRoles={['gameMaster']}><SpectateScreen /></ProtectedRoute>} />
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </div>
-  );
+                    {/* Game Master Routes (med nestlad layout) */}
+                    <Route
+                        path="/gm"
+                        element={
+                            <AdminRoute isAuth={isAuthenticated} isGM={isGameMaster}>
+                                <GameMasterDashboard user={user} userData={userData} />
+                            </AdminRoute>
+                        }
+                    >
+                        <Route index element={<LiveMonitor user={user} userData={userData} />} />
+                        <Route path="courses" element={<CourseManagement user={user} userData={userData} />} />
+                        <Route path="courses/new" element={<CourseCreator user={user} userData={userData} />} />
+                        <Route path="courses/edit/:courseId" element={<CourseCreator user={user} userData={userData} />} />
+                        <Route path="obstacles" element={<ObstacleBank user={user} userData={userData} />} />
+                        <Route path="users" element={<UserManagement user={user} userData={userData} />} />
+                        <Route path="teams" element={<TeamManagement user={user} userData={userData} />} />
+                        <Route path="spectate/:gameId" element={<SpectateScreen user={user} userData={userData} />} />
+                        <Route path="history/:courseId" element={<VersionHistory user={user} userData={userData} />} />
+                    </Route>
+
+                    {/* Fallback Route */}
+                    <Route path="*" element={<Navigate to={isAuthenticated ? (isGameMaster ? "/gm" : "/teams") : "/"} />} />
+                </Routes>
+
+                <DebugBanner />
+            </div>
+        </DebugProvider>
+    );
 }
 
 export default App;
+
