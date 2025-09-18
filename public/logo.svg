@@ -1,24 +1,110 @@
-<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
     <defs>
-        <radialGradient id="soft-gradient" cx="0.35" cy="0.35" r="0.8">
-            <stop offset="0%" stop-color="#ffffff" />
-            <stop offset="100%" stop-color="#a3b1c6" />
+        <!-- Metallisk gradient för bakgrund -->
+        <radialGradient id="metalGradient" cx="30%" cy="30%" r="70%">
+            <stop offset="0%" stop-color="#2a2f38" />
+            <stop offset="40%" stop-color="#1a1f2c" />
+            <stop offset="100%" stop-color="#0d1117" />
         </radialGradient>
+
+        <!-- Glowing red gradient -->
+        <radialGradient id="glowingRed" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ff6b6b" />
+            <stop offset="50%" stop-color="#f85149" />
+            <stop offset="100%" stop-color="#da3633" />
+        </radialGradient>
+
+        <!-- Glowing cyan gradient -->
+        <radialGradient id="glowingCyan" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#4ecdc4" />
+            <stop offset="50%" stop-color="#30b6c4" />
+            <stop offset="100%" stop-color="#238289" />
+        </radialGradient>
+
+        <!-- Shiny metallic gradient -->
+        <linearGradient id="metallicShine" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.4" />
+            <stop offset="30%" stop-color="#c9d1d9" stop-opacity="0.8" />
+            <stop offset="70%" stop-color="#8b949e" stop-opacity="0.6" />
+            <stop offset="100%" stop-color="#30363d" stop-opacity="0.3" />
+        </linearGradient>
+
+        <!-- Glow effects -->
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- Red glow -->
+        <filter id="redGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feColorMatrix type="matrix" values="0 0 0 0 0.97  0 0 0 0 0.32  0 0 0 0 0.29  0 0 0 1 0"/>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- Cyan glow -->
+        <filter id="cyanGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feColorMatrix type="matrix" values="0 0 0 0 0.19  0 0 0 0 0.71  0 0 0 0 0.77  0 0 0 1 0"/>
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- 3D Shadow -->
+        <filter id="drop3d" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="3" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.8" />
+            <feDropShadow dx="-1" dy="-1" stdDeviation="1" flood-color="#ffffff" flood-opacity="0.1" />
+        </filter>
     </defs>
-    <g transform="translate(10, 10)">
-        <!-- Yttre cirkel med gradient som simulerar skugga/ljus -->
-        <circle cx="50" cy="50" r="50" fill="url(#soft-gradient)" />
-        
-        <!-- Inre, något mindre cirkel för att skapa kanten -->
-        <circle cx="50" cy="50" r="45" fill="#e0e5ec" />
-        
-        <!-- Kompass-element -->
-        <g>
-            <path d="M50 15 L55 50 L50 45 L45 50 Z" fill="#333" />
-            <path d="M50 85 L45 50 L50 55 L55 50 Z" fill="#4a90e2" />
-            <path d="M15 50 L50 55 L45 50 L50 45 Z" fill="#333" />
-            <path d="M85 50 L50 45 L55 50 L50 55 Z" fill="#4a90e2" />
-            <circle cx="50" cy="50" r="8" fill="#e0e5ec" stroke="#333" stroke-width="2" />
-        </g>
+
+    <!-- Outer glow ring -->
+    <circle cx="50" cy="50" r="49" fill="none" stroke="url(#glowingRed)" stroke-width="1" opacity="0.3" filter="url(#glow)" />
+
+    <!-- Main compass body -->
+    <circle cx="50" cy="50" r="47" fill="url(#metalGradient)" stroke="#30363d" stroke-width="2" filter="url(#drop3d)" />
+
+    <!-- Metallic shine overlay -->
+    <circle cx="50" cy="50" r="45" fill="url(#metallicShine)" opacity="0.3" />
+
+    <!-- Inner decorative rings -->
+    <circle cx="50" cy="50" r="42" fill="none" stroke="#30b6c4" stroke-width="1" opacity="0.6" />
+    <circle cx="50" cy="50" r="38" fill="none" stroke="#f85149" stroke-width="0.5" opacity="0.4" />
+
+    <!-- Enhanced cardinal markings -->
+    <g>
+        <!-- North marking -->
+        <rect x="48" y="8" width="4" height="6" fill="url(#glowingRed)" filter="url(#redGlow)" />
+        <!-- East marking -->
+        <rect x="86" y="48" width="6" height="4" fill="url(#glowingCyan)" filter="url(#cyanGlow)" />
+        <!-- South marking -->
+        <rect x="48" y="86" width="4" height="6" fill="url(#glowingRed)" filter="url(#redGlow)" />
+        <!-- West marking -->
+        <rect x="8" y="48" width="6" height="4" fill="url(#glowingCyan)" filter="url(#cyanGlow)" />
     </g>
+
+    <!-- Enhanced compass needles with glow -->
+    <g filter="url(#redGlow)">
+        <path d="M50 12 L58 46 L50 43 L42 46 Z" fill="url(#glowingRed)" stroke="#ff6b6b" stroke-width="1" />
+    </g>
+
+    <g filter="url(#cyanGlow)">
+        <path d="M50 88 L42 54 L50 57 L58 54 Z" fill="url(#glowingCyan)" stroke="#4ecdc4" stroke-width="1" />
+    </g>
+
+    <path d="M88 50 L54 42 L57 50 L54 58 Z" fill="url(#metallicShine)" stroke="#c9d1d9" stroke-width="1" filter="url(#glow)" />
+    <path d="M12 50 L46 58 L43 50 L46 42 Z" fill="url(#metallicShine)" stroke="#c9d1d9" stroke-width="1" filter="url(#glow)" />
+
+    <!-- Center jewel with multiple layers -->
+    <circle cx="50" cy="50" r="8" fill="url(#metalGradient)" stroke="url(#glowingRed)" stroke-width="2" filter="url(#drop3d)" />
+    <circle cx="50" cy="50" r="6" fill="url(#glowingRed)" opacity="0.8" />
+    <circle cx="50" cy="50" r="4" fill="#ff6b6b" filter="url(#redGlow)" />
+    <circle cx="47" cy="47" r="1.5" fill="#ffffff" opacity="0.8" />
 </svg>

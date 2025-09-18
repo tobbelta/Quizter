@@ -1,11 +1,18 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import { useDebug } from '../../context/DebugContext';
 
 const DebugBanner = () => {
     const { isDebug, setDebugMode } = useDebug();
+    const location = useLocation();
 
     // Om vi inte är i debug-läge, visa ingenting.
     if (!isDebug) {
+        return null;
+    }
+
+    // Dölj bannern på GameScreen (spel-sidor)
+    if (location.pathname.startsWith('/game/')) {
         return null;
     }
 

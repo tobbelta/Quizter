@@ -57,33 +57,49 @@ const GameReport = ({ user, userData }) => {
     
     // Säker beräkning av total tid
     let totalTime = 0;
+    console.log('DEBUG: Game data for time calculation:', {
+        finishTime: report.game.finishTime,
+        startTime: report.game.startTime,
+        endTime: report.game.endTime,
+        gameStatus: report.game.status
+    });
+
     try {
-        if (report.game.finishTime && report.game.startTime) {
+        // Kontrollera olika möjliga fält för finish-tid (prioritera endTime som används i GameScreen)
+        const finishTimeValue = report.game.endTime || report.game.finishTime;
+        const startTimeValue = report.game.startTime;
+
+        if (finishTimeValue && startTimeValue) {
             let finishSeconds, startSeconds;
 
-            // Hantera Firestore Timestamp
-            if (report.game.finishTime.seconds) {
-                finishSeconds = report.game.finishTime.seconds;
-            } else if (report.game.finishTime.toDate) {
-                finishSeconds = report.game.finishTime.toDate().getTime() / 1000;
+            // Hantera Firestore Timestamp för finish
+            if (finishTimeValue.seconds) {
+                finishSeconds = finishTimeValue.seconds;
+            } else if (finishTimeValue.toDate) {
+                finishSeconds = finishTimeValue.toDate().getTime() / 1000;
             } else {
-                finishSeconds = new Date(report.game.finishTime).getTime() / 1000;
+                finishSeconds = new Date(finishTimeValue).getTime() / 1000;
             }
 
-            if (report.game.startTime.seconds) {
-                startSeconds = report.game.startTime.seconds;
-            } else if (report.game.startTime.toDate) {
-                startSeconds = report.game.startTime.toDate().getTime() / 1000;
+            // Hantera Firestore Timestamp för start
+            if (startTimeValue.seconds) {
+                startSeconds = startTimeValue.seconds;
+            } else if (startTimeValue.toDate) {
+                startSeconds = startTimeValue.toDate().getTime() / 1000;
             } else {
-                startSeconds = new Date(report.game.startTime).getTime() / 1000;
+                startSeconds = new Date(startTimeValue).getTime() / 1000;
             }
 
             totalTime = Math.max(0, finishSeconds - startSeconds);
+            console.log('DEBUG: Calculated time:', { finishSeconds, startSeconds, totalTime });
+        } else {
+            console.log('DEBUG: Missing time values:', { finishTimeValue, startTimeValue });
         }
     } catch (error) {
         console.error('Fel vid beräkning av total tid:', error);
         console.log('finishTime:', report.game.finishTime);
         console.log('startTime:', report.game.startTime);
+        console.log('endTime:', report.game.endTime);
     }
 
     return (

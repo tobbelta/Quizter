@@ -16,6 +16,7 @@ import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon
 import Spinner from '../shared/Spinner';
 import DebugLogDisplay from './DebugLogDisplay';
 import DebugGameControls from './DebugGameControls';
+import DebugSettings from './DebugSettings';
 import RiddleModal from './RiddleModal';
 
 const GeolocationDeniedScreen = () => (
@@ -33,7 +34,7 @@ const GeolocationDeniedScreen = () => (
 const GameScreen = ({ user, userData }) => {
     const { gameId } = useParams();
     const navigate = useNavigate();
-    const { isDebug, addLog } = useDebug();
+    const { isDebug, addLog, minimalControls, showDebugInfo } = useDebug();
     const adaptiveLoading = useAdaptiveLoading();
     // const batteryStatus = useBatteryStatus(); // Currently unused
 
@@ -47,6 +48,8 @@ const GameScreen = ({ user, userData }) => {
     const [currentObstacle, setCurrentObstacle] = useState(null);
     const [riddleShownFor, setRiddleShownFor] = useState(null);
     const lastRiddleRequest = useRef(null);
+    // eslint-disable-next-line no-unused-vars
+    const geoErrorLogged = useRef(false);
 
     const mapRef = useRef();
     
@@ -88,11 +91,23 @@ const GameScreen = ({ user, userData }) => {
 
 
     useEffect(() => {
-        if (geoError) {
-            console.error("Geolocation error:", geoError);
-            addLog(`Geolocation Error: ${geoError.message}`);
+        if (geoError && !geoErrorLogged.current) {
+            geoErrorLogged.current = true;
+            if (isDebug) {
+                // Bara logga geolocation-fel i debug-läge
+                addLog(`Geolocation Error: ${geoError.message}`);
+            }
+            // Logga endast en gång i produktionsläge för felsökning
+            else if (geoError.code === 1) {
+                console.warn('Geolocation permission denied by user');
+            }
         }
-    }, [geoError, addLog]);
+
+        // Reset the flag if error is cleared
+        if (!geoError) {
+            geoErrorLogged.current = false;
+        }
+    }, [geoError, addLog, isDebug]);
 
     useEffect(() => {
         if (!gameId) {
@@ -287,24 +302,27 @@ const GameScreen = ({ user, userData }) => {
         setCurrentObstacle(null);
         setRiddleShownFor(null);
 
-        // Markera hindret som klarat oavsett svar (kan ändras senare)
-        if (nextObstacleIndex < game.course.obstacles.length) {
-            const nextObstacle = game.course.obstacles[nextObstacleIndex];
-            addLog(`Nästa hinder aktiverat: ${nextObstacle.obstacleId}`);
-            await updateDoc(gameRef, {
-                completedObstacles: arrayUnion(game.activeObstacleId),
-                activeObstacleId: nextObstacle.obstacleId,
-            });
-
-            // Låt advanceSimulation hantera övergången till nästa hinder automatiskt
+        // Bara gå vidare om svaret är korrekt
+        if (isCorrect) {
+            if (nextObstacleIndex < game.course.obstacles.length) {
+                const nextObstacle = game.course.obstacles[nextObstacleIndex];
+                addLog(`Rätt svar! Nästa hinder aktiverat: ${nextObstacle.obstacleId}`);
+                await updateDoc(gameRef, {
+                    completedObstacles: arrayUnion(game.activeObstacleId),
+                    activeObstacleId: nextObstacle.obstacleId,
+                });
+                // Låt advanceSimulation hantera övergången till nästa hinder automatiskt
+            } else {
+                addLog("Alla hinder klarade! Målet är nu synligt. Spelet fortsätter tills alla når målet.");
+                await updateDoc(gameRef, {
+                    completedObstacles: arrayUnion(game.activeObstacleId),
+                    activeObstacleId: null,
+                });
+                // Låt advanceSimulation hantera övergången till mål automatiskt
+            }
         } else {
-            addLog("Alla hinder klarade! Målet är nu synligt. Spelet fortsätter tills alla når målet.");
-            await updateDoc(gameRef, {
-                completedObstacles: arrayUnion(game.activeObstacleId),
-                activeObstacleId: null,
-            });
-
-            // Låt advanceSimulation hantera övergången till mål automatiskt
+            addLog("Fel svar! Du måste svara rätt för att fortsätta. Försök igen när du är redo.");
+            // Gör ingenting mer - låt spelaren försöka igen
         }
     }, [game, gameId, addLog]);
 
@@ -476,18 +494,22 @@ const GameScreen = ({ user, userData }) => {
                     </Marker>
                 )}
 
-                {teamMembers.filter(m => m.uid !== user.uid).map(member => (
-                    <TeamMarker 
-                        key={member.uid} 
+                {teamMembers.filter(m => m.uid !== user.uid).map((member, index) => (
+                    <TeamMarker
+                        key={member.uid}
                         member={member}
                         isLeader={member.uid === team?.leaderId}
+                        memberIndex={index}
                     />
                 ))}
             </MapContainer>
             
+            {/* Always show debug settings button */}
+            <DebugSettings />
+
             {isDebug && (
-                <div className="absolute bottom-12 left-0 right-0 z-[1000] p-4 flex gap-4">
-                    <DebugLogDisplay />
+                <div className={`absolute ${minimalControls ? 'bottom-4 left-4' : 'bottom-12 left-0 right-0'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
+                    {!minimalControls && showDebugInfo && <DebugLogDisplay />}
                     <DebugGameControls
                         onAdvanceSimulation={advanceSimulation}
                         simulationState={simulationState}
@@ -522,14 +544,6 @@ const GameScreen = ({ user, userData }) => {
                 />
             )}
 
-            {/* Debug info */}
-            {isDebug && (
-                <div className="absolute top-20 right-4 z-[1001] bg-black bg-opacity-80 text-white p-2 rounded text-xs">
-                    <div>showRiddle: {showRiddle ? 'true' : 'false'}</div>
-                    <div>currentObstacle: {currentObstacle ? 'set' : 'null'}</div>
-                    <div>activeObstacleId: {game?.activeObstacleId || 'none'}</div>
-                </div>
-            )}
         </div>
     );
 };
