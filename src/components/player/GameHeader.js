@@ -52,21 +52,21 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
     }, [startTime, addLog]); // Effekt-hooken körs om när 'startTime' eller 'addLog' ändras
 
     return (
-        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light p-2 shadow-lg flex justify-between items-center border-b-2 border-primary">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-                <Logo size={28} className="flex-shrink-0" />
-                <div className="flex items-center gap-2 min-w-0">
-                    <div className="bg-black bg-opacity-80 px-2 py-1 rounded border border-primary">
-                        <h1 className="text-xs sm:text-sm font-bold text-white truncate">{gameName}</h1>
+        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light px-1 py-1 sm:p-2 shadow-lg flex justify-between items-center border-b border-primary">
+            <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
+                <Logo size={20} className="flex-shrink-0" />
+                <div className="flex items-center gap-1 sm:gap-2 min-w-0">
+                    <div className="bg-black bg-opacity-80 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-primary">
+                        <h1 className="text-xs font-bold text-white truncate">{gameName}</h1>
                     </div>
-                    <div className="bg-cyan-500 px-2 py-1 rounded border border-cyan-500">
-                        <p className="text-xs sm:text-sm font-bold text-white truncate">{teamName}</p>
+                    <div className="bg-cyan-500 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-cyan-500">
+                        <p className="text-xs font-bold text-white truncate">{teamName}</p>
                     </div>
                 </div>
             </div>
-            <div className="flex-shrink-0 text-center mx-2">
-                <div className="inline-block bg-black bg-opacity-80 px-3 py-1 rounded border border-accent-yellow">
-                    <div className="text-sm sm:text-base font-mono text-white font-bold tracking-wider">
+            <div className="flex-shrink-0 text-center mx-1 sm:mx-2">
+                <div className="inline-block bg-black bg-opacity-80 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-accent-yellow">
+                    <div className="text-xs sm:text-sm font-mono text-white font-bold">
                         {formatTime(elapsedTime)}
                     </div>
                 </div>
@@ -74,10 +74,10 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
             <div className="flex-shrink-0 flex justify-end">
                 <button
                     onClick={() => navigate('/teams')}
-                    className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full transition-colors duration-200"
+                    className="bg-red-500 hover:bg-red-600 text-white p-1 sm:p-1.5 rounded-full transition-colors duration-200"
                     aria-label="Stäng spelet"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
                 </button>
