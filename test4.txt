@@ -1,0 +1,48 @@
+AUTOMATED TESTRAPPORT - TEST4 (Med rätt röd X-knapp)
+Version testad: v2.8.37 + DebugGameControls-fix + closeGame-metod (röd X)
+Datum: 2025-09-21
+Testare: Playwright Automation
+
+=== SCENARIO 1: Spelare blir inaktiv och återansluter ===
+
+1. lagledare skapar ett lag - ✅ FUNKADE
+2. spelare 1 ansluter till laget - ✅ FUNKADE
+3. lagledare startar spel - ✅ FUNKADE
+4. spelare 1 ansluter till spelet - ✅ FUNKADE
+5. lagledare går till start och timern börjar - ✅ FUNKADE
+6. spelare 1 löser gåta 1 - ✅ FUNKADE ("Visa Gåta" knappen aktiv)
+7. lagledare löser gåta 2 - ✅ FUNKADE ("Visa Gåta" knappen aktiv)
+8. spelare 1 stänger ner spelet och blir inaktiv - ✅ FUNKADE!
+
+   🎯 FRAMSTEG: Nu hittas och klickas den röda X-knappen korrekt!
+   Log: "TestPlayer: Hittade röda X-knappen med selector: button[class*='red']"
+   Log: "TestPlayer: Klickade på röda X-knappen - spelaren borde nu koppla från gracefully"
+
+9. lagledare måste lösa gåta 1 då det var spelare 1 som löste den innan - ❌ FUNKADE INTE
+   FÖRVÄNTAT: "Gå till första hindret"
+   FAKTISKT: "Gå till start"
+
+SCENARIO 1 RESULTAT: STOPPAT VID STEG 9 (samma som innan)
+ANTAL FUNGERANDE STEG: 8 av 14
+
+=== TEKNISKA FÖRBÄTTRINGAR ===
+✅ Rätt röd X-knapp hittas och klickas (inte browser-flik)
+✅ Graceful disconnect från spelet istället för hård browser-stängning
+✅ Bättre debugging med flera selektorer för att hitta knappen
+
+=== KVARSTÅENDE PROBLEM ===
+Trots graceful disconnect via röd X-knapp uppdateras inte spellogiken för att visa att första hindret behöver lösas om.
+
+MÖJLIGA ORSAKER:
+1. Firebase tar längre tid att registrera inaktivitet än väntat
+2. Spel-logiken lyssnar inte på player-aktivitetsändringar i realtid
+3. completedObstaclesDetailed invalideras inte automatiskt när en spelare blir inaktiv
+4. useGeolocation/simulationState uppdateras inte när andra spelares status ändras
+
+=== NÄSTA STEG ===
+1. Testa längre väntetid efter disconnect
+2. Undersök Firebase-listener för player-aktivitet
+3. Kontrollera om validateCompletedObstacles körs när spelare blir inaktiv
+
+=== SLUTSATS ===
+Framsteg med rätt disconnect-metod, men spellogiken behöver uppdateras för att reagera på inaktiva spelare.
