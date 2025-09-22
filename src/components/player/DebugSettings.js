@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
 import { useDebug } from '../../context/DebugContext';
+import { getVersionString, getFullVersionString, getBuildInfo } from '../../version';
+import { downloadDebugLogs, clearDebugLogs } from '../../utils/fileLogger';
 
 const DebugSettings = () => {
-  const { isDebug, setDebugMode, minimalControls, setMinimalControlsMode, showDebugInfo, setShowDebugInfoMode } = useDebug();
+  const { isDebug, setDebugMode, minimalControls, setMinimalControlsMode } = useDebug();
   const [isOpen, setIsOpen] = useState(false);
+  const [showVersionDetails, setShowVersionDetails] = useState(false);
+
+  const buildInfo = getBuildInfo();
 
   return (
     <div className="absolute top-20 right-4 z-[1001]">
@@ -20,7 +25,10 @@ const DebugSettings = () => {
 
       {isOpen && (
         <div className="absolute top-full right-0 mt-2 bg-black bg-opacity-90 text-white p-4 rounded-lg shadow-xl border border-yellow-500 min-w-48">
-          <h4 className="font-bold text-yellow-400 mb-3 border-b border-gray-600 pb-2">Debug-inställningar</h4>
+          <div className="flex justify-between items-center mb-3 border-b border-gray-600 pb-2">
+            <h4 className="font-bold text-yellow-400">Debug-inställningar</h4>
+            <span className="text-xs text-gray-400 font-mono">{getVersionString()}</span>
+          </div>
 
           <div className="flex flex-col gap-3">
             <label className="flex items-center gap-2 text-sm">
@@ -45,17 +53,53 @@ const DebugSettings = () => {
                   Minimal styrning
                 </label>
 
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={showDebugInfo}
-                    onChange={(e) => setShowDebugInfoMode(e.target.checked)}
-                    className="form-checkbox h-4 w-4 text-yellow-500"
-                  />
-                  Visa debug-loggar
-                </label>
+
+                <div className="pt-2 border-t border-gray-600">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={downloadDebugLogs}
+                      className="text-xs bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-white"
+                    >
+                      📥 Ladda ner loggfil
+                    </button>
+                    <button
+                      onClick={clearDebugLogs}
+                      className="text-xs bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-white"
+                    >
+                      🗑️ Rensa loggar
+                    </button>
+                  </div>
+                </div>
               </>
             )}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-gray-600">
+            <div className="text-xs text-gray-400">
+              <div
+                className="cursor-pointer hover:text-yellow-400 transition-colors"
+                onClick={() => setShowVersionDetails(!showVersionDetails)}
+              >
+                {getVersionString()} {showVersionDetails ? '▼' : '▶'}
+              </div>
+
+              {showVersionDetails && (
+                <div className="mt-2 space-y-1 pl-2 text-xs">
+                  <div>Build: {getFullVersionString()}</div>
+                  <div>Beskrivning: {buildInfo.description}</div>
+                  <div
+                    className="font-mono bg-gray-800 p-1 rounded cursor-pointer hover:bg-gray-700"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(buildInfo, null, 2))
+                        .catch(() => {});
+                    }}
+                    title="Klicka för att kopiera versioninfo"
+                  >
+                    {JSON.stringify(buildInfo, null, 2)}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

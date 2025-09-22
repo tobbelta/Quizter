@@ -5,7 +5,6 @@ const RiddleModal = ({ obstacle, onClose, onAnswer }) => {
     const [showResult, setShowResult] = useState(false);
     const [isCorrect, setIsCorrect] = useState(false);
 
-    console.log('RiddleModal rendered with obstacle:', obstacle);
 
     const handleSubmit = () => {
         // Hantera både index (nummer) och sträng som correctAnswer
@@ -18,12 +17,6 @@ const RiddleModal = ({ obstacle, onClose, onAnswer }) => {
             correct = selectedAnswer === obstacle.correctAnswer;
         }
 
-        console.log('Answer check:', {
-            selectedAnswer,
-            correctAnswer: obstacle.correctAnswer,
-            correctAnswerFromOptions: obstacle.options[obstacle.correctAnswer],
-            correct
-        });
 
         setIsCorrect(correct);
         setShowResult(true);

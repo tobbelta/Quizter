@@ -53,16 +53,10 @@ const GameReport = ({ user, userData }) => {
     };
     
     if (loading) return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
-    if (!report) return <div className="text-center mt-10 p-4 sc-card max-w-md mx-auto">Kunde inte ladda spelrapport.</div>;
+    if (!report || !report.game) return <div className="text-center mt-10 p-4 sc-card max-w-md mx-auto">Kunde inte ladda spelrapport.</div>;
     
     // Säker beräkning av total tid
     let totalTime = 0;
-    console.log('DEBUG: Game data for time calculation:', {
-        finishTime: report.game.finishTime,
-        startTime: report.game.startTime,
-        endTime: report.game.endTime,
-        gameStatus: report.game.status
-    });
 
     try {
         // Kontrollera olika möjliga fält för finish-tid (prioritera endTime som används i GameScreen)
@@ -73,33 +67,32 @@ const GameReport = ({ user, userData }) => {
             let finishSeconds, startSeconds;
 
             // Hantera Firestore Timestamp för finish
-            if (finishTimeValue.seconds) {
+            if (finishTimeValue && finishTimeValue.seconds) {
                 finishSeconds = finishTimeValue.seconds;
-            } else if (finishTimeValue.toDate) {
+            } else if (finishTimeValue && finishTimeValue.toDate) {
                 finishSeconds = finishTimeValue.toDate().getTime() / 1000;
-            } else {
+            } else if (finishTimeValue) {
                 finishSeconds = new Date(finishTimeValue).getTime() / 1000;
+            } else {
+                return;
             }
 
             // Hantera Firestore Timestamp för start
-            if (startTimeValue.seconds) {
+            if (startTimeValue && startTimeValue.seconds) {
                 startSeconds = startTimeValue.seconds;
-            } else if (startTimeValue.toDate) {
+            } else if (startTimeValue && startTimeValue.toDate) {
                 startSeconds = startTimeValue.toDate().getTime() / 1000;
-            } else {
+            } else if (startTimeValue) {
                 startSeconds = new Date(startTimeValue).getTime() / 1000;
+            } else {
+                return;
             }
 
             totalTime = Math.max(0, finishSeconds - startSeconds);
-            console.log('DEBUG: Calculated time:', { finishSeconds, startSeconds, totalTime });
-        } else {
-            console.log('DEBUG: Missing time values:', { finishTimeValue, startTimeValue });
         }
     } catch (error) {
         console.error('Fel vid beräkning av total tid:', error);
-        console.log('finishTime:', report.game.finishTime);
-        console.log('startTime:', report.game.startTime);
-        console.log('endTime:', report.game.endTime);
+        totalTime = 0; // Fallback till 0 om beräkningen misslyckas
     }
 
     return (
@@ -124,12 +117,23 @@ const GameReport = ({ user, userData }) => {
                     </div>
 
                     <div className="mb-8">
-                        <h2 className="text-2xl font-bold uppercase mb-3 text-accent-cyan">Lagmedlemmar</h2>
+                        <h2 className="text-2xl font-bold uppercase mb-3 text-accent-cyan">Aktiva Lagmedlemmar vid Målgång</h2>
                         <ul className="list-disc list-inside space-y-1 text-text-primary">
-                            {report.team.memberIds.map(id => (
-                                <li key={id}>{report.users[id]?.displayName || 'Okänd spelare'}</li>
+                            {/* Visa endast spelare som var aktiva vid målgång */}
+                            {(report.game.activePlayersAtFinish || report.team.memberIds).map(id => (
+                                <li key={id}>
+                                    {report.users[id]?.displayName || 'Okänd spelare'}
+                                    {report.game.activePlayersAtFinish && !report.game.activePlayersAtFinish.includes(id) &&
+                                        <span className="text-gray-400 ml-2">(inte aktiv vid målgång)</span>
+                                    }
+                                </li>
                             ))}
                         </ul>
+                        {report.game.activePlayersAtFinish && report.game.activePlayersAtFinish.length < report.team.memberIds.length && (
+                            <p className="text-sm text-gray-400 mt-2">
+                                {report.team.memberIds.length - report.game.activePlayersAtFinish.length} spelare var inte aktiva vid målgång
+                            </p>
+                        )}
                     </div>
 
                     <div>
@@ -137,16 +141,79 @@ const GameReport = ({ user, userData }) => {
                         <ul className="space-y-3">
                             {(report.course.obstacles || []).map((obstacle, index) => {
                                 const isCompleted = (report.game.completedObstacles || []).includes(obstacle.obstacleId);
+
+                                // Hitta detaljerad information om vem som löste hindret
+                                // Om det finns flera lösningar, använd den senaste som RÄKNAS (finns i completedObstacles)
+                                const allSolutionsForObstacle = (report.game.completedObstaclesDetailed || [])
+                                    .filter(detail => detail.obstacleId === obstacle.obstacleId)
+                                    .sort((a, b) => new Date(b.solvedAt) - new Date(a.solvedAt)); // Senaste först
+
+                                // För hinder som fortfarande räknas som lösta, använd den senaste lösningen
+                                // För hinder som inte längre räknas, använd den första (ursprungliga) lösningen för rapportering
+                                const completedDetail = isCompleted ?
+                                    allSolutionsForObstacle[0] : // Senaste för lösta hinder
+                                    allSolutionsForObstacle[allSolutionsForObstacle.length - 1]; // Första för icke-lösta
+
                                 let status;
                                 if (isCompleted) {
-                                    status = <span className="font-semibold text-green-400">Klarad</span>;
+                                    // Försök hitta vem som löste hindret
+                                    const solverName = completedDetail?.solverName ||
+                                                     (completedDetail?.solvedBy ? report.users[completedDetail.solvedBy]?.displayName : null);
+
+                                    if (solverName) {
+                                        // Kontrollera aktivitetsstatus vid lösningstidpunkt
+                                        const solverWasActiveWhenSolved = completedDetail?.solverWasActive !== false; // Default true för äldre data
+
+                                        // Kontrollera om hindret fortfarande räknas som löst (finns i completedObstacles)
+                                        const stillCounted = (report.game.completedObstacles || []).includes(obstacle.obstacleId);
+
+                                        // Hitta vilka lagmedlemmar som INTE var aktiva när detta hinder löstes
+                                        const inactiveMembers = [];
+                                        if (completedDetail?.activePlayersWhenSolved) {
+                                            // Ny data: vi har information om vilka som var aktiva
+                                            const activeWhenSolved = completedDetail.activePlayersWhenSolved.map(p => p.uid);
+                                            report.team.memberIds.forEach(memberId => {
+                                                if (!activeWhenSolved.includes(memberId)) {
+                                                    const memberName = report.users[memberId]?.displayName || 'Okänd spelare';
+                                                    inactiveMembers.push(memberName);
+                                                }
+                                            });
+                                        }
+
+                                        status = (
+                                            <div className="text-sm">
+                                                <span className={`font-semibold ${stillCounted ? 'text-green-400' : 'text-yellow-400'}`}>
+                                                    {stillCounted ? 'Klarad' : 'Löst men ej giltig'}
+                                                </span>
+                                                <span className="text-text-secondary"> av {solverName}</span>
+                                                {!solverWasActiveWhenSolved && (
+                                                    <span className="text-gray-400 text-xs block">
+                                                        (lösaren var inte aktiv vid lösningstidpunkt)
+                                                    </span>
+                                                )}
+                                                {inactiveMembers.length > 0 && (
+                                                    <span className="text-gray-400 text-xs block">
+                                                        ({inactiveMembers.join(', ')} var inte aktiv{inactiveMembers.length > 1 ? 'a' : ''} när hindret löstes)
+                                                    </span>
+                                                )}
+                                                {!stillCounted && (
+                                                    <span className="text-yellow-400 text-xs block">
+                                                        (lösaren är inte aktiv nu - behöver lösas om)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        );
+                                    } else {
+                                        // Fallback för äldre spel som inte har detaljerad information
+                                        status = <span className="font-semibold text-green-400">Klarad</span>;
+                                    }
                                 } else {
                                     status = <span className="font-semibold text-red-500">Ej klarad</span>;
                                 }
                                 return (
                                     <li key={index} className="p-3 bg-black/20 rounded-md">
                                         <p className="font-bold">Hinder {index + 1}: {obstacle.obstacleId}</p>
-                                        <p className="text-sm text-text-secondary">{status}</p>
+                                        {status}
                                     </li>
                                 );
                             })}

@@ -1,9 +1,9 @@
 // KORRIGERING: Importerar 'useMemo' från react
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { useDebug } from '../../context/DebugContext';
@@ -14,10 +14,11 @@ import { useAdaptiveLoading } from '../../hooks/useNetworkStatus';
 import GameHeader from './GameHeader';
 import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon } from '../shared/MapIcons';
 import Spinner from '../shared/Spinner';
-import DebugLogDisplay from './DebugLogDisplay';
 import DebugGameControls from './DebugGameControls';
 import DebugSettings from './DebugSettings';
 import RiddleModal from './RiddleModal';
+import PlayerLegend from './PlayerLegend';
+import { logToFile, setPlayerInfo } from '../../utils/fileLogger';
 
 const GeolocationDeniedScreen = () => (
     <div className="absolute inset-0 z-[2000] bg-background bg-opacity-95 flex flex-col items-center justify-center text-center p-8">
@@ -47,6 +48,8 @@ const GameScreen = ({ user, userData }) => {
     const [showRiddle, setShowRiddle] = useState(false);
     const [currentObstacle, setCurrentObstacle] = useState(null);
     const [riddleShownFor, setRiddleShownFor] = useState(null);
+    const lastLoggedTeamMembers = useRef(null);
+    const [showPlayerLegend, setShowPlayerLegend] = useState(false);
     const lastRiddleRequest = useRef(null);
     // eslint-disable-next-line no-unused-vars
     const geoErrorLogged = useRef(false);
@@ -55,11 +58,13 @@ const GameScreen = ({ user, userData }) => {
     
     const isGeolocationPaused = !game;
 
-    const { position, error: geoError, advanceSimulation, simulationState } = useGeolocation(
+    const { position, error: geoError, advanceSimulation, simulationState, setPositionManually } = useGeolocation(
         { enableHighAccuracy: true },
         isDebug,
         game,
-        isGeolocationPaused
+        isGeolocationPaused,
+        user?.uid,
+        teamMembers
     );
 
     // KORRIGERING: Använder useMemo för att förhindra att ett nytt Date-objekt skapas vid varje rendering.
@@ -157,26 +162,42 @@ const GameScreen = ({ user, userData }) => {
                             if (user?.uid && teamData.leaderId) {
                                 const isLeader = user.uid === teamData.leaderId;
                                 addLog(`Kontrollerar lagledarstatus: Du är ${isLeader ? 'lagledare' : 'inte lagledare'}.`);
+
+                                // Sätt spelarinformation för fil-loggning
+                                setPlayerInfo(user.uid, user.displayName || userData?.displayName, isLeader);
                             }
 
                             if (teamData.memberIds?.length > 0) {
                                 const playerPositionsRef = collection(db, 'games', gameId, 'players');
                                 unsubscribePlayers = onSnapshot(playerPositionsRef, async (playersSnapshot) => {
-                                    const playerPositions = {};
+                                    const playerData = {};
                                     playersSnapshot.forEach(playerDoc => {
-                                        playerPositions[playerDoc.id] = playerDoc.data().position;
+                                        const data = playerDoc.data();
+                                        playerData[playerDoc.id] = {
+                                            position: data.position || null,
+                                            lastUpdate: data.lastUpdate || null,
+                                            isActive: data.isActive !== undefined ? data.isActive : false
+                                        };
                                     });
 
                                     const memberPromises = teamData.memberIds.map(id => getDoc(doc(db, 'users', id)));
                                     const memberDocs = await Promise.all(memberPromises);
-                                    
+
                                     const validMembers = memberDocs
                                         .filter(mdoc => mdoc.exists())
-                                        .map(mdoc => ({ 
-                                            uid: mdoc.id, 
+                                        .map(mdoc => ({
+                                            uid: mdoc.id,
                                             ...mdoc.data(),
-                                            position: playerPositions[mdoc.id] || null
+                                            position: playerData[mdoc.id]?.position || null,
+                                            lastUpdate: playerData[mdoc.id]?.lastUpdate || null,
+                                            isActive: playerData[mdoc.id]?.isActive || false
                                         }));
+                                    // Logga bara om isActive-status faktiskt ändrats för någon spelare
+                                    const currentStatus = validMembers.map(m => `${m.displayName || m.name}:${m.isActive}`).join(',');
+                                    if (lastLoggedTeamMembers.current !== currentStatus) {
+                                        logToFile(`Firebase uppdatering: ${currentStatus}`);
+                                        lastLoggedTeamMembers.current = currentStatus;
+                                    }
                                     setTeamMembers(validMembers);
                                 });
                             } else {
@@ -205,9 +226,24 @@ const GameScreen = ({ user, userData }) => {
         };
     }, [gameId, navigate, user, addLog]);
 
+    // Effect för att sätta spelet till 'ready' när lagledaren kommer till spelet första gången
     useEffect(() => {
         const isLeader = user?.uid === team?.leaderId;
-        if (game && !game.startTime && position && isLeader && !isStarting) {
+        if (game && game.status === 'pending' && isLeader) {
+            addLog("Lagledaren gick till spelet - sätter status till 'ready'");
+            const gameRef = doc(db, 'games', gameId);
+            updateDoc(gameRef, {
+                status: 'ready'
+            }).catch(err => {
+                console.error("Kunde inte uppdatera spelstatus:", err);
+            });
+        }
+    }, [game?.status, team?.leaderId, user?.uid, gameId, addLog]);
+
+    // Effect för att starta spelet när lagledaren når startpunkten
+    useEffect(() => {
+        const isLeader = user?.uid === team?.leaderId;
+        if (game && game.status === 'ready' && !game.startTime && position && isLeader && !isStarting) {
             const startPoint = game.course?.startPoint || game.course?.start;
             if (!startPoint) return;
 
@@ -274,7 +310,6 @@ const GameScreen = ({ user, userData }) => {
             const obstacleDoc = await getDoc(doc(db, 'obstacles', obstacleId));
             if (obstacleDoc.exists()) {
                 const obstacleData = obstacleDoc.data();
-                console.log('Setting riddle modal visible with data:', obstacleData);
                 setCurrentObstacle(obstacleData);
                 setShowRiddle(true);
                 setRiddleShownFor(obstacleId);
@@ -287,6 +322,115 @@ const GameScreen = ({ user, userData }) => {
             addLog(`Fel vid hämtning av gåta för hinder: ${obstacleId} - ${error.message}`);
         }
     }, [game, riddleShownFor, showRiddle, addLog]);
+
+    // Hjälpfunktion för att hitta giltiga hinder
+    const getValidObstacles = useCallback(() => {
+        if (!game || !game.completedObstaclesDetailed || !teamMembers) return [];
+
+        // För varje hinder, kolla om det finns minst en giltig lösning av någon som är aktiv nu
+        const allObstacles = game.course?.obstacles || [];
+        const validObstacles = [];
+
+        for (const obstacle of allObstacles) {
+            // Hitta alla lösningar för detta hinder
+            const solutionsForObstacle = game.completedObstaclesDetailed.filter(
+                completed => completed.obstacleId === obstacle.obstacleId
+            );
+
+            // Kolla om det finns minst en giltig lösning av någon som är aktiv nu
+            const hasValidSolution = solutionsForObstacle.some(completed => {
+                const solver = teamMembers.find(member => member.uid === completed.solvedBy);
+                const wasActiveWhenSolved = completed.solverWasActive !== false;
+                const isActiveNow = solver && solver.isActive === true;
+                return wasActiveWhenSolved && isActiveNow;
+            });
+
+            if (hasValidSolution) {
+                // Använd den senaste GILTIGA lösningen för detta hinder
+                const validSolutions = solutionsForObstacle.filter(completed => {
+                    const solver = teamMembers.find(member => member.uid === completed.solvedBy);
+                    const wasActiveWhenSolved = completed.solverWasActive !== false;
+                    const isActiveNow = solver && solver.isActive === true;
+                    return wasActiveWhenSolved && isActiveNow;
+                });
+                const latestValidSolution = validSolutions
+                    .sort((a, b) => new Date(b.solvedAt) - new Date(a.solvedAt))[0];
+                validObstacles.push(latestValidSolution);
+
+            }
+        }
+
+        return validObstacles;
+    }, [game, teamMembers]);
+
+
+    // Kontrollera vilka hinder som är giltigt lösta (lösta av aktiva spelare)
+    const validateCompletedObstacles = useCallback(() => {
+        if (!game || !game.completedObstaclesDetailed || !teamMembers) return;
+
+        const validObstacles = getValidObstacles();
+        const allObstacles = game.course?.obstacles || [];
+        const validObstacleIds = validObstacles.map(o => o.obstacleId);
+
+        // Kolla om alla hinder som ska vara lösta faktiskt är lösta
+        const expectedSolvedCount = Math.min(allObstacles.length, game.completedObstacles?.length || 0);
+        const missingCount = expectedSolvedCount - validObstacleIds.length;
+
+        if (missingCount > 0) {
+            addLog(`Hittade ${missingCount} hinder som behöver lösas igen (lösaren är inaktiv)`);
+
+            // Uppdatera bara completedObstacles (behåll completedObstaclesDetailed för historik)
+
+            // Hitta vilket hinder som nu ska vara aktivt (hinder måste lösas i ordning)
+            let nextActiveObstacle = null;
+            for (let i = 0; i < allObstacles.length; i++) {
+                const obstacleId = allObstacles[i].obstacleId;
+                if (!validObstacleIds.includes(obstacleId)) {
+                    nextActiveObstacle = obstacleId;
+                    break;
+                }
+            }
+
+            addLog(`Giltiga hinder: ${validObstacleIds.length}/${allObstacles.length}, nästa: ${nextActiveObstacle || 'mål'}`);
+
+            // Uppdatera spelet
+            const gameRef = doc(db, 'games', gameId);
+            updateDoc(gameRef, {
+                completedObstacles: validObstacleIds,
+                activeObstacleId: nextActiveObstacle
+            }).catch(err => {
+                console.error("Kunde inte uppdatera spelet efter validering:", err);
+            });
+        }
+    }, [game, teamMembers, gameId, addLog, getValidObstacles]);
+
+    // Spåra föregående teamMembers för att endast köra validering när spelare blir inaktiva
+    const prevActiveMembers = useRef([]);
+
+    // Kör validering endast när spelare blir inaktiva (inte när de blir aktiva)
+    useEffect(() => {
+        if (!game || game.status !== 'started' || !teamMembers) return;
+
+        const currentActiveUIDs = teamMembers.filter(m => m.isActive === true).map(m => m.uid);
+        const prevActiveUIDs = prevActiveMembers.current;
+
+        // Kolla om någon spelare blev inaktiv (fanns i prev men inte i current)
+        const becameInactive = prevActiveUIDs.filter(uid => !currentActiveUIDs.includes(uid));
+
+        if (becameInactive.length > 0) {
+            addLog(`Spelare blev inaktiva: ${becameInactive.join(', ')} - kör validering`);
+            validateCompletedObstacles();
+        } else if (prevActiveUIDs.length > 0) {
+            // Endast logga när spelare blir aktiva (för debug)
+            const becameActive = currentActiveUIDs.filter(uid => !prevActiveUIDs.includes(uid));
+            if (becameActive.length > 0) {
+                addLog(`Spelare blev aktiva: ${becameActive.join(', ')} - ingen validering behövs`);
+            }
+        }
+
+        // Uppdatera föregående aktiva medlemmar
+        prevActiveMembers.current = currentActiveUIDs;
+    }, [teamMembers, validateCompletedObstacles, game, addLog]);
 
     const handleRiddleAnswer = useCallback(async (isCorrect) => {
         if (!game || !game.activeObstacleId) return;
@@ -304,18 +448,71 @@ const GameScreen = ({ user, userData }) => {
 
         // Bara gå vidare om svaret är korrekt
         if (isCorrect) {
-            if (nextObstacleIndex < game.course.obstacles.length) {
-                const nextObstacle = game.course.obstacles[nextObstacleIndex];
-                addLog(`Rätt svar! Nästa hinder aktiverat: ${nextObstacle.obstacleId}`);
+            // Skapa ett objekt som sparar både hinder-ID och vem som löste det
+            const completedObstacleEntry = {
+                obstacleId: game.activeObstacleId,
+                solvedBy: user.uid,
+                solvedAt: new Date(), // Använd vanlig Date istället för serverTimestamp() i arrayUnion
+                solverName: user.displayName || userData?.displayName || 'Okänd spelare',
+                solverWasActive: true, // Spelaren var aktiv vid lösningstidpunkt (eftersom de kunde lösa gåtan)
+                activePlayersWhenSolved: await (async () => {
+                    // Hämta färsk data från Firebase för att undvika race conditions
+                    const playerPositionsRef = collection(db, 'games', gameId, 'players');
+                    const playersSnapshot = await getDocs(playerPositionsRef);
+
+                    const freshPlayerData = {};
+                    playersSnapshot.forEach(playerDoc => {
+                        const data = playerDoc.data();
+                        freshPlayerData[playerDoc.id] = {
+                            isActive: data.isActive !== undefined ? data.isActive : false
+                        };
+                    });
+
+                    // Använd färsk data istället för cached teamMembers
+                    const activeMembers = teamMembers.filter(member => {
+                        const freshIsActive = freshPlayerData[member.uid]?.isActive || false;
+                        return freshIsActive === true;
+                    });
+
+                    logToFile(`Löser ${game.activeObstacleId}: Aktiva spelare (färsk data): ${activeMembers.map(m => m.displayName || m.name).join(', ')}`);
+                    logToFile(`Jämförelse - Cached vs Fresh för varje spelare: ${teamMembers.map(m =>
+                        `${m.displayName || m.name}(cached:${m.isActive}, fresh:${freshPlayerData[m.uid]?.isActive || false})`
+                    ).join(', ')}`);
+                    logToFile(`Debug - Alla fresh player data: ${JSON.stringify(freshPlayerData)}`);
+
+                    return activeMembers.map(member => ({
+                        uid: member.uid,
+                        name: member.displayName || member.name || 'Okänd spelare'
+                    }));
+                })()
+            };
+
+            // Hitta nästa ej-lösta hinder
+            let nextActiveObstacle = null;
+            const validObstacles = getValidObstacles();
+            const validObstacleIds = validObstacles.map(o => o.obstacleId);
+
+            for (let i = 0; i < game.course.obstacles.length; i++) {
+                const obstacleId = game.course.obstacles[i].obstacleId;
+                if (!validObstacleIds.includes(obstacleId) && obstacleId !== game.activeObstacleId) {
+                    nextActiveObstacle = obstacleId;
+                    break;
+                }
+            }
+
+            if (nextActiveObstacle) {
+                addLog(`Rätt svar! Nästa hinder aktiverat: ${nextActiveObstacle}. Löst av: ${completedObstacleEntry.solverName}`);
                 await updateDoc(gameRef, {
-                    completedObstacles: arrayUnion(game.activeObstacleId),
-                    activeObstacleId: nextObstacle.obstacleId,
+                    completedObstacles: arrayUnion(game.activeObstacleId), // Behåll för bakåtkompatibilitet
+                    completedObstaclesDetailed: arrayUnion(completedObstacleEntry), // Ny detaljerad data
+                    activeObstacleId: nextActiveObstacle,
                 });
                 // Låt advanceSimulation hantera övergången till nästa hinder automatiskt
             } else {
-                addLog("Alla hinder klarade! Målet är nu synligt. Spelet fortsätter tills alla når målet.");
+                addLog(`Alla hinder klarade! Målet är nu synligt. Sista hindret löst av: ${completedObstacleEntry.solverName}`);
                 await updateDoc(gameRef, {
-                    completedObstacles: arrayUnion(game.activeObstacleId),
+                    completedObstacles: arrayUnion(game.activeObstacleId), // Behåll för bakåtkompatibilitet
+                    completedObstaclesDetailed: arrayUnion(completedObstacleEntry), // Ny detaljerad data
                     activeObstacleId: null,
                 });
                 // Låt advanceSimulation hantera övergången till mål automatiskt
@@ -327,19 +524,46 @@ const GameScreen = ({ user, userData }) => {
     }, [game, gameId, addLog]);
 
     const checkObstacleProximity = useCallback((lat, lon) => {
-        if (!game || !game.startTime || !game.activeObstacleId) return;
+        addLog(`checkObstacleProximity anropad: lat=${lat}, lon=${lon}`);
+
+        if (!game) {
+            addLog('checkObstacleProximity: Inget spel');
+            return;
+        }
+        if (game.status !== 'started') {
+            addLog(`checkObstacleProximity: Spelstatus är ${game.status}, inte started`);
+            return;
+        }
+        if (!game.startTime) {
+            addLog('checkObstacleProximity: Ingen startTime');
+            return;
+        }
+        if (!game.activeObstacleId) {
+            addLog('checkObstacleProximity: Inget aktivt hinder - alla hinder är lösta');
+            return;
+        }
 
         const activeObstacle = game.course.obstacles.find(o => o.obstacleId === game.activeObstacleId);
-        if (!activeObstacle) return;
+        if (!activeObstacle) {
+            addLog(`checkObstacleProximity: Aktivt hinder ${game.activeObstacleId} hittades inte`);
+            return;
+        }
 
         const obstacleLat = activeObstacle.location?.latitude || activeObstacle.position?.lat || activeObstacle.lat;
         const obstacleLng = activeObstacle.location?.longitude || activeObstacle.position?.lng || activeObstacle.lng;
-        if (typeof obstacleLat !== 'number' || typeof obstacleLng !== 'number') return;
-        
+        if (typeof obstacleLat !== 'number' || typeof obstacleLng !== 'number') {
+            addLog(`checkObstacleProximity: Ogiltiga koordinater för hinder: lat=${obstacleLat}, lng=${obstacleLng}`);
+            return;
+        }
+
         const distance = calculateDistance(lat, lon, obstacleLat, obstacleLng);
-        const obstacleRadius = activeObstacle.radius || 15;
+        // Använd större radie i debug-läge för att kompensera för simulerings-oprecision
+        const baseRadius = activeObstacle.radius || 15;
+        const obstacleRadius = isDebug ? Math.max(baseRadius, 20) : baseRadius;
+        addLog(`checkObstacleProximity: Avstånd till hinder: ${distance.toFixed(1)}m (radie: ${obstacleRadius}m${isDebug ? ' [debug-förstärkt]' : ''})`);
 
         if (distance <= obstacleRadius) {
+            addLog(`checkObstacleProximity: Inom radie! Visar gåta för ${activeObstacle.obstacleId}`);
             // I riktigt spel: visa gåtan automatiskt
             // I simulering: bara logga att man nått hindret
             if (!isDebug) {
@@ -351,12 +575,51 @@ const GameScreen = ({ user, userData }) => {
             } else {
                 addLog(`Nått hinder ${activeObstacle.obstacleId}. Klicka 'Visa Gåta' för att fortsätta.`);
             }
+        } else {
+            addLog(`checkObstacleProximity: Utanför radie (${distance.toFixed(1)}m > ${obstacleRadius}m)`);
         }
     }, [game, showObstacleRiddle, addLog, isDebug]);
 
     const checkFinishProximity = useCallback(async (lat, lon) => {
-        if (!game || !game.startTime || game.activeObstacleId || game.status === 'finished') return;
-        if (game.completedObstacles?.length !== game.course.obstacles.length) return;
+        addLog(`checkFinishProximity anropad med lat: ${lat}, lon: ${lon}`);
+
+        if (!game) {
+            addLog('checkFinishProximity: Inget spel');
+            return;
+        }
+        if (game.status !== 'started') {
+            addLog(`checkFinishProximity: Spelstatus är '${game.status}', inte 'started'`);
+            return;
+        }
+        if (!game.startTime) {
+            addLog('checkFinishProximity: Ingen startTime');
+            return;
+        }
+        if (game.activeObstacleId) {
+            addLog(`checkFinishProximity: Aktivt hinder finns: ${game.activeObstacleId}`);
+            return;
+        }
+        if (game.status === 'finished') {
+            addLog('checkFinishProximity: Spelet är redan avslutat');
+            return;
+        }
+        // Kontrollera om alla hinder är lösta av aktiva spelare
+        const totalObstacles = game.course?.obstacles?.length || 0;
+        const validObstacles = getValidObstacles();
+        const validCount = validObstacles.length;
+
+        addLog(`checkFinishProximity: Hinder lösta av aktiva: ${validCount}/${totalObstacles}`);
+        addLog(`checkFinishProximity: ActiveObstacleId: ${game.activeObstacleId}`);
+
+        const allObstaclesSolvedByActive = !game.activeObstacleId && validCount >= totalObstacles && totalObstacles > 0;
+
+        if (!allObstaclesSolvedByActive) {
+            addLog(`checkFinishProximity: Inte alla hinder lösta av aktiva än. Behöver lösa ${totalObstacles - validCount} till.`);
+            return;
+        }
+
+        addLog('checkFinishProximity: Alla villkor uppfyllda, kollar avstånd till mål');
+        addLog(`checkFinishProximity: Position: ${lat}, ${lon}`);
 
         const finishPoint = game.course?.finishPoint || game.course?.finish;
         if (!finishPoint) return;
@@ -366,10 +629,16 @@ const GameScreen = ({ user, userData }) => {
         if (typeof finishLat !== 'number' || typeof finishLng !== 'number') return;
 
         const distance = calculateDistance(lat, lon, finishLat, finishLng);
-        const FINISH_RADIUS = 20;
+        const FINISH_RADIUS = 10;
 
         if (distance <= FINISH_RADIUS) {
             const gameRef = doc(db, 'games', gameId);
+
+            // Kontrollera om spelaren redan är i mål
+            if (game.playersAtFinish?.includes(user.uid)) {
+                addLog("Du är redan i mål!");
+                return;
+            }
 
             // Lägg till denne spelare till de som nått målet
             await updateDoc(gameRef, {
@@ -378,41 +647,106 @@ const GameScreen = ({ user, userData }) => {
 
             addLog("Du har nått målet!");
 
-            // Kontrollera om alla teammedlemmar nått målet
-            const updatedPlayersAtFinish = [...(game.playersAtFinish || []), user.uid];
-            if (updatedPlayersAtFinish.length >= team.memberIds.length) {
-                addLog("Alla teammedlemmar har nått målet! Spelet avslutat.");
+            // Kontrollera om alla AKTIVA teammedlemmar nått målet (efter uppdateringen)
+            const currentPlayersAtFinish = game.playersAtFinish || [];
+            const updatedPlayersAtFinish = [...currentPlayersAtFinish, user.uid];
+
+            // Räkna endast aktiva spelare
+            const activeMembers = teamMembers.filter(member => member.isActive === true);
+            const activeMembersAtFinish = updatedPlayersAtFinish.filter(playerId =>
+                activeMembers.some(member => member.uid === playerId)
+            );
+
+            addLog(`Aktiva spelare i mål: ${activeMembersAtFinish.length}/${activeMembers.length} (totalt ${activeMembers.length} aktiva av ${team.memberIds.length})`);
+
+            if (activeMembersAtFinish.length >= activeMembers.length && activeMembers.length > 0) {
+                addLog("Alla AKTIVA teammedlemmar har nått målet! Klicka 'Avsluta Spel' för att se rapporten.");
+                // Spara vilka spelare som var aktiva vid målgång
                 await updateDoc(gameRef, {
+                    allPlayersFinished: true,
                     status: 'finished',
                     endTime: serverTimestamp(),
+                    activePlayersAtFinish: activeMembers.map(m => m.uid) // Spara aktiva spelare vid målgång
                 });
-                // I debug-läge: vänta lite längre så man hinner se vad som händer
-                const delay = isDebug ? 5000 : 2000;
-                setTimeout(() => {
-                    navigate(`/report/${gameId}`);
-                }, delay);
             }
         }
-    }, [game, team, user, gameId, addLog, navigate, isDebug]);
+    }, [game, team, teamMembers, user, gameId, addLog, navigate, isDebug, getValidObstacles]);
 
+    // Effect för att hantera position-uppdateringar
     useEffect(() => {
         if (!position || !game || !team || !user) return;
         const { latitude, longitude } = position.coords;
 
+        addLog(`Position uppdaterad: ${latitude}, ${longitude}`);
+
         const playerRef = doc(db, 'games', gameId, 'players', user.uid);
         setDoc(playerRef, {
             position: { latitude, longitude },
-            lastUpdate: serverTimestamp()
+            lastUpdate: serverTimestamp(),
+            isActive: true // Markera som aktiv när position uppdateras
         }, { merge: true }).catch(err => console.error("Kunde inte uppdatera position:", err));
 
+        addLog('Anropar checkObstacleProximity');
         checkObstacleProximity(latitude, longitude);
 
-        // I riktigt spel: kolla målnärheten automatiskt
-        // I simulering: bara när man klickar "Avsluta Spel"
-        if (!isDebug) {
+        // Kolla målnärheten automatiskt i både riktigt spel och simulering
+        // när alla hinder är lösta AV AKTIVA SPELARE
+        const totalObstacles = game.course?.obstacles?.length || 0;
+        const validObstacles = getValidObstacles();
+
+        if (!game.activeObstacleId && validObstacles.length >= totalObstacles && totalObstacles > 0) {
+            addLog(`Anropar checkFinishProximity (${validObstacles.length}/${totalObstacles} lösta av aktiva)`);
             checkFinishProximity(latitude, longitude);
         }
-    }, [position, game, team, user, gameId, checkObstacleProximity, checkFinishProximity, isDebug]);
+    }, [position, game, team, user, gameId, teamMembers, checkObstacleProximity, checkFinishProximity, isDebug, addLog]);
+
+    // Effect för att hantera när spelaren lämnar spelet
+    useEffect(() => {
+        if (!user || !gameId) return;
+
+        const playerRef = doc(db, 'games', gameId, 'players', user.uid);
+
+        const markPlayerInactive = () => {
+            setDoc(playerRef, {
+                isActive: false,
+                lastUpdate: serverTimestamp()
+            }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som inaktiv:", err));
+        };
+
+        // När användaren stänger browser/flik
+        const handleBeforeUnload = () => {
+            markPlayerInactive();
+        };
+
+        // När användaren byter flik eller minimerar browser
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                markPlayerInactive();
+            } else {
+                // När spelaren kommer tillbaka, markera som aktiv igen
+                setDoc(playerRef, {
+                    isActive: true,
+                    lastUpdate: serverTimestamp()
+                }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som aktiv:", err));
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Markera som aktiv när komponenten mountas
+        setDoc(playerRef, {
+            isActive: true,
+            lastUpdate: serverTimestamp()
+        }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som aktiv:", err));
+
+        return () => {
+            // Cleanup: markera som inaktiv när komponenten unmountas
+            markPlayerInactive();
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [user, gameId]);
     
     if (!isDebug && geoError && geoError.code === 1) return <GeolocationDeniedScreen />;
     if (loading) return <div className="flex items-center justify-center min-h-screen"><Spinner /></div>;
@@ -453,6 +787,7 @@ const GameScreen = ({ user, userData }) => {
                 teamName={team.name}
                 // Använder det memoiserade värdet
                 startTime={startTimeDate}
+                gameFinished={game?.allPlayersFinished === true}
             />
             <div className="w-full" style={{ height: 'calc(100vh - 32px)' }}>
                 <MapContainer
@@ -476,8 +811,8 @@ const GameScreen = ({ user, userData }) => {
                 />
                 <Marker position={[startLat, startLng]} icon={startIcon}><Popup>Start</Popup></Marker>
 
-                {/* Visa bara aktivt hinder om spelet har startat */}
-                {game.activeObstacleId && game.course.obstacles
+                {/* Visa bara aktivt hinder om spelet har startat (status 'started') */}
+                {game.status === 'started' && game.activeObstacleId && game.course.obstacles
                     .filter(obstacle => obstacle.obstacleId === game.activeObstacleId)
                     .map(obstacle => (
                         <ObstacleMarker
@@ -488,9 +823,40 @@ const GameScreen = ({ user, userData }) => {
                     ))
                 }
 
-                {/* Visa mål bara när alla hinder är klarade */}
-                {!game.activeObstacleId && game.completedObstacles?.length > 0 && (
-                    <Marker position={[finishLat, finishLng]} icon={finishIcon}><Popup>Mål</Popup></Marker>
+                {/* Visa alla avklarade hinder */}
+                {game.completedObstacles && game.course.obstacles
+                    .filter(obstacle => game.completedObstacles.includes(obstacle.obstacleId))
+                    .map(obstacle => (
+                        <ObstacleMarker
+                            key={`completed-${obstacle.obstacleId}`}
+                            obstacle={obstacle}
+                            isCompleted={true}
+                        />
+                    ))
+                }
+
+                {/* Visa mål bara när alla hinder är klarade AV AKTIVA SPELARE och spelet har startat */}
+                {game.status === 'started' && (() => {
+                    const totalObstacles = game.course?.obstacles?.length || 0;
+                    const validObstacles = getValidObstacles();
+                    return !game.activeObstacleId && validObstacles.length >= totalObstacles && totalObstacles > 0;
+                })() && (
+                    <>
+                        <Marker position={[finishLat, finishLng]} icon={finishIcon}><Popup>Mål</Popup></Marker>
+                        {/* Synlig ring runt målområdet som visar radie (10 meter) */}
+                        <Circle
+                            center={[finishLat, finishLng]}
+                            radius={10}
+                            pathOptions={{
+                                color: 'red',
+                                weight: 2,
+                                fillColor: 'red',
+                                fillOpacity: 0.1
+                            }}
+                        >
+                            <Popup>Målområde (20m radie)</Popup>
+                        </Circle>
+                    </>
                 )}
 
                 {currentPosition && (
@@ -513,17 +879,52 @@ const GameScreen = ({ user, userData }) => {
             {/* Always show debug settings button */}
             <DebugSettings />
 
+            {/* Player legend button */}
+            <button
+                onClick={() => setShowPlayerLegend(true)}
+                className="fixed top-16 right-4 z-[1000] sc-button sc-button-blue p-2 text-xs"
+                title="Visa lagmedlemmar & ikoner"
+            >
+                👥
+            </button>
+
             {isDebug && (
                 <div className={`fixed ${minimalControls ? 'bottom-4 left-4' : 'bottom-4 left-4 right-4'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
-                    {!minimalControls && showDebugInfo && <DebugLogDisplay />}
                     <DebugGameControls
                         onAdvanceSimulation={advanceSimulation}
                         simulationState={simulationState}
-                        onCompleteObstacle={(type) => {
+                        gameId={gameId}
+                        teamMembers={teamMembers}
+                        onCompleteObstacle={async (type) => {
                             if (type === 'finish') {
-                                // Simulera målgång
-                                if (position) {
-                                    checkFinishProximity(position.coords.latitude, position.coords.longitude);
+                                addLog('onCompleteObstacle finish anropad');
+
+                                // I debug-läge: bara flytta spelaren till målpositionen, låt proximity-check hantera resten
+                                if (isDebug) {
+                                    addLog('Debug-läge: Flyttar spelaren till målpositionen');
+
+                                    // Flytta spelaren till målpositionen på kartan
+                                    const finishPoint = game.course?.finishPoint || game.course?.finish;
+                                    if (finishPoint) {
+                                        const targetLat = finishPoint.latitude || finishPoint.lat;
+                                        const targetLng = finishPoint.longitude || finishPoint.lng;
+                                        if (typeof targetLat === 'number' && typeof targetLng === 'number') {
+                                            addLog(`Flyttar spelaren till målpositionen: ${targetLat}, ${targetLng}`);
+                                            // Uppdatera spelarens position direkt
+                                            setPositionManually({ coords: { latitude: targetLat, longitude: targetLng } });
+
+                                            // Låt proximity-check hantera resten realistiskt efter en kort delay
+                                            setTimeout(() => {
+                                                addLog('Kör proximity-check efter positionsändring');
+                                                checkFinishProximity(targetLat, targetLng);
+                                            }, 100);
+                                        }
+                                    }
+                                } else {
+                                    // Riktigt spel: använd proximity-check
+                                    if (position) {
+                                        checkFinishProximity(position.coords.latitude, position.coords.longitude);
+                                    }
                                 }
                             } else {
                                 // Visa gåta för hinder
@@ -533,6 +934,7 @@ const GameScreen = ({ user, userData }) => {
                             }
                         }}
                         game={game}
+                        team={team}
                     />
                 </div>
             )}
@@ -547,6 +949,16 @@ const GameScreen = ({ user, userData }) => {
                         setRiddleShownFor(null);
                     }}
                     onAnswer={handleRiddleAnswer}
+                />
+            )}
+
+            {showPlayerLegend && (
+                <PlayerLegend
+                    team={team}
+                    teamMembers={teamMembers}
+                    gameId={gameId}
+                    game={game}
+                    onClose={() => setShowPlayerLegend(false)}
                 />
             )}
 

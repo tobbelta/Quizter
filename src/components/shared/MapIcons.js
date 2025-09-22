@@ -223,7 +223,6 @@ export const ObstacleMarker = ({ obstacle, isCompleted }) => {
     const radius = obstacle.radius || 15;
 
     if (typeof lat !== 'number' || typeof lng !== 'number') {
-        console.log('ObstacleMarker: Ogiltiga koordinater för obstacle:', obstacle);
         return null;
     }
 

@@ -92,6 +92,25 @@ const TeamCard = ({ team, user, onDeleteTeam, selectedTeams, onToggleTeam, onRes
             );
         }
 
+        if (game.status === 'ready') {
+            return (
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <button onClick={handleGoToGame} className={`${BUTTON_CLASS} sc-button-blue`}>Gå till Start</button>
+                    <button
+                        onClick={() => onRestartGame(game.id)}
+                        className={`${BUTTON_CLASS} sc-button-yellow`}
+                        title="Starta om spelet"
+                    >
+                        🔄 Starta om
+                    </button>
+                </div>
+            );
+        }
+
+        if (game.status === 'pending') {
+            return <button onClick={handleGoToGame} className={`${BUTTON_CLASS} sc-button-blue`}>Gå till Spel</button>;
+        }
+
         return <button onClick={handleGoToGame} className={`${BUTTON_CLASS} sc-button-blue`}>Gå till Spel</button>;
     };
 
@@ -104,8 +123,12 @@ const TeamCard = ({ team, user, onDeleteTeam, selectedTeams, onToggleTeam, onRes
             return <button onClick={handleViewReport} className={BUTTON_CLASS}>Visa Rapport</button>;
         }
 
-        if (game.status === 'created') {
-            return <p className="text-sm text-accent-cyan text-left sm:text-right">Väntar på start...</p>;
+        if (game.status === 'pending') {
+            return <p className="text-sm text-accent-cyan text-left sm:text-right">Väntar på lagledare...</p>;
+        }
+
+        if (game.status === 'ready') {
+            return <button onClick={handleGoToGame} className={`${BUTTON_CLASS} sc-button-blue`}>Gå till Start</button>;
         }
 
         return <button onClick={handleGoToGame} className={`${BUTTON_CLASS} sc-button-blue`}>Gå till Spel</button>;
@@ -322,11 +345,13 @@ const TeamsPage = ({ user, userData }) => {
 
         // Återställ spelet till ursprungligt tillstånd
         await updateDoc(doc(db, 'games', gameId), {
-          status: 'created',
+          status: 'pending',
           startTime: null,
           finishTime: null,
           activeObstacleId: null,
           completedObstacles: [],
+          playersAtFinish: [],
+          allPlayersFinished: false,
           // Behåll courseId, teamId och createdAt
         });
 
