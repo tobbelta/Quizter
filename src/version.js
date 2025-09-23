@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 41,
+  patch: 42,
   build: Date.now(),
-  description: "Fix: Mobil karta helskärm med absolut positionering (top-8 left-0 right-0 bottom-0)"
+  description: "Fix: Aggressiv Leaflet CSS-override för mobil helskärm (!important + fixed positioning)"
 };
 
 export const getVersionString = () => {

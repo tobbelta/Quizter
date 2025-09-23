@@ -818,7 +818,18 @@ const GameScreen = ({ user, userData }) => {
                     center={center}
                     zoom={15}
                     ref={mapRef}
-                    style={{ height: '100%', width: '100%' }}
+                    style={{
+                        height: '100vh',
+                        width: '100%',
+                        minHeight: '100vh',
+                        maxHeight: '100vh',
+                        position: 'fixed',
+                        top: '32px',
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        zIndex: 1
+                    }}
                     preferCanvas={adaptiveLoading.shouldReduceData} // Use canvas for better performance on slow devices
                     zoomControl={false} // Dölj zoom-kontroller för renare UI
                     whenCreated={(map) => {

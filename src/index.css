@@ -36,7 +36,26 @@ body {
   text-size-adjust: 100%;
 }
 
-/* Mobile-optimized screen height - using absolute positioning instead */
+/* Mobile-optimized screen height - force Leaflet to use full screen */
+.leaflet-container {
+  height: 100vh !important;
+  min-height: 100vh !important;
+  max-height: 100vh !important;
+}
+
+@media (max-width: 768px) {
+  .leaflet-container {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    position: fixed !important;
+    top: 32px !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 1 !important;
+  }
+}
 
 .sc-card {
   background: var(--card-bg);
