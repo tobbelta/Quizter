@@ -38,7 +38,6 @@ test[0-9]*.txt
 remember.txt
 *TEST-RESULTS*.txt
 src/utils/fileLogger.js
-src/version.js
 
 # Playwright test resultat
 playwright-report/
