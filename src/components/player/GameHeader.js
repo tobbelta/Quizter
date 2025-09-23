@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useDebug } from '../../context/DebugContext'; // Importerar debug-verktyget
 import Logo from '../shared/Logo';
 import HamburgerMenu from '../shared/HamburgerMenu';
@@ -52,7 +51,6 @@ const getNextObjective = (game, team, user) => {
 
 const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, teamMembers }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
-    const navigate = useNavigate();
     const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
 
     useEffect(() => {

@@ -1,0 +1,124 @@
+name: ✨ Feature Request
+description: Föreslå en ny funktion för GeoQuest
+title: "[FEATURE] "
+labels: ["enhancement", "feature"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Har du en idé för en ny funktion? Berätta för oss! Vi älskar att höra användarnas önskemål.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 🎯 Problemdefinition
+      description: Vilket problem skulle denna funktion lösa?
+      placeholder: |
+        Som [typ av användare] vill jag [funktionalitet] så att [nytta/värde]...
+
+        Eller beskriv problemet du stött på som denna funktion skulle lösa.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 💡 Föreslagen lösning
+      description: Beskriv hur du tänker dig att funktionen skulle fungera
+      placeholder: |
+        En tydlig och detaljerad beskrivning av vad du vill ska hända...
+
+        - Hur skulle användaren interagera med funktionen?
+        - Vad skulle hända när funktionen används?
+        - Vilka steg skulle vara inblandade?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 🔄 Alternativa lösningar
+      description: Har du övervägt andra sätt att lösa problemet?
+      placeholder: Beskriv alternativa lösningar eller funktioner du har övervägt...
+
+  - type: dropdown
+    id: user_type
+    attributes:
+      label: 👥 Målgrupp
+      description: Vilka användare skulle ha nytta av denna funktion?
+      options:
+        - Alla användare
+        - Spelare
+        - Spelledare/Administratörer
+        - Lagledens
+        - Utvecklare
+        - Okänt
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 📊 Prioritet/Värde
+      description: Hur viktigt är detta för dig?
+      options:
+        - 🔴 Kritisk (blockerande för användning)
+        - 🟠 Hög (skulle förbättra upplevelsen betydligt)
+        - 🟡 Medium (bra att ha)
+        - 🟢 Låg (nice-to-have)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: ⚙️ Uppskattad komplexitet
+      description: Hur komplext tror du detta är att implementera?
+      options:
+        - 🟢 Enkelt (mindre ändring)
+        - 🟡 Medium (kräver viss utveckling)
+        - 🟠 Komplext (större funktion)
+        - 🔴 Mycket komplext (större omstrukturering)
+        - 🤷 Vet inte
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: 🎨 Mockups/Skisser
+      description: Har du några bilder, skisser eller wireframes?
+      placeholder: Dra och släpp filer här eller beskriv visuellt hur du tänker dig funktionen...
+
+  - type: textarea
+    id: use_cases
+    attributes:
+      label: 📋 Användningsfall
+      description: Ge konkreta exempel på när/hur funktionen skulle användas
+      placeholder: |
+        Exempel:
+        1. När en spelledare skapar ett nytt spel skulle hen kunna...
+        2. Under ett pågående spel kan spelare...
+        3. Efter ett avslutat spel skulle laget kunna...
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 📝 Ytterligare kontext
+      description: Övrig information som kan vara relevant
+      placeholder: |
+        - Har du sett liknande funktioner i andra appar?
+        - Finns det specifika tekniska krav?
+        - Andra detaljer som kan hjälpa oss förstå förslaget?
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: ✅ Bekräftelse
+      description: Bekräfta innan du skickar in
+      options:
+        - label: Jag har sökt efter liknande feature requests och hittat inga dubletter
+          required: true
+        - label: Denna funktion skulle vara användbar för fler än bara mig
+          required: true

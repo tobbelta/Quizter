@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Diskussion och frågor
+    url: https://github.com/tobbelta/geoquest-app/discussions
+    about: Ställ frågor, diskutera idéer eller få hjälp från communityn
+  - name: 📖 Dokumentation
+    url: https://github.com/tobbelta/geoquest-app/wiki
+    about: Läs dokumentation och guider för GeoQuest
+  - name: 🔒 Säkerhetsproblem
+    url: https://github.com/tobbelta/geoquest-app/security/advisories/new
+    about: Rapportera säkerhetsproblem privat (inte för allmänna buggar)
