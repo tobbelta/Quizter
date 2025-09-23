@@ -35,17 +35,22 @@ const HamburgerMenu = ({ children }) => {
 
             {isOpen && (
                 <div
-                    className="absolute top-full right-0 mt-2 w-48 sc-card z-[1001] transition-all duration-300 ease-in-out"
-                    style={{ transformOrigin: 'top right' }}
+                    className="absolute top-full right-0 mt-2 w-56 sc-card z-[1001] transition-all duration-300 ease-in-out"
+                    style={{
+                        transformOrigin: 'top right',
+                        backgroundColor: 'rgba(22, 27, 34, 0.95)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(48, 182, 196, 0.3)'
+                    }}
                 >
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-3">
                         {children}
 
                         {/* Versionsinformation */}
-                        <div className="border-t border-gray-600 pt-2 mt-2">
-                            <div className="text-xs text-gray-400 px-2 py-1">
-                                <div className="flex justify-between items-center">
-                                    <span>Version: {getVersionString()}</span>
+                        <div className="border-t border-cyan-500/20 pt-3 mt-2">
+                            <div className="px-1">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-medium text-cyan-300">Version {getVersionString()}</span>
                                     <button
                                         onClick={async () => {
                                             setUpdateStatus('checking');
@@ -90,12 +95,12 @@ const HamburgerMenu = ({ children }) => {
                                             setTimeout(() => setUpdateStatus(null), 3000);
                                         }}
                                         disabled={updateStatus === 'checking'}
-                                        className={`text-xs px-2 py-1 sc-button ${
-                                            updateStatus === 'checking' ? '' :
-                                            updateStatus === 'available' ? 'sc-button-green' :
-                                            updateStatus === 'none' ? '' :
-                                            updateStatus === 'error' ? 'sc-button-red' :
-                                            'sc-button-blue'
+                                        className={`text-xs px-3 py-1 rounded-md transition-all duration-200 font-medium ${
+                                            updateStatus === 'checking' ? 'bg-yellow-600/80 text-yellow-100' :
+                                            updateStatus === 'available' ? 'bg-green-600/80 text-green-100 animate-pulse' :
+                                            updateStatus === 'none' ? 'bg-gray-600/80 text-gray-100' :
+                                            updateStatus === 'error' ? 'bg-red-600/80 text-red-100' :
+                                            'bg-cyan-600/80 text-cyan-100 hover:bg-cyan-500/80'
                                         }`}
                                         title="Kontrollera om ny version finns"
                                     >
@@ -107,12 +112,12 @@ const HamburgerMenu = ({ children }) => {
                                     </button>
                                 </div>
                                 <div
-                                    className="text-xs text-gray-500 mt-1 cursor-pointer hover:text-gray-300"
+                                    className="text-xs text-gray-400 mt-2 p-2 bg-gray-800/30 rounded cursor-pointer hover:text-cyan-300 hover:bg-gray-800/50 transition-all duration-200"
                                     onClick={() => {
                                         const buildInfo = getBuildInfo();
                                         alert(`Build: ${buildInfo.fullVersion}\nBeskrivning: ${buildInfo.description}`);
                                     }}
-                                    title="Klicka för mer info"
+                                    title="Klicka för detaljerad build-info"
                                 >
                                     {getBuildInfo().description}
                                 </div>

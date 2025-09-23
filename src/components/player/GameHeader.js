@@ -80,9 +80,10 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false }) => 
                 <HamburgerMenu>
                     <button
                         onClick={() => navigate('/teams')}
-                        className="text-white hover:text-gray-300 px-2 py-1 text-xs transition-colors duration-200 w-full text-left"
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-cyan-100 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-md transition-all duration-200 w-full text-left"
                     >
-                        🏠 Hem
+                        <span className="text-lg">🏠</span>
+                        <span>Hem</span>
                     </button>
                 </HamburgerMenu>
                 <button
