@@ -1,17 +1,7 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { createPlayerIcon, leaderIcon } from '../shared/MapIcons';
-import { logToFile } from '../../utils/fileLogger';
 
 const PlayerLegend = ({ team, teamMembers, gameId, game, onClose }) => {
-    // En gång när komponenten mountas, logga alla spelares status
-    useEffect(() => {
-        if (teamMembers) {
-            const statusList = teamMembers.map(member =>
-                `${member.displayName || member.name}: isActive=${member.isActive}, hasPosition=${!!member.position}`
-            ).join('; ');
-            logToFile(`PlayerLegend öppnad - Status: ${statusList}`);
-        }
-    }, [teamMembers]);
 
     if (!team || !teamMembers) return null;
 

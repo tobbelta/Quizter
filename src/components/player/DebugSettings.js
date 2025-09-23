@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useDebug } from '../../context/DebugContext';
 import { getVersionString, getFullVersionString, getBuildInfo } from '../../version';
-import { downloadDebugLogs, clearDebugLogs } from '../../utils/fileLogger';
 
 const DebugSettings = () => {
   const { isDebug, setDebugMode, minimalControls, setMinimalControlsMode } = useDebug();
@@ -54,22 +53,6 @@ const DebugSettings = () => {
                 </label>
 
 
-                <div className="pt-2 border-t border-gray-600">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={downloadDebugLogs}
-                      className="text-xs bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-white"
-                    >
-                      📥 Ladda ner loggfil
-                    </button>
-                    <button
-                      onClick={clearDebugLogs}
-                      className="text-xs bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-white"
-                    >
-                      🗑️ Rensa loggar
-                    </button>
-                  </div>
-                </div>
               </>
             )}
           </div>

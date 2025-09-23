@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDebug } from '../context/DebugContext';
-import { logToFile } from '../utils/fileLogger';
 
 // --- Constants ---
 const KALMAR_DEFAULT_LOCATION = { latitude: 56.66311, longitude: 16.36039 }; // Nygatan 13a, Kalmar
@@ -35,14 +34,8 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
         if (!game) return null;
 
         if (!teamMembers || teamMembers.length === 0 || !game.completedObstaclesDetailed || game.completedObstaclesDetailed.length === 0) {
-            logToFile(`getValidActiveObstacleId fallback för late-joining: ${game?.activeObstacleId} (teamMembers:${teamMembers?.length || 0}, completedDetailed:${game?.completedObstaclesDetailed?.length || 0})`);
             return game?.activeObstacleId;
         }
-
-        // Debug: logga teamMembers status
-        const activeTeamMembersDebug = teamMembers.map(m => `${m.displayName || m.name}:${m.isActive}`).join(', ');
-        logToFile(`getValidActiveObstacleId med teamMembers: ${activeTeamMembersDebug}`);
-        console.log(`[useGeolocation] getValidActiveObstacleId teamMembers: ${activeTeamMembersDebug}`);
 
         // För varje hinder, kolla om det finns minst en giltig lösning av någon som är aktiv nu
         const allObstacles = game.course?.obstacles || [];
@@ -78,17 +71,13 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
 
         // Hitta vilket hinder som ska vara aktivt (första hindret som inte är giltigt löst)
         const validObstacleIds = validObstacles.map(o => o.obstacleId);
-        logToFile(`getValidActiveObstacleId: Alla hinder: ${allObstacles.map(o => o.obstacleId).join(', ')}`);
-        logToFile(`getValidActiveObstacleId: Giltigt lösta: ${validObstacleIds.join(', ')}`);
 
         for (let i = 0; i < allObstacles.length; i++) {
             const obstacleId = allObstacles[i].obstacleId;
             if (!validObstacleIds.includes(obstacleId)) {
-                logToFile(`getValidActiveObstacleId returnerar: ${obstacleId} (index ${i})`);
                 return obstacleId;
             }
         }
-        logToFile(`getValidActiveObstacleId returnerar: null (alla hinder lösta)`);
         return null; // Alla hinder är lösta
     }, [game, teamMembers]);
 
@@ -171,8 +160,6 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
                 }
 
                 const activeObstacleId = getValidActiveObstacleId();
-                logToFile(`advanceSimulation: getValidActiveObstacleId returnerade: ${activeObstacleId}`);
-                console.log(`[useGeolocation] advanceSimulation: activeObstacleId=${activeObstacleId}`);
 
                 if (!activeObstacleId) {
                     // Alla hinder är klarade, gå till mål (om inte redan i mål)
@@ -304,8 +291,6 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
                     const currentIndex = course.obstacles.findIndex(o => o.obstacleId === validActiveObstacleId);
                     const hinderNames = ['första', 'andra', 'tredje', 'fjärde', 'femte', 'sjätte', 'sjunde', 'åttonde', 'nionde', 'tionde'];
                     const hinderName = hinderNames[currentIndex] || `${currentIndex + 1}:e`;
-
-                    logToFile(`Simulation text: validActiveObstacleId=${validActiveObstacleId}, currentIndex=${currentIndex}, hinderName=${hinderName}`);
 
                     // Om vi redan är vid rätt hinder, visa "Vid X hindret", annars "Gå till X hindret"
                     if (simulationState.stage === 'AT_OBSTACLE' && simulationState.description.includes(hinderName)) {

@@ -18,7 +18,6 @@ import DebugGameControls from './DebugGameControls';
 import DebugSettings from './DebugSettings';
 import RiddleModal from './RiddleModal';
 import PlayerLegend from './PlayerLegend';
-import { logToFile, setPlayerInfo } from '../../utils/fileLogger';
 
 const GeolocationDeniedScreen = () => (
     <div className="absolute inset-0 z-[2000] bg-background bg-opacity-95 flex flex-col items-center justify-center text-center p-8">
@@ -48,7 +47,6 @@ const GameScreen = ({ user, userData }) => {
     const [showRiddle, setShowRiddle] = useState(false);
     const [currentObstacle, setCurrentObstacle] = useState(null);
     const [riddleShownFor, setRiddleShownFor] = useState(null);
-    const lastLoggedTeamMembers = useRef(null);
     const [showPlayerLegend, setShowPlayerLegend] = useState(false);
     const lastRiddleRequest = useRef(null);
     // eslint-disable-next-line no-unused-vars
@@ -163,8 +161,6 @@ const GameScreen = ({ user, userData }) => {
                                 const isLeader = user.uid === teamData.leaderId;
                                 addLog(`Kontrollerar lagledarstatus: Du är ${isLeader ? 'lagledare' : 'inte lagledare'}.`);
 
-                                // Sätt spelarinformation för fil-loggning
-                                setPlayerInfo(user.uid, user.displayName || userData?.displayName, isLeader);
                             }
 
                             if (teamData.memberIds?.length > 0) {
@@ -192,12 +188,6 @@ const GameScreen = ({ user, userData }) => {
                                             lastUpdate: playerData[mdoc.id]?.lastUpdate || null,
                                             isActive: playerData[mdoc.id]?.isActive || false
                                         }));
-                                    // Logga bara om isActive-status faktiskt ändrats för någon spelare
-                                    const currentStatus = validMembers.map(m => `${m.displayName || m.name}:${m.isActive}`).join(',');
-                                    if (lastLoggedTeamMembers.current !== currentStatus) {
-                                        logToFile(`Firebase uppdatering: ${currentStatus}`);
-                                        lastLoggedTeamMembers.current = currentStatus;
-                                    }
                                     setTeamMembers(validMembers);
                                 });
                             } else {
@@ -475,11 +465,6 @@ const GameScreen = ({ user, userData }) => {
                         return freshIsActive === true;
                     });
 
-                    logToFile(`Löser ${game.activeObstacleId}: Aktiva spelare (färsk data): ${activeMembers.map(m => m.displayName || m.name).join(', ')}`);
-                    logToFile(`Jämförelse - Cached vs Fresh för varje spelare: ${teamMembers.map(m =>
-                        `${m.displayName || m.name}(cached:${m.isActive}, fresh:${freshPlayerData[m.uid]?.isActive || false})`
-                    ).join(', ')}`);
-                    logToFile(`Debug - Alla fresh player data: ${JSON.stringify(freshPlayerData)}`);
 
                     return activeMembers.map(member => ({
                         uid: member.uid,
