@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDebug } from '../../context/DebugContext'; // Importerar debug-verktyget
 import Logo from '../shared/Logo';
+import HamburgerMenu from '../shared/HamburgerMenu';
 
 // Funktion för att formatera sekunder till HH:MM:SS
 const formatTime = (seconds) => {
@@ -15,7 +16,41 @@ const formatTime = (seconds) => {
     return `${h}:${m}:${s}`;
 };
 
-const GameHeader = ({ gameName, teamName, startTime, gameFinished = false }) => {
+// Funktion för att bestämma nästa uppgift baserat på spelstatus och roll
+const getNextObjective = (game, team, user) => {
+    if (!game || !team || !user) return "Laddar...";
+
+    const isLeader = user.uid === team.leaderId;
+
+    // Om spelet inte har startat
+    if (game.status === 'pending') {
+        return isLeader ? "Gå till start" : "Vänta på lagledaren";
+    }
+
+    if (game.status === 'ready' && !game.startTime) {
+        return isLeader ? "Starta spelet" : "Vänta på start";
+    }
+
+    // Om spelet har startat
+    if (game.status === 'started') {
+        const totalObstacles = game.course?.obstacles?.length || 0;
+        const completedCount = game.completedObstacles?.length || 0;
+
+        if (completedCount < totalObstacles) {
+            return `Hinder ${completedCount + 1}`;
+        } else {
+            return "Gå till mål";
+        }
+    }
+
+    if (game.status === 'finished') {
+        return "Spelet avslutat";
+    }
+
+    return "Okänt status";
+};
+
+const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, teamMembers }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
     const navigate = useNavigate();
     const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
@@ -56,35 +91,31 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false }) => 
     }, [startTime, gameFinished, addLog]); // Effekt-hooken körs om när 'startTime', 'gameFinished' eller 'addLog' ändras
 
     return (
-        <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light px-1 py-1 sm:p-2 shadow-lg flex justify-between items-center border-b border-primary">
-            <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0">
-                <Logo size={20} className="flex-shrink-0" />
-                <div className="flex items-center gap-1 sm:gap-2 min-w-0">
-                    <div className="bg-black bg-opacity-80 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-primary">
-                        <h1 className="text-xs font-bold text-white truncate">{gameName}</h1>
-                    </div>
-                    <div className="bg-cyan-500 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-cyan-500">
-                        <p className="text-xs font-bold text-white truncate">{teamName}</p>
+        <div className="absolute top-0 left-0 right-0 z-[1000] bg-black bg-opacity-90 px-2 py-1 shadow-lg border-b border-primary h-8">
+            <div className="flex items-center justify-between h-full">
+                {/* Vänster: Logo och namn */}
+                <div className="flex items-center gap-1 flex-1 min-w-0">
+                    <Logo size={12} className="flex-shrink-0" />
+                    <div className="text-xs text-white font-medium truncate">
+                        {gameName} | {teamName}
                     </div>
                 </div>
-            </div>
-            <div className="flex-shrink-0 text-center mx-1 sm:mx-2">
-                <div className="inline-block bg-black bg-opacity-80 px-1 py-0.5 sm:px-2 sm:py-1 rounded border border-accent-yellow">
-                    <div className="text-xs sm:text-sm font-mono text-white font-bold">
+
+                {/* Mitten: Nästa uppgift */}
+                <div className="flex-shrink-0">
+                    <div className="bg-gradient-to-r from-cyan-600 to-blue-600 px-1.5 py-0.5 rounded text-xs text-white font-bold">
+                        {getNextObjective(game, team, user)}
+                    </div>
+                </div>
+
+                {/* Höger: Timer och hamburger */}
+                <div className="flex items-center gap-1 flex-1 justify-end min-w-0">
+                    <div className="text-xs text-white font-mono">
                         {formatTime(elapsedTime)}
                     </div>
+                    <HamburgerMenu teamMembers={teamMembers}>
+                    </HamburgerMenu>
                 </div>
-            </div>
-            <div className="flex-shrink-0 flex justify-end">
-                <button
-                    onClick={() => navigate('/teams')}
-                    className="bg-red-500 hover:bg-red-600 text-white p-1 sm:p-1.5 rounded-full transition-colors duration-200"
-                    aria-label="Stäng spelet"
-                >
-                    <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
             </div>
         </div>
     );
