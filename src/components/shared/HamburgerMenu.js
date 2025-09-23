@@ -27,7 +27,30 @@ const HamburgerMenu = ({ children }) => {
 
     return (
         <div ref={node} className="relative z-[1001]">
-            <button onClick={() => setIsOpen(!isOpen)} className="neu-button neu-button-secondary p-2 relative z-[1001]">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="p-2 relative z-[1001] transition-all duration-100 ease-in-out"
+                style={{
+                    backgroundColor: '#444',
+                    color: '#f0f0f0',
+                    border: '2px solid #f0f0f0',
+                    borderRadius: '4px',
+                    boxShadow: '4px 4px 0 #f0f0f0',
+                    cursor: 'pointer'
+                }}
+                onMouseDown={(e) => {
+                    e.target.style.transform = 'translate(4px, 4px)';
+                    e.target.style.boxShadow = '0 0 0 #f0f0f0';
+                }}
+                onMouseUp={(e) => {
+                    e.target.style.transform = 'translate(0, 0)';
+                    e.target.style.boxShadow = '4px 4px 0 #f0f0f0';
+                }}
+                onMouseLeave={(e) => {
+                    e.target.style.transform = 'translate(0, 0)';
+                    e.target.style.boxShadow = '4px 4px 0 #f0f0f0';
+                }}
+            >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
                 </svg>
@@ -35,8 +58,15 @@ const HamburgerMenu = ({ children }) => {
 
             {isOpen && (
                 <div
-                    className="absolute top-full right-0 mt-2 w-48 neu-card z-[1001] transition-all duration-300 ease-in-out"
-                    style={{ transformOrigin: 'top right' }}
+                    className="absolute top-full right-0 mt-2 w-48 z-[1001] transition-all duration-300 ease-in-out"
+                    style={{
+                        transformOrigin: 'top right',
+                        backgroundColor: '#2c2c2c',
+                        border: '2px solid #f0f0f0',
+                        borderRadius: '6px',
+                        padding: '1.5rem',
+                        boxShadow: '6px 6px 0 #f0f0f0'
+                    }}
                 >
                     <div className="flex flex-col gap-2">
                         {children}
@@ -90,13 +120,18 @@ const HamburgerMenu = ({ children }) => {
                                             setTimeout(() => setUpdateStatus(null), 3000);
                                         }}
                                         disabled={updateStatus === 'checking'}
-                                        className={`text-xs px-2 py-1 neu-button ${
-                                            updateStatus === 'checking' ? 'neu-button-secondary' :
-                                            updateStatus === 'available' ? 'neu-button-green' :
-                                            updateStatus === 'none' ? 'neu-button-secondary' :
-                                            updateStatus === 'error' ? 'neu-button-red' :
-                                            'neu-button-blue'
-                                        }`}
+                                        className="text-xs px-2 py-1 transition-all duration-100 ease-in-out cursor-pointer"
+                                        style={{
+                                            backgroundColor: updateStatus === 'checking' ? '#444' :
+                                                           updateStatus === 'available' ? '#a3ff00' :
+                                                           updateStatus === 'none' ? '#444' :
+                                                           updateStatus === 'error' ? '#ff3b30' :
+                                                           '#007BFF',
+                                            color: (updateStatus === 'available') ? '#000' : '#f0f0f0',
+                                            border: '2px solid #f0f0f0',
+                                            borderRadius: '4px',
+                                            boxShadow: '2px 2px 0 #f0f0f0'
+                                        }}
                                         title="Kontrollera om ny version finns"
                                     >
                                         {updateStatus === 'checking' ? '🔄 Kollar...' :

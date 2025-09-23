@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 45,
+  patch: 46,
   build: Date.now(),
-  description: "Design: HamburgerMenu nu med neubrutalism-design istället för genomskinlig bakgrund"
+  description: "Fix: HamburgerMenu med inline-styling för solid bakgrund - neu-card klasser fungerade inte"
 };
 
 export const getVersionString = () => {
