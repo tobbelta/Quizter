@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 46,
+  patch: 47,
   build: Date.now(),
-  description: "Fix: HamburgerMenu med inline-styling för solid bakgrund - neu-card klasser fungerade inte"
+  description: "Fix: HamburgerMenu nu med rätt sc-card & sc-button design som matchar appens designsystem"
 };
 
 export const getVersionString = () => {

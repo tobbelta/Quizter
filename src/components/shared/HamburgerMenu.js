@@ -27,30 +27,7 @@ const HamburgerMenu = ({ children }) => {
 
     return (
         <div ref={node} className="relative z-[1001]">
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="p-2 relative z-[1001] transition-all duration-100 ease-in-out"
-                style={{
-                    backgroundColor: '#444',
-                    color: '#f0f0f0',
-                    border: '2px solid #f0f0f0',
-                    borderRadius: '4px',
-                    boxShadow: '4px 4px 0 #f0f0f0',
-                    cursor: 'pointer'
-                }}
-                onMouseDown={(e) => {
-                    e.target.style.transform = 'translate(4px, 4px)';
-                    e.target.style.boxShadow = '0 0 0 #f0f0f0';
-                }}
-                onMouseUp={(e) => {
-                    e.target.style.transform = 'translate(0, 0)';
-                    e.target.style.boxShadow = '4px 4px 0 #f0f0f0';
-                }}
-                onMouseLeave={(e) => {
-                    e.target.style.transform = 'translate(0, 0)';
-                    e.target.style.boxShadow = '4px 4px 0 #f0f0f0';
-                }}
-            >
+            <button onClick={() => setIsOpen(!isOpen)} className="sc-button p-3 relative z-[1001]">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
                 </svg>
@@ -58,22 +35,15 @@ const HamburgerMenu = ({ children }) => {
 
             {isOpen && (
                 <div
-                    className="absolute top-full right-0 mt-2 w-48 z-[1001] transition-all duration-300 ease-in-out"
-                    style={{
-                        transformOrigin: 'top right',
-                        backgroundColor: '#2c2c2c',
-                        border: '2px solid #f0f0f0',
-                        borderRadius: '6px',
-                        padding: '1.5rem',
-                        boxShadow: '6px 6px 0 #f0f0f0'
-                    }}
+                    className="absolute top-full right-0 mt-2 w-48 sc-card z-[1001] transition-all duration-300 ease-in-out"
+                    style={{ transformOrigin: 'top right' }}
                 >
                     <div className="flex flex-col gap-2">
                         {children}
 
                         {/* Versionsinformation */}
-                        <div className="border-t-2 border-gray-300 pt-2 mt-2">
-                            <div className="text-xs text-gray-300 px-2 py-1">
+                        <div className="border-t border-gray-600 pt-2 mt-2">
+                            <div className="text-xs text-gray-400 px-2 py-1">
                                 <div className="flex justify-between items-center">
                                     <span>Version: {getVersionString()}</span>
                                     <button
@@ -120,18 +90,13 @@ const HamburgerMenu = ({ children }) => {
                                             setTimeout(() => setUpdateStatus(null), 3000);
                                         }}
                                         disabled={updateStatus === 'checking'}
-                                        className="text-xs px-2 py-1 transition-all duration-100 ease-in-out cursor-pointer"
-                                        style={{
-                                            backgroundColor: updateStatus === 'checking' ? '#444' :
-                                                           updateStatus === 'available' ? '#a3ff00' :
-                                                           updateStatus === 'none' ? '#444' :
-                                                           updateStatus === 'error' ? '#ff3b30' :
-                                                           '#007BFF',
-                                            color: (updateStatus === 'available') ? '#000' : '#f0f0f0',
-                                            border: '2px solid #f0f0f0',
-                                            borderRadius: '4px',
-                                            boxShadow: '2px 2px 0 #f0f0f0'
-                                        }}
+                                        className={`text-xs px-2 py-1 sc-button ${
+                                            updateStatus === 'checking' ? '' :
+                                            updateStatus === 'available' ? 'sc-button-green' :
+                                            updateStatus === 'none' ? '' :
+                                            updateStatus === 'error' ? 'sc-button-red' :
+                                            'sc-button-blue'
+                                        }`}
                                         title="Kontrollera om ny version finns"
                                     >
                                         {updateStatus === 'checking' ? '🔄 Kollar...' :
@@ -142,7 +107,7 @@ const HamburgerMenu = ({ children }) => {
                                     </button>
                                 </div>
                                 <div
-                                    className="text-xs text-gray-400 mt-1 cursor-pointer hover:text-gray-200"
+                                    className="text-xs text-gray-500 mt-1 cursor-pointer hover:text-gray-300"
                                     onClick={() => {
                                         const buildInfo = getBuildInfo();
                                         alert(`Build: ${buildInfo.fullVersion}\nBeskrivning: ${buildInfo.description}`);
