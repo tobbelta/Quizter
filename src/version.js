@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 43,
+  patch: 44,
   build: Date.now(),
-  description: "Feature: Dynamisk zoom - visar hela banan först, zoomar in på spelplan när spelaren kommer in"
+  description: "Feature: Versionshantering nu tillgänglig på spelsidan via hamburgermenyn"
 };
 
 export const getVersionString = () => {

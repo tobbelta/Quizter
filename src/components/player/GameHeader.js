@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDebug } from '../../context/DebugContext'; // Importerar debug-verktyget
 import Logo from '../shared/Logo';
+import HamburgerMenu from '../shared/HamburgerMenu';
 
 // Funktion för att formatera sekunder till HH:MM:SS
 const formatTime = (seconds) => {
@@ -75,7 +76,15 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false }) => 
                     </div>
                 </div>
             </div>
-            <div className="flex-shrink-0 flex justify-end">
+            <div className="flex-shrink-0 flex justify-end items-center gap-1">
+                <HamburgerMenu>
+                    <button
+                        onClick={() => navigate('/teams')}
+                        className="text-white hover:text-gray-300 px-2 py-1 text-xs transition-colors duration-200 w-full text-left"
+                    >
+                        🏠 Hem
+                    </button>
+                </HamburgerMenu>
                 <button
                     onClick={() => navigate('/teams')}
                     className="bg-red-500 hover:bg-red-600 text-white p-1 sm:p-1.5 rounded-full transition-colors duration-200"
