@@ -28,3 +28,19 @@ cypress/screenshots/
 # PS1-skript
 *.ps1
 
+# Claude-relaterade filer och loggar
+.claude/
+debug-server.png
+app-startup.png
+simple-test*.txt
+test-output.txt
+test[0-9]*.txt
+remember.txt
+*TEST-RESULTS*.txt
+src/utils/fileLogger.js
+src/version.js
+
+# Playwright test resultat
+playwright-report/
+test-results/
+
