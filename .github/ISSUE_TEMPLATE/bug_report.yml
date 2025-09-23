@@ -1,0 +1,135 @@
+name: 🐛 Bug Report
+description: Rapportera en bugg eller ett fel i GeoQuest
+title: "[BUG] "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tack för att du rapporterar en bugg! Fyll i så mycket information som möjligt för att hjälpa oss att förstå och lösa problemet.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 📝 Beskrivning
+      description: Beskriv kort vad som är fel
+      placeholder: En tydlig och koncis beskrivning av buggen...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 🔄 Steg för att återskapa
+      description: Steg för att återskapa problemet
+      placeholder: |
+        1. Gå till '...'
+        2. Klicka på '...'
+        3. Scrolla ner till '...'
+        4. Se felet
+      value: |
+        1.
+        2.
+        3.
+        4.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: ✅ Förväntat beteende
+      description: Vad skulle ha hänt istället?
+      placeholder: En tydlig beskrivning av vad du förväntade dig...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: ❌ Faktiskt beteende
+      description: Vad hände istället?
+      placeholder: Beskriv vad som faktiskt hände...
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 📷 Screenshots/Videos
+      description: Lägg till screenshots eller videos om möjligt
+      placeholder: Dra och släpp filer här eller klistra in länkar...
+
+  - type: dropdown
+    id: device_type
+    attributes:
+      label: 📱 Enhetstyp
+      description: Vilken typ av enhet använder du?
+      options:
+        - Desktop/Laptop
+        - Mobil (telefon)
+        - Tablet
+        - Okänt
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: 🌐 Browser
+      description: Vilken browser och version använder du?
+      placeholder: ex. Chrome 119, Firefox 120, Safari 17
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 💻 Operativsystem
+      description: Vilket OS använder du?
+      placeholder: ex. Windows 11, macOS 14, iOS 17, Android 13
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 🏷️ App-version
+      description: Vilken version av GeoQuest använder du?
+      placeholder: ex. v2.8.51 (finns i hamburger-menyn)
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 🚨 Prioritet
+      description: Hur allvarlig är buggen?
+      options:
+        - 🔴 Kritisk (appen kraschar/helt oanvändbar)
+        - 🟠 Hög (viktig funktion fungerar inte)
+        - 🟡 Medium (mindre problem som påverkar användning)
+        - 🟢 Låg (kosmetisk/mindre irritation)
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 📝 Ytterligare kontext
+      description: Lägg till annan relevant information
+      placeholder: |
+        - Händer detta alltid eller bara ibland?
+        - Fanns det specifika förhållanden?
+        - Felmeddelanden från konsolen?
+        - Andra detaljer...
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: ✅ Bekräftelse
+      description: Bekräfta innan du skickar in
+      options:
+        - label: Jag har sökt efter liknande issues och hittat inga dubletter
+          required: true
+        - label: Jag har inkluderat all nödvändig information
+          required: true

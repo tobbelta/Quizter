@@ -1,0 +1,130 @@
+name: 🚀 Enhancement
+description: Förbättra en befintlig funktion i GeoQuest
+title: "[ENHANCEMENT] "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Har du en idé för hur vi kan förbättra en befintlig funktion? Låt oss veta!
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 📂 Kategori
+      description: Vilken typ av förbättring är detta?
+      options:
+        - 🎨 UI/UX (utseende och användarupplevelse)
+        - ⚡ Performance (hastighet och prestanda)
+        - 📱 Mobile (mobilanpassning)
+        - ♿ Accessibility (tillgänglighet)
+        - 🔧 Funktionalitet (hur något fungerar)
+        - 📊 Data/Analytics
+        - 🔒 Säkerhet
+        - 🌐 Internationalisering
+        - 📖 Dokumentation
+        - 🧪 Testing
+        - Annat
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: 📍 Nuvarande beteende
+      description: Hur fungerar funktionen just nu?
+      placeholder: Beskriv hur funktionen fungerar idag...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_improvement
+    attributes:
+      label: ✨ Föreslagen förbättring
+      description: Hur skulle du vilja att funktionen fungerar istället?
+      placeholder: |
+        Beskriv din förbättring i detalj:
+        - Vad skulle ändras?
+        - Hur skulle det förbättra användarupplevelsen?
+        - Vilka specifika steg skulle vara annorlunda?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 🎯 Motivering
+      description: Varför är denna förbättring viktig?
+      placeholder: |
+        - Vilket problem löser denna förbättring?
+        - Hur skulle det påverka användarna positivt?
+        - Finns det data eller feedback som stöder detta?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: 📈 Förväntad påverkan
+      description: Hur stor påverkan skulle denna förbättring ha?
+      options:
+        - 🔴 Hög (påverkar alla användare betydligt)
+        - 🟠 Medium (påverkar många användare märkbart)
+        - 🟡 Låg (påverkar några användare eller mindre förbättring)
+        - 🟢 Minimal (nice-to-have förbättring)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: effort
+    attributes:
+      label: ⏱️ Uppskattad utvecklingsinsats
+      description: Hur mycket arbete tror du detta kräver?
+      options:
+        - 🟢 Liten (några timmar)
+        - 🟡 Medium (några dagar)
+        - 🟠 Stor (veckor)
+        - 🔴 Mycket stor (månader)
+        - 🤷 Vet inte
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: 🌟 Exempel/Inspiration
+      description: Har du sett liknande lösningar någon annanstans?
+      placeholder: |
+        - Andra appar/webbplatser som gör detta bra
+        - Konkreta exempel på hur det skulle kunna fungera
+        - Referenser eller länkar
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 📷 Screenshots/Mockups
+      description: Bilder som visar nuvarande läge eller föreslagna ändringar
+      placeholder: Dra och släpp filer här eller klistra in länkar...
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: ✅ Acceptanskriterier
+      description: När vet vi att förbättringen är klar?
+      placeholder: |
+        - [ ] Funktionen gör X på sätt Y
+        - [ ] Användaren kan Z
+        - [ ] Performance förbättras med W%
+        - [ ] Responsiv design fungerar på alla enheter
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: ✅ Bekräftelse
+      description: Bekräfta innan du skickar in
+      options:
+        - label: Jag har sökt efter liknande enhancement requests och hittat inga dubletter
+          required: true
+        - label: Denna förbättring skulle vara värdefull för andra användare
+          required: true
