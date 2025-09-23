@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 44,
+  patch: 45,
   build: Date.now(),
-  description: "Feature: Versionshantering nu tillgänglig på spelsidan via hamburgermenyn"
+  description: "Design: HamburgerMenu nu med neubrutalism-design istället för genomskinlig bakgrund"
 };
 
 export const getVersionString = () => {
