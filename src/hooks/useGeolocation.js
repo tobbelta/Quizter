@@ -272,7 +272,7 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
 
         } else {
         }
-    }, [game, simulationState.stage, position, simulationSpeed, getValidActiveObstacleId, teamMembers]);
+    }, [game, simulationState.stage, simulationState.description, position, simulationSpeed, getValidActiveObstacleId, userId]);
 
     // Uppdatera simuleringsstatusen när spelet ändras
     useEffect(() => {
@@ -287,6 +287,7 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
 
         // Kontrollera om denna spelare är i mål
         const isPlayerAtFinish = userId && game.playersAtFinish?.includes(userId);
+        // eslint-disable-next-line no-unused-vars
         const allPlayersFinished = game.allPlayersFinished === true;
 
 
@@ -333,7 +334,7 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
         if (expectedDescription && expectedDescription !== simulationState.description) {
             setSimulationState({ stage: expectedStage, description: expectedDescription });
         }
-    }, [game?.status, game?.activeObstacleId, game?.completedObstacles, game?.course, isDebug, simulationState.stage, simulationState.description, getValidActiveObstacleId, teamMembers]);
+    }, [game, isDebug, simulationState.stage, simulationState.description, getValidActiveObstacleId, teamMembers, userId]);
 
     // Track animation target separately to trigger useEffect properly
     const [animationTarget, setAnimationTarget] = useState(null);
@@ -424,7 +425,7 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
                 cancelAnimationFrame(frameRef.current);
             }
         };
-    }, [isDebug, animationTarget, simulationState.stage, game]);
+    }, [isDebug, animationTarget, simulationState.stage, game, getValidActiveObstacleId]);
 
 
     useEffect(() => {
