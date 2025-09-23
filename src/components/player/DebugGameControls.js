@@ -71,7 +71,8 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
             {isMoving ? 'Reser...' : simulationState.description}
           </button>
         )}
-        {game.activeObstacleId && (
+        {game.activeObstacleId && simulationState.stage === 'AT_OBSTACLE' &&
+         !game.completedObstacles?.includes(game.activeObstacleId) && (
           <button
             onClick={onCompleteObstacle}
             className="sc-button sc-button-green text-xs px-2 py-1"
@@ -124,7 +125,8 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
                 {isMoving ? 'Reser...' : simulationState.description}
               </button>
             )}
-            {game.activeObstacleId && (
+            {game.activeObstacleId && simulationState.stage === 'AT_OBSTACLE' &&
+             !game.completedObstacles?.includes(game.activeObstacleId) && (
               <button
                 onClick={onCompleteObstacle}
                 className="sc-button sc-button-green w-full text-sm"

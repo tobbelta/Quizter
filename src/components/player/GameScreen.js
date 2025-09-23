@@ -48,6 +48,7 @@ const GameScreen = ({ user, userData }) => {
     const lastRiddleRequest = useRef(null);
     // eslint-disable-next-line no-unused-vars
     const geoErrorLogged = useRef(false);
+    const [riddleClosedByOtherPlayer, setRiddleClosedByOtherPlayer] = useState(false);
 
     const mapRef = useRef();
     
@@ -310,6 +311,37 @@ const GameScreen = ({ user, userData }) => {
         }
     }, [game, riddleShownFor, showRiddle, addLog]);
 
+    // Övervaka när gåtor löses av andra spelare medan modal är öppen
+    useEffect(() => {
+        if (!showRiddle || !currentObstacle || !game) return;
+
+        // Kontrollera om gåtan just lösts av någon annan
+        const isNowSolved = game.completedObstacles?.includes(currentObstacle.obstacleId);
+
+        if (isNowSolved && !riddleClosedByOtherPlayer) {
+            // Hitta vem som löste gåtan från completedObstaclesDetailed
+            const latestSolution = game.completedObstaclesDetailed
+                ?.filter(solution => solution.obstacleId === currentObstacle.obstacleId)
+                ?.sort((a, b) => (b.solvedAt?.seconds || 0) - (a.solvedAt?.seconds || 0))[0];
+
+            if (latestSolution && latestSolution.solvedBy !== user?.uid) {
+                // Hitta spelarens namn
+                const solver = teamMembers.find(member => member.uid === latestSolution.solvedBy);
+                const solverName = solver?.name || 'Annan spelare';
+
+                setRiddleClosedByOtherPlayer(true);
+                alert(`Gåtan löstes av ${solverName}! Modalen stängs.`);
+
+                setTimeout(() => {
+                    setShowRiddle(false);
+                    setCurrentObstacle(null);
+                    setRiddleShownFor(null);
+                    setRiddleClosedByOtherPlayer(false);
+                }, 1000);
+            }
+        }
+    }, [game, showRiddle, currentObstacle, teamMembers, user?.uid, riddleClosedByOtherPlayer]);
+
     // Hjälpfunktion för att hitta giltiga hinder
     const getValidObstacles = useCallback(() => {
         if (!game || !game.completedObstaclesDetailed || !teamMembers) return [];
@@ -547,6 +579,15 @@ const GameScreen = ({ user, userData }) => {
 
         if (distance <= obstacleRadius) {
             addLog(`checkObstacleProximity: Inom radie! Visar gåta för ${activeObstacle.obstacleId}`);
+
+            // Kontrollera om gåtan redan är löst
+            const isAlreadySolved = game.completedObstacles?.includes(activeObstacle.obstacleId);
+
+            if (isAlreadySolved) {
+                addLog(`Gåta ${activeObstacle.obstacleId} är redan löst - visar inte igen`);
+                return;
+            }
+
             // I riktigt spel: visa gåtan automatiskt
             // I simulering: bara logga att man nått hindret
             if (!isDebug) {

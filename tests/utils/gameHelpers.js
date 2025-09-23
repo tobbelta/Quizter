@@ -223,17 +223,33 @@ export class GamePlayer {
   }
 
   async enableDebugMode() {
-    // Klicka på debug-inställningar (kugghjul)
-    await this.page.click('[aria-label="Debug-inställningar"], .sc-button:has-text("⚙")');
+    // Kontrollera om debug-läge redan är aktiverat genom att kolla om simuleringsknapparna finns
+    const simulationButtons = this.page.locator('button:has-text("Normal"), button:has-text("Långsam"), button:has-text("Snabb")');
+    const isDebugAlreadyActive = await simulationButtons.first().isVisible({ timeout: 3000 }).catch(() => false);
 
-    // Aktivera debug-läge - använd mer specifik selektor
-    const debugCheckbox = this.page.getByRole('checkbox', { name: 'Aktivera debug-läge' });
-    if (!await debugCheckbox.isChecked()) {
-      await debugCheckbox.click();
+    if (isDebugAlreadyActive) {
+      console.log(`${this.playerName}: Debug-läge är redan aktiverat`);
+      return;
     }
 
-    // Stäng inställningar
-    await this.page.click('[aria-label="Debug-inställningar"], .sc-button:has-text("⚙")');
+    // Försök klicka på debug-inställningar (kugghjul) om det behövs
+    const debugButton = this.page.locator('[aria-label="Debug-inställningar"], .sc-button:has-text("⚙")');
+    const debugButtonVisible = await debugButton.isVisible({ timeout: 5000 }).catch(() => false);
+
+    if (debugButtonVisible) {
+      await debugButton.click();
+
+      // Aktivera debug-läge - använd mer specifik selektor
+      const debugCheckbox = this.page.getByRole('checkbox', { name: 'Aktivera debug-läge' });
+      if (!await debugCheckbox.isChecked()) {
+        await debugCheckbox.click();
+      }
+
+      // Stäng inställningar
+      await debugButton.click();
+    } else {
+      console.log(`${this.playerName}: Debug-inställningar knappen hittades inte - kanske redan aktiverat?`);
+    }
   }
 
   async goToStart() {
@@ -266,14 +282,35 @@ export class GamePlayer {
       await this.page.waitForTimeout(1000);
     }
 
-    // Vänta på att "Visa Gåta" knappen blir tillgänglig
-    const riddleButton = this.page.locator('button:has-text("Visa Gåta")');
-    await riddleButton.waitFor({ state: 'visible', timeout: 10000 });
+    // Navigera till hindret först med simuleringsknappen
+    console.log(`${this.playerName}: Navigerar till hindret...`);
+    let maxAttempts = 10;
+    let currentAttempt = 0;
 
-    console.log(`${this.playerName}: Visa Gåta knappen är aktiv!`);
+    while (currentAttempt < maxAttempts) {
+      // Klicka på simuleringsknappen för att komma till hindret
+      const simulationButton = this.page.locator('button').filter({ hasText: /Gå till.*hinder|Vid.*hinder/ }).first();
+      if (await simulationButton.isVisible({ timeout: 3000 })) {
+        await simulationButton.click();
+        await this.page.waitForTimeout(2000);
+      }
 
-    // Klicka på "Visa Gåta"
-    await riddleButton.click();
+      // Kontrollera om vi har kommit till hindret och "Visa Gåta" är tillgänglig
+      const riddleButton = this.page.locator('button:has-text("Visa Gåta")');
+      if (await riddleButton.isVisible({ timeout: 3000 })) {
+        console.log(`${this.playerName}: Nått hindret! Visa Gåta knappen är aktiv!`);
+        // Klicka på "Visa Gåta"
+        await riddleButton.click();
+        break;
+      }
+
+      currentAttempt++;
+      console.log(`${this.playerName}: Försök ${currentAttempt}/${maxAttempts} - navigerar vidare...`);
+
+      if (currentAttempt >= maxAttempts) {
+        throw new Error(`${this.playerName}: Kunde inte nå hindret efter ${maxAttempts} försök`);
+      }
+    }
 
     // Vänta på att modal öppnas
     await this.page.waitForTimeout(2000);
