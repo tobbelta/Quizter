@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polygon } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { useDebug } from '../../context/DebugContext';
@@ -51,7 +52,8 @@ const GameScreen = ({ user, userData }) => {
     const [riddleClosedByOtherPlayer, setRiddleClosedByOtherPlayer] = useState(false);
 
     const mapRef = useRef();
-    
+    const [currentZoomMode, setCurrentZoomMode] = useState('course'); // 'course' | 'gamearea'
+
     const isGeolocationPaused = !game;
 
     const { position, error: geoError, advanceSimulation, simulationState, setPositionManually } = useGeolocation(
@@ -79,6 +81,87 @@ const GameScreen = ({ user, userData }) => {
         }
     }, [game?.startTime]);
 
+    // Beräkna spelplanens bounds (alla obstacles + start + finish)
+    const gameAreaBounds = useMemo(() => {
+        if (!game?.course) return null;
+
+        const points = [];
+
+        // Lägg till start och finish
+        const startPoint = game.course.startPoint || game.course.start;
+        const finishPoint = game.course.finishPoint || game.course.finish;
+
+        if (startPoint) {
+            points.push([
+                startPoint.latitude || startPoint.lat,
+                startPoint.longitude || startPoint.lng
+            ]);
+        }
+
+        if (finishPoint) {
+            points.push([
+                finishPoint.latitude || finishPoint.lat,
+                finishPoint.longitude || finishPoint.lng
+            ]);
+        }
+
+        // Lägg till alla obstacles
+        if (game.course.obstacles) {
+            game.course.obstacles.forEach(obstacle => {
+                if (obstacle.latitude && obstacle.longitude) {
+                    points.push([obstacle.latitude, obstacle.longitude]);
+                }
+            });
+        }
+
+        if (points.length === 0) return null;
+
+        // Beräkna bounds
+        const lats = points.map(p => p[0]);
+        const lngs = points.map(p => p[1]);
+
+        return {
+            north: Math.max(...lats),
+            south: Math.min(...lats),
+            east: Math.max(...lngs),
+            west: Math.min(...lngs),
+            center: [
+                (Math.max(...lats) + Math.min(...lats)) / 2,
+                (Math.max(...lngs) + Math.min(...lngs)) / 2
+            ]
+        };
+    }, [game?.course]);
+
+    // Bestäm om spelaren är inom spelplanen
+    const isPlayerInGameArea = useMemo(() => {
+        if (!position || !gameAreaBounds || !game?.status === 'started') return false;
+
+        const playerLat = position.coords.latitude;
+        const playerLng = position.coords.longitude;
+
+        // Expandera bounds lite för att inte vara för strikt
+        const padding = 0.001; // ca 100 meter
+
+        return playerLat >= (gameAreaBounds.south - padding) &&
+               playerLat <= (gameAreaBounds.north + padding) &&
+               playerLng >= (gameAreaBounds.west - padding) &&
+               playerLng <= (gameAreaBounds.east + padding);
+    }, [position, gameAreaBounds, game?.status]);
+
+    // Skapa polygon för spelområdet
+    const gameAreaPolygon = useMemo(() => {
+        if (!gameAreaBounds) return null;
+
+        const padding = 0.0005; // lite mindre padding för visuell avgränsning
+
+        return [
+            [gameAreaBounds.south - padding, gameAreaBounds.west - padding],
+            [gameAreaBounds.north + padding, gameAreaBounds.west - padding],
+            [gameAreaBounds.north + padding, gameAreaBounds.east + padding],
+            [gameAreaBounds.south - padding, gameAreaBounds.east + padding]
+        ];
+    }, [gameAreaBounds]);
+
     // Logga startTime-konvertering i separat useEffect för att undvika setState-in-render
     useEffect(() => {
         if (!game?.startTime) {
@@ -89,6 +172,49 @@ const GameScreen = ({ user, userData }) => {
             addLog('Fel vid startTime-konvertering');
         }
     }, [game?.startTime, startTimeDate, addLog]);
+
+    // Hantera dynamisk zoom baserat på spelarens position
+    useEffect(() => {
+        if (!mapRef.current || !gameAreaBounds) return;
+
+        const map = mapRef.current;
+
+        // Bestäm vilken zoom-mode som ska användas
+        const shouldUseGameAreaZoom = isPlayerInGameArea && game?.status === 'started';
+
+        if (shouldUseGameAreaZoom && currentZoomMode !== 'gamearea') {
+            addLog('Spelaren kom in i spelplanen - zoomar in på spelområdet');
+            setCurrentZoomMode('gamearea');
+
+            // Skapa bounds för spelplanen med lite padding
+            const bounds = L.latLngBounds([
+                [gameAreaBounds.south, gameAreaBounds.west],
+                [gameAreaBounds.north, gameAreaBounds.east]
+            ]);
+
+            // Zooma in på spelplanen
+            map.fitBounds(bounds, {
+                padding: [20, 20],
+                maxZoom: 18 // Zooma in så långt det går men visa hela planen
+            });
+
+        } else if (!shouldUseGameAreaZoom && currentZoomMode !== 'course') {
+            addLog('Spelaren är utanför spelplanen - visar hela banan');
+            setCurrentZoomMode('course');
+
+            // Återgå till att visa hela banan med spelarens position
+            const currentPosition = position ? [position.coords.latitude, position.coords.longitude] : null;
+            const startPoint = game.course?.startPoint || game.course?.start;
+            const center = currentPosition || [
+                startPoint?.latitude || startPoint?.lat,
+                startPoint?.longitude || startPoint?.lng
+            ];
+
+            if (center) {
+                map.setView(center, 15);
+            }
+        }
+    }, [isPlayerInGameArea, gameAreaBounds, currentZoomMode, position, game?.status, game?.course, addLog]);
 
 
     useEffect(() => {
@@ -803,6 +929,9 @@ const GameScreen = ({ user, userData }) => {
 
     const currentPosition = position ? [position.coords.latitude, position.coords.longitude] : null;
     const center = currentPosition || [startLat, startLng];
+
+    // Bestäm initial zoom baserat på zoom-mode
+    const initialZoom = currentZoomMode === 'gamearea' ? 16 : 15;
     
     return (
         <div className="h-screen w-screen overflow-hidden">
@@ -816,7 +945,7 @@ const GameScreen = ({ user, userData }) => {
             <div className="absolute top-8 left-0 right-0 bottom-0 w-full">
                 <MapContainer
                     center={center}
-                    zoom={15}
+                    zoom={initialZoom}
                     ref={mapRef}
                     style={{
                         height: '100vh',
@@ -845,6 +974,22 @@ const GameScreen = ({ user, userData }) => {
                     updateWhenIdle={adaptiveLoading.shouldReduceData} // Update less frequently on slow connections
                 />
                 <Marker position={[startLat, startLng]} icon={startIcon}><Popup>Start</Popup></Marker>
+
+                {/* Visa spelområdet när spelaren är i gamearea-zoom mode */}
+                {currentZoomMode === 'gamearea' && gameAreaPolygon && (
+                    <Polygon
+                        positions={gameAreaPolygon}
+                        pathOptions={{
+                            color: '#00ff00',
+                            weight: 2,
+                            fillColor: '#00ff00',
+                            fillOpacity: 0.1,
+                            dashArray: '10, 10' // streckad linje
+                        }}
+                    >
+                        <Popup>Spelområde</Popup>
+                    </Polygon>
+                )}
 
                 {/* Visa bara aktivt hinder om spelet har startat (status 'started') */}
                 {game.status === 'started' && game.activeObstacleId && game.course.obstacles

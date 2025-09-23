@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 42,
+  patch: 43,
   build: Date.now(),
-  description: "Fix: Aggressiv Leaflet CSS-override för mobil helskärm (!important + fixed positioning)"
+  description: "Feature: Dynamisk zoom - visar hela banan först, zoomar in på spelplan när spelaren kommer in"
 };
 
 export const getVersionString = () => {
