@@ -941,6 +941,10 @@ const GameScreen = ({ user, userData }) => {
                 // Använder det memoiserade värdet
                 startTime={startTimeDate}
                 gameFinished={game?.allPlayersFinished === true}
+                game={game}
+                team={team}
+                user={user}
+                teamMembers={teamMembers}
             />
             <div className="absolute top-8 left-0 right-0 bottom-0 w-full">
                 <MapContainer

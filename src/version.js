@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 48,
+  patch: 51,
   build: Date.now(),
-  description: "Design: Mycket snyggare HamburgerMenu med glaseffekt, bättre färger och layout"
+  description: "Feature: Kompakta debug-kontroller och spelarlista i hamburger-menyn för både simulering och verkligt spel"
 };
 
 export const getVersionString = () => {
@@ -69,10 +69,29 @@ export const checkForUpdates = async () => {
           console.warn('Kunde inte spara till localStorage:', e);
         }
 
+        // Kontrollera om detta är samma session genom att jämföra med tiden då sidan laddades
+        const pageLoadTime = window.performance?.timing?.navigationStart || Date.now();
+        const timeSincePageLoad = now - pageLoadTime;
+
+        // Om uppdateringen upptäcktes inom 30 sekunder efter sidladdning, ignorera den
+        // (detta betyder troligen att det är samma utvecklingssession)
+        if (timeSincePageLoad < 30000) {
+          try {
+            localStorage.setItem('lastKnownBuild', currentBuildTime.toString());
+            localStorage.setItem('lastUpdateCheck', now.toString());
+          } catch (e) {
+            console.warn('Kunde inte spara till localStorage:', e);
+          }
+          return {
+            hasUpdate: false,
+            message: 'Du har den senaste versionen (utvecklingsläge)'
+          };
+        }
+
         return {
           hasUpdate: true,
-          currentVersion: getVersionString(),
-          serverVersion: getVersionString(), // Ny version är samma som current (byggtiden skiljer)
+          currentVersion: `v${VERSION.major}.${VERSION.minor}.${VERSION.patch}`,
+          serverVersion: `v${VERSION.major}.${VERSION.minor}.${VERSION.patch} (ny build)`,
           message: 'Ny version tillgänglig!'
         };
       }
