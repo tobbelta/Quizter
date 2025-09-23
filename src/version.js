@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 40,
+  patch: 41,
   build: Date.now(),
-  description: "Fix: Återställd debug UI - inställningar (⚙️) och aktiva användare (👥) knappar"
+  description: "Fix: Mobil karta helskärm med absolut positionering (top-8 left-0 right-0 bottom-0)"
 };
 
 export const getVersionString = () => {
