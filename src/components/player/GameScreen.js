@@ -15,9 +15,7 @@ import GameHeader from './GameHeader';
 import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon } from '../shared/MapIcons';
 import Spinner from '../shared/Spinner';
 import DebugGameControls from './DebugGameControls';
-import DebugSettings from './DebugSettings';
 import RiddleModal from './RiddleModal';
-import PlayerLegend from './PlayerLegend';
 
 const GeolocationDeniedScreen = () => (
     <div className="absolute inset-0 z-[2000] bg-background bg-opacity-95 flex flex-col items-center justify-center text-center p-8">
@@ -47,7 +45,6 @@ const GameScreen = ({ user, userData }) => {
     const [showRiddle, setShowRiddle] = useState(false);
     const [currentObstacle, setCurrentObstacle] = useState(null);
     const [riddleShownFor, setRiddleShownFor] = useState(null);
-    const [showPlayerLegend, setShowPlayerLegend] = useState(false);
     const lastRiddleRequest = useRef(null);
     // eslint-disable-next-line no-unused-vars
     const geoErrorLogged = useRef(false);
@@ -862,17 +859,7 @@ const GameScreen = ({ user, userData }) => {
             </MapContainer>
             </div>
 
-            {/* Always show debug settings button */}
-            <DebugSettings />
 
-            {/* Player legend button */}
-            <button
-                onClick={() => setShowPlayerLegend(true)}
-                className="fixed top-16 right-4 z-[1000] sc-button sc-button-blue p-2 text-xs"
-                title="Visa lagmedlemmar & ikoner"
-            >
-                👥
-            </button>
 
             {isDebug && (
                 <div className={`fixed ${minimalControls ? 'bottom-4 left-4' : 'bottom-4 left-4 right-4'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
@@ -938,15 +925,6 @@ const GameScreen = ({ user, userData }) => {
                 />
             )}
 
-            {showPlayerLegend && (
-                <PlayerLegend
-                    team={team}
-                    teamMembers={teamMembers}
-                    gameId={gameId}
-                    game={game}
-                    onClose={() => setShowPlayerLegend(false)}
-                />
-            )}
 
         </div>
     );
