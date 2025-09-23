@@ -1,9 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getVersionString, getBuildInfo, checkForUpdates } from '../../version';
 
 const HamburgerMenu = ({ children }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [updateStatus, setUpdateStatus] = useState(null); // null, 'checking', 'available', 'none', 'error'
     const node = useRef();
 
     // Stäng menyn om man klickar utanför den
@@ -40,84 +38,6 @@ const HamburgerMenu = ({ children }) => {
                 >
                     <div className="flex flex-col gap-2">
                         {children}
-
-                        {/* Versionsinformation */}
-                        <div className="border-t border-gray-600 pt-2 mt-2">
-                            <div className="text-xs text-gray-400 px-2 py-1">
-                                <div className="flex justify-between items-center">
-                                    <span>Version: {getVersionString()}</span>
-                                    <button
-                                        onClick={async () => {
-                                            setUpdateStatus('checking');
-
-                                            try {
-                                                const result = await checkForUpdates();
-
-                                                if (result.hasUpdate) {
-                                                    setUpdateStatus('available');
-                                                    const confirmUpdate = window.confirm(
-                                                        `Ny version tillgänglig!\n` +
-                                                        `Nuvarande: ${result.currentVersion}\n` +
-                                                        `Ny version: ${result.serverVersion}\n\n` +
-                                                        `Vill du uppdatera nu?`
-                                                    );
-
-                                                    if (confirmUpdate) {
-                                                        // Rensa cache och ladda om
-                                                        if ('caches' in window) {
-                                                            const cacheNames = await caches.keys();
-                                                            await Promise.all(
-                                                                cacheNames.map(cacheName => caches.delete(cacheName))
-                                                            );
-                                                        }
-
-                                                        window.location.reload(true);
-                                                    }
-                                                } else if (result.error) {
-                                                    setUpdateStatus('error');
-                                                    alert(`Fel: ${result.error}`);
-                                                } else {
-                                                    setUpdateStatus('none');
-                                                    const message = result.message || 'Du har redan den senaste versionen!';
-                                                    alert(message);
-                                                }
-                                            } catch (error) {
-                                                setUpdateStatus('error');
-                                                alert(`Fel vid uppdateringskontroll: ${error.message}`);
-                                            }
-
-                                            // Återställ status efter 3 sekunder
-                                            setTimeout(() => setUpdateStatus(null), 3000);
-                                        }}
-                                        disabled={updateStatus === 'checking'}
-                                        className={`text-xs px-2 py-1 rounded ${
-                                            updateStatus === 'checking' ? 'text-yellow-400' :
-                                            updateStatus === 'available' ? 'text-green-400 font-bold' :
-                                            updateStatus === 'none' ? 'text-gray-400' :
-                                            updateStatus === 'error' ? 'text-red-400' :
-                                            'text-blue-400 hover:text-blue-300'
-                                        } underline`}
-                                        title="Kontrollera om ny version finns"
-                                    >
-                                        {updateStatus === 'checking' ? '🔄 Kollar...' :
-                                         updateStatus === 'available' ? '⬆️ Uppdatera!' :
-                                         updateStatus === 'none' ? '✓ Aktuell' :
-                                         updateStatus === 'error' ? '⚠️ Fel' :
-                                         '🔄 Kontrollera'}
-                                    </button>
-                                </div>
-                                <div
-                                    className="text-xs text-gray-500 mt-1 cursor-pointer hover:text-gray-300"
-                                    onClick={() => {
-                                        const buildInfo = getBuildInfo();
-                                        alert(`Build: ${buildInfo.fullVersion}\nBeskrivning: ${buildInfo.description}`);
-                                    }}
-                                    title="Klicka för mer info"
-                                >
-                                    {getBuildInfo().description}
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             )}
