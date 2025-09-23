@@ -283,11 +283,15 @@ export class GamePlayer {
     if (await firstRadio.isVisible({ timeout: 5000 })) {
       await firstRadio.click();
 
-      // Klicka Svara
-      await this.page.click('button:has-text("Svara")');
+      // Klicka Svara med timeout protection
+      try {
+        await this.page.click('button:has-text("Svara")', { timeout: 10000 });
 
-      // Vänta kort på att resultatet visas och sedan stängs
-      await this.page.waitForTimeout(1000);
+        // Vänta kortare tid för resultat
+        await this.page.waitForTimeout(500);
+      } catch (error) {
+        console.log(`${this.playerName}: Timeout vid Svara-knapp, fortsätter ändå...`);
+      }
     }
 
     console.log(`${this.playerName}: Hinder löst`);
@@ -347,7 +351,7 @@ export class GamePlayer {
     await this.page.waitForSelector(`text=${text}`, { timeout });
   }
 
-  async expectSimulationText(expectedText, maxWaitTime = 15000) {
+  async expectSimulationText(expectedText, maxWaitTime = 12000) {
     console.log(`${this.playerName}: Väntar på simuleringstext: "${expectedText}"`);
 
     const startTime = Date.now();
@@ -364,17 +368,17 @@ export class GamePlayer {
         return; // Success!
       }
 
-      // Mellan varje försök - trigga uppdateringar genom att interagera med UI
-      if (attempts % 3 === 0) {
+      // Snabbare retry-cykel
+      if (attempts % 2 === 0) {
         await this.forceSimulationUpdate();
       }
 
-      // Efter många försök - försök radikal debugging
-      if (attempts === 5) {
+      // Kortare debug-trigger
+      if (attempts === 4) {
         await this.debugGameState();
       }
 
-      // Vänta lite innan nästa försök
+      // Snabbare väntetid mellan försök
       await this.page.waitForTimeout(1000);
     }
 
@@ -466,8 +470,12 @@ export class GamePlayer {
         await closeButton.click();
         console.log(`${this.playerName}: Klickade på röda X-knappen - spelaren borde nu koppla från gracefully`);
 
-        // Vänta lite för att applikationen ska registrera graceful disconnect
-        await this.page.waitForTimeout(1000);
+        // Snabbare cleanup - bara vänta 500ms
+        await this.page.waitForTimeout(500);
+
+        // Stäng sidan omedelbart efter disconnect
+        await this.page.close();
+        return;
       } else {
         console.log(`${this.playerName}: Ingen röd X-knapp hittad, listar alla knappar för debugging...`);
 

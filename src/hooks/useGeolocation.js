@@ -31,9 +31,11 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
 
     // Hjälpfunktion för att beräkna rätt activeObstacleId baserat på aktiva spelare
     const getValidActiveObstacleId = useCallback(() => {
-        // Fallback till game.activeObstacleId om vi inte har teamMembers eller completedObstaclesDetailed
-        if (!game || !teamMembers || !game.completedObstaclesDetailed || game.completedObstaclesDetailed.length === 0) {
-            logToFile(`getValidActiveObstacleId fallback: ${game?.activeObstacleId} (game:${!!game}, teamMembers:${!!teamMembers}, completedDetailed:${game?.completedObstaclesDetailed?.length || 0})`);
+        // För late-joining spelare: använd alltid game.activeObstacleId om teamMembers inte är laddat än
+        if (!game) return null;
+
+        if (!teamMembers || teamMembers.length === 0 || !game.completedObstaclesDetailed || game.completedObstaclesDetailed.length === 0) {
+            logToFile(`getValidActiveObstacleId fallback för late-joining: ${game?.activeObstacleId} (teamMembers:${teamMembers?.length || 0}, completedDetailed:${game?.completedObstaclesDetailed?.length || 0})`);
             return game?.activeObstacleId;
         }
 
