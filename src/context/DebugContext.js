@@ -7,7 +7,6 @@ export const DebugProvider = ({ children }) => {
     const [logs, setLogs] = useState([]);
     const [simulationSpeed, setSimulationSpeed] = useState('normal');
     const [minimalControls, setMinimalControls] = useState(() => sessionStorage.getItem('minimalControls') === 'true');
-    const [showDebugInfo, setShowDebugInfo] = useState(() => sessionStorage.getItem('showDebugInfo') !== 'false');
 
     const setDebugMode = useCallback((enabled) => {
         setIsDebug(enabled);
@@ -19,10 +18,6 @@ export const DebugProvider = ({ children }) => {
         sessionStorage.setItem('minimalControls', enabled);
     }, []);
 
-    const setShowDebugInfoMode = useCallback((enabled) => {
-        setShowDebugInfo(enabled);
-        sessionStorage.setItem('showDebugInfo', enabled);
-    }, []);
 
     const addLog = useCallback((message) => {
         setLogs(prevLogs => {
@@ -46,8 +41,6 @@ export const DebugProvider = ({ children }) => {
         setSimulationSpeed,
         minimalControls,
         setMinimalControlsMode,
-        showDebugInfo,
-        setShowDebugInfoMode,
     };
 
     return (

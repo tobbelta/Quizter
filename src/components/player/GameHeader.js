@@ -15,21 +15,21 @@ const formatTime = (seconds) => {
     return `${h}:${m}:${s}`;
 };
 
-const GameHeader = ({ gameName, teamName, startTime }) => {
+const GameHeader = ({ gameName, teamName, startTime, gameFinished = false }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
     const navigate = useNavigate();
     const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
 
     useEffect(() => {
         // Loggar varje gång komponenten uppdateras och vad 'startTime' är
-        addLog(`GameHeader renderar. startTime: ${startTime ? startTime.toISOString() : 'ej satt'}`);
+        addLog(`GameHeader renderar. startTime: ${startTime ? startTime.toISOString() : 'ej satt'}, gameFinished: ${gameFinished}`);
 
         let timerInterval = null;
 
-        // Kontrollerar att startTime är ett giltigt Datum-objekt
-        if (startTime instanceof Date && !isNaN(startTime)) {
+        // Kontrollerar att startTime är ett giltigt Datum-objekt och att spelet inte är avslutat
+        if (startTime instanceof Date && !isNaN(startTime) && !gameFinished) {
             addLog('Giltig starttid mottagen. Startar timer...');
-            
+
             // Sätter igång en timer som uppdateras varje sekund
             timerInterval = setInterval(() => {
                 const now = new Date();
@@ -38,8 +38,12 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
             }, 1000);
 
         } else if (startTime) {
-            // Loggar en varning om vi får ett startTime som inte är ett giltigt datum
-            addLog(`VARNING: Mottog startTime som inte är ett giltigt datum: ${startTime}`);
+            if (gameFinished) {
+                addLog('Spelet är avslutat - timer stoppar');
+            } else {
+                // Loggar en varning om vi får ett startTime som inte är ett giltigt datum
+                addLog(`VARNING: Mottog startTime som inte är ett giltigt datum: ${startTime}`);
+            }
         }
 
         // "Städfunktion" som körs när komponenten försvinner eller 'startTime' ändras
@@ -49,7 +53,7 @@ const GameHeader = ({ gameName, teamName, startTime }) => {
                 clearInterval(timerInterval);
             }
         };
-    }, [startTime, addLog]); // Effekt-hooken körs om när 'startTime' eller 'addLog' ändras
+    }, [startTime, gameFinished, addLog]); // Effekt-hooken körs om när 'startTime', 'gameFinished' eller 'addLog' ändras
 
     return (
         <div className="absolute top-0 left-0 right-0 z-[1000] bg-background-light px-1 py-1 sm:p-2 shadow-lg flex justify-between items-center border-b border-primary">

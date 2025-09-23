@@ -9,7 +9,11 @@ const Spinner = ({ size = 64 }) => {
         viewBox="0 0 100 100"
         xmlns="http://www.w3.org/2000/svg"
         className="animate-spin"
-        style={{ animationDuration: '2s' }}
+        style={{
+          animationDuration: '2s',
+          transformOrigin: 'center',
+          animationTimingFunction: 'linear'
+        }}
       >
         <defs>
           {/* Metallisk gradient för bakgrund */}
@@ -90,29 +94,29 @@ const Spinner = ({ size = 64 }) => {
         <circle cx="50" cy="50" r="42" fill="none" stroke="#30b6c4" strokeWidth="1" opacity="0.6" />
         <circle cx="50" cy="50" r="38" fill="none" stroke="#f85149" strokeWidth="0.5" opacity="0.4" />
 
-        {/* Enhanced cardinal markings */}
+        {/* Enhanced cardinal markings - runda för smidig rotation */}
         <g>
           {/* North marking */}
-          <rect x="48" y="6" width="4" height="8" fill="url(#spinnerGlowingRed)" filter="url(#spinnerRedGlow)" />
+          <circle cx="50" cy="12" r="3" fill="url(#spinnerGlowingRed)" filter="url(#spinnerRedGlow)" />
           {/* East marking */}
-          <rect x="86" y="48" width="8" height="4" fill="url(#spinnerGlowingCyan)" filter="url(#spinnerCyanGlow)" />
+          <circle cx="88" cy="50" r="3" fill="url(#spinnerGlowingCyan)" filter="url(#spinnerCyanGlow)" />
           {/* South marking */}
-          <rect x="48" y="86" width="4" height="8" fill="url(#spinnerGlowingRed)" filter="url(#spinnerRedGlow)" />
+          <circle cx="50" cy="88" r="3" fill="url(#spinnerGlowingRed)" filter="url(#spinnerRedGlow)" />
           {/* West marking */}
-          <rect x="6" y="48" width="8" height="4" fill="url(#spinnerGlowingCyan)" filter="url(#spinnerCyanGlow)" />
+          <circle cx="12" cy="50" r="3" fill="url(#spinnerGlowingCyan)" filter="url(#spinnerCyanGlow)" />
         </g>
 
-        {/* Enhanced compass needles with glow */}
+        {/* Enhanced compass needles with glow - justerade för rundhet */}
         <g filter="url(#spinnerRedGlow)">
-          <path d="M50 10 L58 46 L50 43 L42 46 Z" fill="url(#spinnerGlowingRed)" stroke="#ff6b6b" strokeWidth="1" />
+          <path d="M50 15 L56 44 L50 42 L44 44 Z" fill="url(#spinnerGlowingRed)" stroke="#ff6b6b" strokeWidth="1" />
         </g>
 
         <g filter="url(#spinnerCyanGlow)">
-          <path d="M50 90 L42 54 L50 57 L58 54 Z" fill="url(#spinnerGlowingCyan)" stroke="#4ecdc4" strokeWidth="1" />
+          <path d="M50 85 L44 56 L50 58 L56 56 Z" fill="url(#spinnerGlowingCyan)" stroke="#4ecdc4" strokeWidth="1" />
         </g>
 
-        <path d="M90 50 L54 42 L57 50 L54 58 Z" fill="url(#spinnerMetallicShine)" stroke="#c9d1d9" strokeWidth="1" filter="url(#spinnerGlow)" />
-        <path d="M10 50 L46 58 L43 50 L46 42 Z" fill="url(#spinnerMetallicShine)" stroke="#c9d1d9" strokeWidth="1" filter="url(#spinnerGlow)" />
+        <path d="M85 50 L56 44 L58 50 L56 56 Z" fill="url(#spinnerMetallicShine)" stroke="#c9d1d9" strokeWidth="1" filter="url(#spinnerGlow)" />
+        <path d="M15 50 L44 56 L42 50 L44 44 Z" fill="url(#spinnerMetallicShine)" stroke="#c9d1d9" strokeWidth="1" filter="url(#spinnerGlow)" />
 
         {/* Center jewel with multiple layers */}
         <circle cx="50" cy="50" r="8" fill="url(#spinnerMetalGradient)" stroke="url(#spinnerGlowingRed)" strokeWidth="2" filter="url(#spinnerDrop3d)" />

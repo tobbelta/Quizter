@@ -1,8 +1,24 @@
 import React from 'react';
 import { useDebug } from '../../context/DebugContext';
 
-const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObstacle, game }) => {
+const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObstacle, game, team, gameId, teamMembers }) => {
   const { simulationSpeed, setSimulationSpeed, minimalControls } = useDebug();
+
+  // Kontrollera om alla AKTIVA lagmedlemmar är i mål
+  const allActivePlayersAtFinish = () => {
+    if (!teamMembers || !game?.playersAtFinish) {
+      return false;
+    }
+
+    // Räkna endast aktiva spelare
+    const activeMembers = teamMembers.filter(member => member.isActive === true);
+    const activeMembersAtFinish = game.playersAtFinish.filter(playerId =>
+      activeMembers.some(member => member.uid === playerId)
+    );
+
+
+    return activeMembers.length > 0 && activeMembersAtFinish.length >= activeMembers.length;
+  };
 
   const getSpeedButtonClass = (speed) => {
     return simulationSpeed === speed 
@@ -11,18 +27,50 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
   };
   
   const isMoving = simulationState.stage.startsWith('MOVING');
+  const isAtFinishWaiting = simulationState.stage === 'AT_FINISH_WAITING';
+  // allFinished baseras på om alla AKTIVA spelare faktiskt är i mål
+  const allFinished = game?.allPlayersFinished === true;
+
+  // Räkna aktiva spelare för visning
+  const activeMembers = teamMembers?.filter(member => member.isActive === true) || [];
+  const activeMembersAtFinish = game?.playersAtFinish?.filter(playerId =>
+    activeMembers.some(member => member.uid === playerId)
+  ) || [];
+
+  // Visa "Gå i mål" när alla hinder är lösta men inte alla aktiva spelare är i mål än
+  const shouldShowGoToFinish = simulationState.stage === 'AT_FINISH' && !allFinished;
+
+
 
   if (minimalControls) {
     return (
       <div className="bg-black bg-opacity-70 text-white p-2 rounded-lg w-auto flex gap-2">
-        <button
-          onClick={onAdvanceSimulation}
-          disabled={isMoving || simulationState.stage === 'AT_FINISH' || simulationState.description.startsWith('Vid ')}
-          className="sc-button sc-button-blue text-xs px-2 py-1"
-        >
-          {isMoving ? 'Reser...' : simulationState.description}
-        </button>
-        {game.activeObstacleId && simulationState.stage === 'AT_OBSTACLE' && (
+        {/* Visa antingen normal simuleringsknapp ELLER målgångsknapp */}
+        {shouldShowGoToFinish ? (
+          <button
+            onClick={() => {
+              try {
+                onCompleteObstacle('finish');
+              } catch (error) {
+                console.error('Fel vid Gå i mål (minimal):', error);
+              }
+            }}
+            className="sc-button sc-button-blue text-xs px-2 py-1"
+          >
+            Gå i mål
+          </button>
+        ) : (
+          <button
+            onClick={onAdvanceSimulation}
+            disabled={isMoving || simulationState.description.startsWith('Vid ') || isAtFinishWaiting}
+            className={`text-xs px-2 py-1 ${
+              isAtFinishWaiting ? 'sc-button opacity-50 cursor-not-allowed' : 'sc-button sc-button-blue'
+            }`}
+          >
+            {isMoving ? 'Reser...' : simulationState.description}
+          </button>
+        )}
+        {game.activeObstacleId && (
           <button
             onClick={onCompleteObstacle}
             className="sc-button sc-button-green text-xs px-2 py-1"
@@ -30,12 +78,15 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
             Gåta
           </button>
         )}
-        {simulationState.stage === 'AT_FINISH' && (
+        {allFinished && (
           <button
-            onClick={() => onCompleteObstacle('finish')}
-            className="sc-button sc-button-blue text-xs px-2 py-1"
+            onClick={() => {
+              // Navigera till rapporten
+              window.location.href = `/report/${gameId}`;
+            }}
+            className="sc-button sc-button-green text-xs px-2 py-1"
           >
-            Avsluta
+            Visa rapport
           </button>
         )}
       </div>
@@ -44,31 +95,51 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
 
   return (
     <div className="bg-black bg-opacity-70 text-white p-4 rounded-lg w-full flex flex-col gap-2">
-            <button
-              onClick={onAdvanceSimulation}
-              disabled={isMoving || simulationState.stage === 'AT_FINISH' || simulationState.description.startsWith('Vid ')}
-              className="sc-button sc-button-blue w-full text-sm"
-            >
-              {isMoving ? 'Reser...' : simulationState.description}
-            </button>
-            <button
-              onClick={onCompleteObstacle}
-              disabled={!game.activeObstacleId || simulationState.stage !== 'AT_OBSTACLE'}
-              className="sc-button sc-button-green w-full text-sm"
-            >
-              Visa Gåta
-            </button>
-            {simulationState.stage === 'AT_FINISH' && (
+            {/* Visa antingen normal simuleringsknapp ELLER målgångsknapp */}
+            {shouldShowGoToFinish ? (
               <button
                 onClick={() => {
                   // Simulera att man når målet
                   if (typeof onCompleteObstacle === 'function') {
-                    onCompleteObstacle('finish');
+                    try {
+                      onCompleteObstacle('finish');
+                    } catch (error) {
+                      console.error('Fel vid Gå i mål (full):', error);
+                    }
                   }
                 }}
                 className="sc-button sc-button-blue w-full text-sm"
               >
-                Avsluta Spel
+                Gå i mål ({activeMembersAtFinish.length}/{activeMembers.length} aktiva)
+              </button>
+            ) : (
+              <button
+                onClick={onAdvanceSimulation}
+                disabled={isMoving || simulationState.description.startsWith('Vid ') || isAtFinishWaiting}
+                className={`w-full text-sm ${
+                  isAtFinishWaiting ? 'sc-button opacity-50 cursor-not-allowed' : 'sc-button sc-button-blue'
+                }`}
+              >
+                {isMoving ? 'Reser...' : simulationState.description}
+              </button>
+            )}
+            {game.activeObstacleId && (
+              <button
+                onClick={onCompleteObstacle}
+                className="sc-button sc-button-green w-full text-sm"
+              >
+                Visa Gåta
+              </button>
+            )}
+            {allFinished && (
+              <button
+                onClick={() => {
+                  // Navigera till rapporten
+                  window.location.href = `/report/${gameId}`;
+                }}
+                className="sc-button sc-button-green w-full text-sm"
+              >
+                Visa rapport
               </button>
             )}
 

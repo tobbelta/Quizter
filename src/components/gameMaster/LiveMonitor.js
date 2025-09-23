@@ -177,6 +177,7 @@ const LiveMonitor = () => {
                 completedObstacles: [],
                 activeObstacleId: null,
                 playersAtFinish: [],
+                allPlayersFinished: false,
                 playerPositions: {}
             });
             

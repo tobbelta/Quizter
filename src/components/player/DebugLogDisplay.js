@@ -8,11 +8,7 @@ const DebugLogDisplay = () => {
 
   const copyAllLogs = () => {
     const allLogsText = logs.join('\n');
-    navigator.clipboard.writeText(allLogsText).then(() => {
-      console.log('Alla loggar kopierade till urklipp');
-    }).catch(err => {
-      console.error('Kunde inte kopiera loggar:', err);
-    });
+    navigator.clipboard.writeText(allLogsText).catch(() => {});
   };
 
   const handleClearLogs = () => {
