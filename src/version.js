@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 8,
-  patch: 38,
+  patch: 39,
   build: Date.now(),
-  description: "Fix: Förbättrad gåthantering - endast vid hindret + real-time uppdateringar + återställd versionshantering"
+  description: "Fix: Mobile karta nu helskärm med dynamisk viewport-höjd (100dvh)"
 };
 
 export const getVersionString = () => {

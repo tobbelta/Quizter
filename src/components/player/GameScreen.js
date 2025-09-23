@@ -813,7 +813,7 @@ const GameScreen = ({ user, userData }) => {
                 startTime={startTimeDate}
                 gameFinished={game?.allPlayersFinished === true}
             />
-            <div className="w-full" style={{ height: 'calc(100vh - 32px)' }}>
+            <div className="w-full h-screen-mobile">
                 <MapContainer
                     center={center}
                     zoom={15}

@@ -36,6 +36,15 @@ body {
   text-size-adjust: 100%;
 }
 
+/* Mobile-optimized screen height for map container */
+.h-screen-mobile {
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for better mobile support */
+  /* Fallback calculation that accounts for header height */
+  height: calc(100vh - 32px);
+  height: calc(100dvh - 32px); /* Use dynamic viewport height when available */
+}
+
 .sc-card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
