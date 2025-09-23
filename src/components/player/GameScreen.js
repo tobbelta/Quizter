@@ -35,7 +35,7 @@ const GeolocationDeniedScreen = () => (
 const GameScreen = ({ user, userData }) => {
     const { gameId } = useParams();
     const navigate = useNavigate();
-    const { isDebug, addLog, minimalControls, showDebugInfo } = useDebug();
+    const { isDebug, addLog, minimalControls } = useDebug();
     const adaptiveLoading = useAdaptiveLoading();
     // const batteryStatus = useBatteryStatus(); // Currently unused
 
@@ -224,7 +224,7 @@ const GameScreen = ({ user, userData }) => {
             unsubscribeTeam();
             unsubscribePlayers();
         };
-    }, [gameId, navigate, user, addLog]);
+    }, [gameId, navigate, user, addLog, userData?.displayName]);
 
     // Effect för att sätta spelet till 'ready' när lagledaren kommer till spelet första gången
     useEffect(() => {
@@ -238,7 +238,7 @@ const GameScreen = ({ user, userData }) => {
                 console.error("Kunde inte uppdatera spelstatus:", err);
             });
         }
-    }, [game?.status, team?.leaderId, user?.uid, gameId, addLog]);
+    }, [game, team?.leaderId, user?.uid, gameId, addLog]);
 
     // Effect för att starta spelet när lagledaren når startpunkten
     useEffect(() => {
@@ -437,6 +437,7 @@ const GameScreen = ({ user, userData }) => {
 
         const gameRef = doc(db, 'games', gameId);
         const currentObstacleIndex = game.course.obstacles.findIndex(o => o.obstacleId === game.activeObstacleId);
+        // eslint-disable-next-line no-unused-vars
         const nextObstacleIndex = currentObstacleIndex + 1;
 
         addLog(`Gåta besvarad ${isCorrect ? 'korrekt' : 'inkorrekt'}`);
@@ -521,7 +522,7 @@ const GameScreen = ({ user, userData }) => {
             addLog("Fel svar! Du måste svara rätt för att fortsätta. Försök igen när du är redo.");
             // Gör ingenting mer - låt spelaren försöka igen
         }
-    }, [game, gameId, addLog]);
+    }, [game, gameId, addLog, getValidObstacles, teamMembers, user.uid, user.displayName, userData?.displayName]);
 
     const checkObstacleProximity = useCallback((lat, lon) => {
         addLog(`checkObstacleProximity anropad: lat=${lat}, lon=${lon}`);
@@ -670,7 +671,7 @@ const GameScreen = ({ user, userData }) => {
                 });
             }
         }
-    }, [game, team, teamMembers, user, gameId, addLog, navigate, isDebug, getValidObstacles]);
+    }, [game, team, teamMembers, user, gameId, addLog, getValidObstacles]);
 
     // Effect för att hantera position-uppdateringar
     useEffect(() => {
@@ -698,7 +699,7 @@ const GameScreen = ({ user, userData }) => {
             addLog(`Anropar checkFinishProximity (${validObstacles.length}/${totalObstacles} lösta av aktiva)`);
             checkFinishProximity(latitude, longitude);
         }
-    }, [position, game, team, user, gameId, teamMembers, checkObstacleProximity, checkFinishProximity, isDebug, addLog]);
+    }, [position, game, team, user, gameId, teamMembers, checkObstacleProximity, checkFinishProximity, addLog, getValidObstacles]);
 
     // Effect för att hantera när spelaren lämnar spelet
     useEffect(() => {

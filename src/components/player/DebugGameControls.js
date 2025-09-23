@@ -5,6 +5,7 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
   const { simulationSpeed, setSimulationSpeed, minimalControls } = useDebug();
 
   // Kontrollera om alla AKTIVA lagmedlemmar är i mål
+  // eslint-disable-next-line no-unused-vars
   const allActivePlayersAtFinish = () => {
     if (!teamMembers || !game?.playersAtFinish) {
       return false;
