@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 12,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "Fix: Enkel och stabil GPS-lösning - tog bort komplex smoothing/filtrering som orsakade fladdring"
+  description: "Fix: GPS-watcher startar inte om konstant - tog bort position från useEffect dependencies"
 };
 
 export const getVersionString = () => {

@@ -457,7 +457,8 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
         );
 
         return () => navigator.geolocation.clearWatch(watcher);
-    }, [isDebug, paused, position]); // Minimal dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDebug, paused]); // Medvetet exkluderat position för att undvika GPS-watcher omstart
 
     // Funktion för att manuellt sätta position i debug-läge
     const setPositionManually = useCallback((newPosition) => {
