@@ -140,7 +140,7 @@ const GameLogger = ({ gameId, game, team, teamMembers, user }) => {
         }
 
         // Spelstatus och framsteg
-        log += '📊 SPELFRAMSTEG\n';
+        log += '📊 SPELFRAMSTEG SAMMANFATTNING\n';
         log += '-'.repeat(40) + '\n';
         const totalObstacles = game.course?.obstacles?.length || 0;
         const completedObstacles = game.completedObstacles?.length || 0;
@@ -150,6 +150,151 @@ const GameLogger = ({ gameId, game, team, teamMembers, user }) => {
         log += `🔄 Aktivt hinder: ${activeObstacle}\n`;
         log += `👥 Spelare som nått mål: ${game.playersAtFinish?.length || 0}/${teamMembers?.length || 0}\n`;
         log += `🏁 Alla aktiva nådde mål: ${game.allPlayersFinished ? 'JA' : 'NEJ'}\n\n`;
+
+        // KRONOLOGISK SPELHISTORIK
+        log += '⏰ KRONOLOGISK SPELHISTORIK\n';
+        log += '-'.repeat(40) + '\n';
+        log += 'Alla händelser i spelet sorterade efter tid:\n\n';
+
+        // Samla alla händelser med tidsstämplar
+        const events = [];
+
+        // 1. Spel skapat
+        if (game.createdAt) {
+            events.push({
+                timestamp: game.createdAt,
+                type: 'game_created',
+                description: `🎮 Spel "${game.course?.name}" skapat`,
+                player: null,
+                details: `Lag: ${team.name}, Spel-ID: ${game.id || gameId}`
+            });
+        }
+
+        // 2. Spel startat
+        if (game.startTime) {
+            events.push({
+                timestamp: game.startTime,
+                type: 'game_started',
+                description: '🚀 Spelet startat',
+                player: null,
+                details: game.status === 'started' ? 'Status: Aktivt spel' : `Status: ${game.status}`
+            });
+        }
+
+        // 3. Alla lösningsförsök (både korrekta och inkorrekta)
+        if (game.completedObstaclesDetailed && game.completedObstaclesDetailed.length > 0) {
+            game.completedObstaclesDetailed.forEach((solution, index) => {
+                const solver = teamMembers?.find(m => m.uid === solution.solvedBy);
+                const obstacleDetail = obstacleDetails[solution.obstacleId];
+
+                events.push({
+                    timestamp: solution.solvedAt,
+                    type: 'obstacle_solved',
+                    description: `🧩 Hinder löst: ${solution.obstacleId}`,
+                    player: solution.solverName || solver?.displayName || 'Okänd spelare',
+                    playerId: solution.solvedBy,
+                    details: `Fråga: "${obstacleDetail?.question || 'N/A'}" | Aktiva vid lösning: ${solution.activePlayersWhenSolved ? solution.activePlayersWhenSolved.map(p => p.name).join(', ') : 'N/A'}`
+                });
+            });
+        }
+
+        // 4. Spelarpositioner (senaste kända positioner)
+        Object.entries(playerPositions).forEach(([playerId, data]) => {
+            if (data.lastUpdate) {
+                const player = teamMembers?.find(m => m.uid === playerId);
+                events.push({
+                    timestamp: data.lastUpdate,
+                    type: 'player_position',
+                    description: '📍 Spelarposition uppdaterad',
+                    player: player?.displayName || playerId,
+                    playerId: playerId,
+                    details: `Position: ${data.position?.latitude?.toFixed(6) || 'N/A'}, ${data.position?.longitude?.toFixed(6) || 'N/A'} | Status: ${data.isActive ? 'Aktiv' : 'Inaktiv'}`
+                });
+            }
+        });
+
+        // 5. Spelare som nått mål
+        if (game.playersAtFinish && game.playersAtFinish.length > 0) {
+            game.playersAtFinish.forEach(playerId => {
+                const player = teamMembers?.find(m => m.uid === playerId);
+                // Vi har inte exakt tidstämpel för när de nådde målet, så vi uppskattar baserat på endTime eller senaste aktivitet
+                const estimatedTime = game.endTime || new Date();
+                events.push({
+                    timestamp: estimatedTime,
+                    type: 'player_finished',
+                    description: '🏁 Spelare nådde mål',
+                    player: player?.displayName || 'Okänd spelare',
+                    playerId: playerId,
+                    details: `Aktivitetsstatus: ${playerPositions[playerId]?.isActive ? 'Aktiv' : 'Inaktiv'}`
+                });
+            });
+        }
+
+        // 6. Spel avslutat
+        if (game.endTime) {
+            events.push({
+                timestamp: game.endTime,
+                type: 'game_ended',
+                description: '🏁 Spelet avslutat',
+                player: null,
+                details: `Slutstatus: ${game.status} | Alla aktiva spelare i mål: ${game.allPlayersFinished ? 'JA' : 'NEJ'}`
+            });
+        }
+
+        // Sortera händelser kronologiskt
+        events.sort((a, b) => {
+            const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+            const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+            return timeA - timeB;
+        });
+
+        // Visa händelser
+        if (events.length > 0) {
+            events.forEach((event, index) => {
+                const timeFormatted = formatTimestamp(event.timestamp);
+                const playerInfo = event.player ? ` (${event.player})` : '';
+
+                log += `${index + 1}. [${timeFormatted}] ${event.description}${playerInfo}\n`;
+                if (event.details) {
+                    log += `   📋 ${event.details}\n`;
+                }
+                log += '\n';
+            });
+        } else {
+            log += '   Inga händelser registrerade\n\n';
+        }
+
+        // Sammanfattande statistik
+        log += '📈 AKTIVITETSSTATISTIK\n';
+        log += '-'.repeat(40) + '\n';
+        const eventTypes = events.reduce((acc, event) => {
+            acc[event.type] = (acc[event.type] || 0) + 1;
+            return acc;
+        }, {});
+
+        const typeNames = {
+            'game_created': 'Spel skapat',
+            'game_started': 'Spel startat',
+            'obstacle_solved': 'Hinder lösta',
+            'player_position': 'Positionsuppdateringar',
+            'player_finished': 'Spelare i mål',
+            'game_ended': 'Spel avslutat'
+        };
+
+        Object.entries(eventTypes).forEach(([type, count]) => {
+            log += `   ${typeNames[type] || type}: ${count} händelser\n`;
+        });
+
+        // Beräkna speltid om möjligt
+        if (game.startTime && (game.endTime || events.length > 0)) {
+            const endTime = game.endTime || events[events.length - 1]?.timestamp;
+            if (endTime) {
+                const totalTime = formatDuration(game.startTime, endTime);
+                log += `   ⏱️  Total speltid: ${totalTime}\n`;
+            }
+        }
+
+        log += '\n';
 
         // Teknisk information
         log += '⚙️  TEKNISK INFORMATION\n';

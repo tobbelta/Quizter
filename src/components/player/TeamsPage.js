@@ -187,6 +187,7 @@ const TeamsPage = ({ user, userData }) => {
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
   const [selectedTeams, setSelectedTeams] = useState(new Set());
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, onConfirm: null, message: '' });
+  const [gpsStatus, setGpsStatus] = useState({ isReady: false, accuracy: null, error: null, isLoading: true });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -198,6 +199,76 @@ const TeamsPage = ({ user, userData }) => {
     });
     return () => unsubscribe();
   }, [user]);
+
+  // GPS-kontroll för att säkerställa noggrannhet innan spel
+  useEffect(() => {
+    let watchId = null;
+    const REQUIRED_ACCURACY = 50; // meter
+
+    const startGpsWatch = () => {
+      if (!navigator.geolocation) {
+        setGpsStatus({
+          isReady: false,
+          accuracy: null,
+          error: 'Geolocation stöds inte av denna enhet',
+          isLoading: false
+        });
+        return;
+      }
+
+      const options = {
+        enableHighAccuracy: true,
+        timeout: 30000,
+        maximumAge: 60000
+      };
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const accuracy = position.coords.accuracy;
+          const isAccurate = accuracy <= REQUIRED_ACCURACY;
+
+          setGpsStatus({
+            isReady: isAccurate,
+            accuracy: Math.round(accuracy),
+            error: null,
+            isLoading: false
+          });
+        },
+        (error) => {
+          let errorMessage = 'GPS-fel';
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'GPS-åtkomst nekad. Aktivera platsdelning för att fortsätta.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'GPS-position inte tillgänglig';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'GPS-begäran tog för lång tid';
+              break;
+            default:
+              errorMessage = `GPS-fel: ${error.message}`;
+          }
+
+          setGpsStatus({
+            isReady: false,
+            accuracy: null,
+            error: errorMessage,
+            isLoading: false
+          });
+        },
+        options
+      );
+    };
+
+    startGpsWatch();
+
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, []);
 
   const generateJoinCode = () => uuidv4().substring(0, 6).toUpperCase();
 
@@ -396,7 +467,12 @@ const TeamsPage = ({ user, userData }) => {
       />
     )}
     <div className="container mx-auto p-4 max-w-5xl">
-      <Header title={`Lag för ${userData?.displayName || user?.email || 'Användare'}`} user={user} userData={userData}>
+      <Header
+        title={`Lag för ${userData?.displayName || user?.email || 'Användare'}`}
+        user={user}
+        userData={userData}
+        gpsStatus={gpsStatus}
+      >
         <button onClick={() => setIsInstructionsOpen(true)} className="sc-button">Instruktioner</button>
         <button onClick={() => setIsProfileOpen(true)} className="sc-button">Profil</button>
         <button onClick={handleLogout} className="sc-button sc-button-red">Logga ut</button>
@@ -441,6 +517,39 @@ const TeamsPage = ({ user, userData }) => {
         </div>
 
         {error && <p className="mb-4 text-red-500 bg-red-900/50 p-3">{error}</p>}
+
+        {/* GPS Status Display */}
+        <div className={`mb-8 p-4 rounded-lg border-2 ${
+          gpsStatus.isLoading
+            ? 'border-yellow-500 bg-yellow-900/20'
+            : gpsStatus.isReady
+            ? 'border-green-500 bg-green-900/20'
+            : 'border-red-500 bg-red-900/20'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`text-2xl ${gpsStatus.isLoading ? 'animate-pulse' : ''}`}>
+              {gpsStatus.isLoading ? '⏳' : gpsStatus.isReady ? '✅' : '❌'}
+            </div>
+            <div>
+              <h3 className="font-bold text-lg">
+                {gpsStatus.isLoading
+                  ? 'Söker GPS-signal...'
+                  : gpsStatus.isReady
+                  ? 'GPS Redo'
+                  : 'GPS Problem'
+                }
+              </h3>
+              <p className="text-sm">
+                {gpsStatus.isLoading && 'Väntar på GPS-position och noggrannhetsdata'}
+                {gpsStatus.isReady && `GPS-noggrannhet: ${gpsStatus.accuracy}m (≤50m krävs)`}
+                {gpsStatus.error && gpsStatus.error}
+                {!gpsStatus.isReady && !gpsStatus.error && !gpsStatus.isLoading &&
+                  `GPS-noggrannhet: ${gpsStatus.accuracy}m (för låg, ≤50m krävs)`
+                }
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="sc-card">
           <div className="flex justify-between items-center mb-4">

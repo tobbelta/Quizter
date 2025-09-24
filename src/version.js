@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 9,
-  patch: 3,
+  minor: 10,
+  patch: 0,
   build: Date.now(),
-  description: "Test: Versionsuppdatering för att testa att uppdateringsdetektering fungerar korrekt"
+  description: "Feature: Kronologisk spelhistorik i loggrapporter - se alla spelsteg och händelser i tidsordning"
 };
 
 export const getVersionString = () => {
