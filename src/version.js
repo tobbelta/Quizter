@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 10,
+  minor: 11,
   patch: 0,
   build: Date.now(),
-  description: "Feature: Kronologisk spelhistorik i loggrapporter - se alla spelsteg och händelser i tidsordning"
+  description: "Feature: Förbättrad GPS-noggrannhet med accuracy-filtrering och position smoothing"
 };
 
 export const getVersionString = () => {
