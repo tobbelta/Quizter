@@ -148,14 +148,18 @@ const GameReport = ({ user, userData }) => {
                                     .filter(detail => detail.obstacleId === obstacle.obstacleId)
                                     .sort((a, b) => new Date(b.solvedAt) - new Date(a.solvedAt)); // Senaste först
 
+                                // FIX: För enpersoners-lag - kolla om det finns EN lösning även om completedObstacles är tom
+                                const hasAnySolution = allSolutionsForObstacle.length > 0;
+                                const actuallyCompleted = isCompleted || (hasAnySolution && report.team.memberIds.length === 1);
+
                                 // För hinder som fortfarande räknas som lösta, använd den senaste lösningen
                                 // För hinder som inte längre räknas, använd den första (ursprungliga) lösningen för rapportering
-                                const completedDetail = isCompleted ?
+                                const completedDetail = actuallyCompleted ?
                                     allSolutionsForObstacle[0] : // Senaste för lösta hinder
                                     allSolutionsForObstacle[allSolutionsForObstacle.length - 1]; // Första för icke-lösta
 
                                 let status;
-                                if (isCompleted) {
+                                if (actuallyCompleted) {
                                     // Försök hitta vem som löste hindret
                                     const solverName = completedDetail?.solverName ||
                                                      (completedDetail?.solvedBy ? report.users[completedDetail.solvedBy]?.displayName : null);
@@ -182,8 +186,8 @@ const GameReport = ({ user, userData }) => {
 
                                         status = (
                                             <div className="text-sm">
-                                                <span className={`font-semibold ${stillCounted ? 'text-green-400' : 'text-yellow-400'}`}>
-                                                    {stillCounted ? 'Klarad' : 'Löst men ej giltig'}
+                                                <span className={`font-semibold ${stillCounted ? 'text-green-400' : (hasAnySolution && report.team.memberIds.length === 1 ? 'text-green-400' : 'text-yellow-400')}`}>
+                                                    {stillCounted ? 'Klarad' : (hasAnySolution && report.team.memberIds.length === 1 ? 'Klarad (enpersoners-lag)' : 'Löst men ej giltig')}
                                                 </span>
                                                 <span className="text-text-secondary"> av {solverName}</span>
                                                 {!solverWasActiveWhenSolved && (
