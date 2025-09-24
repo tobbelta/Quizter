@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 11,
-  patch: 1,
+  minor: 12,
+  patch: 0,
   build: Date.now(),
-  description: "Fix: Mobilnätoptimering för GPS - längre timeout och generösare accuracy för Samsung/Android"
+  description: "Fix: Enkel och stabil GPS-lösning - tog bort komplex smoothing/filtrering som orsakade fladdring"
 };
 
 export const getVersionString = () => {

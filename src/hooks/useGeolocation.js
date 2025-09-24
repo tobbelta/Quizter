@@ -22,44 +22,10 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
     const [position, setPosition] = useState(null);
     const [error, setError] = useState(null);
     const [simulationState, setSimulationState] = useState({ stage: 'IDLE', description: 'Starta simulering' });
-    // eslint-disable-next-line no-unused-vars
     const permissionDenied = useRef(false);
-    const positionBuffer = useRef([]);
-    const [heading, setHeading] = useState(null);
 
     const animationRef = useRef({ target: null, startPos: null, startTime: null, duration: 0 });
     const frameRef = useRef();
-
-    // Detektera om det är mobil
-    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    // Position smoothing function
-    const addPositionToBuffer = useCallback((pos) => {
-        // Mer generös accuracy-filtrering för mobilnät (Samsung Galaxy har ofta 30-50m accuracy utomhus)
-        if (pos.coords.accuracy > 100) {
-            return null; // Ignorera bara riktigt dåliga positioner
-        }
-
-        positionBuffer.current.push(pos);
-        if (positionBuffer.current.length > 5) {
-            positionBuffer.current.shift();
-        }
-
-        // Använd medelvärde av senaste positioner
-        const avgLat = positionBuffer.current.reduce((sum, p) => sum + p.coords.latitude, 0) / positionBuffer.current.length;
-        const avgLng = positionBuffer.current.reduce((sum, p) => sum + p.coords.longitude, 0) / positionBuffer.current.length;
-        const avgAccuracy = positionBuffer.current.reduce((sum, p) => sum + p.coords.accuracy, 0) / positionBuffer.current.length;
-
-        return {
-            coords: {
-                latitude: avgLat,
-                longitude: avgLng,
-                accuracy: avgAccuracy,
-                heading: pos.coords.heading || heading
-            },
-            timestamp: pos.timestamp
-        };
-    }, [heading]);
 
     // Hjälpfunktion för att beräkna rätt activeObstacleId baserat på aktiva spelare
     const getValidActiveObstacleId = useCallback(() => {
@@ -445,18 +411,15 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
         };
     }, [isDebug, animationTarget, simulationState.stage, game, getValidActiveObstacleId]);
 
-
+    // ENKEL OCH STABIL GEOLOCATION - utan komplex filtrering eller smoothing
     useEffect(() => {
-        if (paused) return;
-
-        if (isDebug) {
-            if (!position) { // Sätt bara startpositionen en gång
+        if (paused || isDebug) {
+            if (isDebug && !position) {
                 setPosition({ coords: KALMAR_DEFAULT_LOCATION });
             }
             return;
         }
 
-        // Don't try to get geolocation if permission was previously denied
         if (permissionDenied.current) {
             return;
         }
@@ -466,76 +429,35 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
             return;
         }
 
-        // Förbättrade inställningar optimerade för mobilnät och Android
-        const deviceOptimizedOptions = {
-            ...options,
-            enableHighAccuracy: game?.status === 'started' ? true : false, // Mindre aggressiv high accuracy
-            timeout: isMobile ? (game?.status === 'started' ? 30000 : 45000) : (game?.status === 'started' ? 15000 : 30000), // Längre timeout för mobilnät
-            maximumAge: game?.status === 'started' ? (isMobile ? 10000 : 5000) : (isMobile ? 30000 : 20000) // Mer generöst maximumAge
+        // ENKLA inställningar - inget krångel
+        const simpleOptions = {
+            enableHighAccuracy: true,
+            timeout: 60000, // 1 minut timeout
+            maximumAge: 30000 // Acceptera 30 sekunder gamla positioner
         };
 
         const watcher = navigator.geolocation.watchPosition(
             (pos) => {
-                // Reset permission denied flag on successful position
                 permissionDenied.current = false;
-
-                // Använd position smoothing och accuracy-filtrering, men acceptera första position direkt
-                const smoothedPosition = addPositionToBuffer(pos);
-                if (smoothedPosition) {
-                    setPosition(smoothedPosition);
-                } else if (!position) {
-                    // Acceptera första position även om accuracy är dålig för att undvika att fastna
-                    setPosition(pos);
-                }
+                // Acceptera ALL positioner - ingen filtrering
+                setPosition(pos);
+                setError(null); // Rensa fel vid lyckad position
             },
             (err) => {
-                // Mark permission as denied to stop further attempts
-                if (err.code === 1) { // PERMISSION_DENIED
+                console.warn('Geolocation error:', err);
+                if (err.code === 1) {
                     permissionDenied.current = true;
                 }
-                // Only set error once to prevent continuous logging
-                if (!error || error.code !== err.code || error.message !== err.message) {
+                // Sätt bara error om det inte är timeout eller position unavailable
+                if (err.code !== 3 && err.code !== 2) {
                     setError(err);
                 }
             },
-            deviceOptimizedOptions
+            simpleOptions
         );
+
         return () => navigator.geolocation.clearWatch(watcher);
-    }, [isDebug, paused, options, position, game?.status, error, addPositionToBuffer, isMobile]); // Lade till error, addPositionToBuffer och isMobile för att fixa ESLint-varning
-
-    // Compass heading support för mobila enheter
-    useEffect(() => {
-        if (!isMobile || isDebug) return;
-
-        const handleOrientation = (event) => {
-            if (event.alpha !== null) {
-                setHeading(event.alpha); // 0-360 grader
-            }
-        };
-
-        const handleOrientationAbsolute = (event) => {
-            if (event.alpha !== null) {
-                setHeading(event.alpha); // Mer precis kompassriktning
-            }
-        };
-
-        // Försök först med deviceorientationabsolute (mer precis)
-        if (window.DeviceOrientationEvent) {
-            window.addEventListener('deviceorientationabsolute', handleOrientationAbsolute);
-
-            // Fallback till vanlig deviceorientation
-            setTimeout(() => {
-                if (heading === null) {
-                    window.addEventListener('deviceorientation', handleOrientation);
-                }
-            }, 1000);
-        }
-
-        return () => {
-            window.removeEventListener('deviceorientationabsolute', handleOrientationAbsolute);
-            window.removeEventListener('deviceorientation', handleOrientation);
-        };
-    }, [isMobile, isDebug, heading]);
+    }, [isDebug, paused, position]); // Minimal dependency array
 
     // Funktion för att manuellt sätta position i debug-läge
     const setPositionManually = useCallback((newPosition) => {
@@ -544,8 +466,7 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
         }
     }, [isDebug]);
 
-    return { position, error, advanceSimulation, simulationState, setPositionManually, heading };
+    return { position, error, advanceSimulation, simulationState, setPositionManually };
 };
 
 export default useGeolocation;
-
