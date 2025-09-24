@@ -141,6 +141,63 @@ export class GamePlayer {
     }
   }
 
+  async loginWithoutDebug() {
+    console.log(`${this.playerName}: Försöker logga in UTAN debug-läge...`);
+
+    try {
+      // Först logga ut för att säkerställa ren inloggning
+      await this.logout();
+
+      // Gå till startsidan
+      await this.page.goto('/', { waitUntil: 'domcontentloaded' });
+      console.log(`${this.playerName}: Navigerade till startsidan`);
+
+      // Vänta lite för att sidan ska ladda
+      await this.page.waitForTimeout(1000);
+
+      // Leta efter email-fält
+      const emailInput = this.page.locator('input[type="email"], input[placeholder*="mail"], input[placeholder*="Email"]').first();
+      const emailVisible = await emailInput.isVisible({ timeout: 10000 }).catch(() => false);
+
+      if (emailVisible) {
+        console.log(`${this.playerName}: Hittat email-fält, fyller i uppgifter...`);
+
+        // Använd riktiga testanvändare för olika roller
+        const testCredentials = this.getTestCredentials();
+        await emailInput.fill(testCredentials.email);
+
+        const passwordInput = this.page.locator('input[type="password"]').first();
+        await passwordInput.fill(testCredentials.password);
+
+        // VIKTIGT: AKTIVERA INTE debug-läge kryssrutan för detta test
+        const debugCheckbox = this.page.locator('input[type="checkbox"], input[name*="debug"], label:has-text("debug")').first();
+        const debugCheckboxVisible = await debugCheckbox.isVisible({ timeout: 5000 }).catch(() => false);
+
+        if (debugCheckboxVisible) {
+          console.log(`${this.playerName}: Debug-kryssruta hittad men aktiveras INTE för geolocation-test`);
+          if (await debugCheckbox.isChecked()) {
+            await debugCheckbox.click(); // Avmarkera om den är ikryssad
+            console.log(`${this.playerName}: Avmarkerade debug-läge kryssruta`);
+          }
+        }
+
+        const loginButton = this.page.locator('button:has-text("Logga in"), button:has-text("Login"), button:has-text("Sign in"), button[type="submit"]').first();
+        await loginButton.click();
+
+        // Vänta på redirect eller innehållsändring
+        await this.page.waitForTimeout(5000);
+        console.log(`${this.playerName}: Login genomfört UTAN debug-läge aktiverat`);
+      } else {
+        console.log(`${this.playerName}: Ingen login-form hittad`);
+        throw new Error('Login form not found');
+      }
+
+    } catch (error) {
+      console.log(`${this.playerName}: Login misslyckades:`, error.message);
+      throw error;
+    }
+  }
+
   async createTeam(teamName = `${this.playerName}-team-${Date.now()}`) {
     if (!this.isLeader) throw new Error('Only leaders can create teams');
 

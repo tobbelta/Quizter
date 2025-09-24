@@ -17,6 +17,8 @@ import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon
 import Spinner from '../shared/Spinner';
 import DebugGameControls from './DebugGameControls';
 import RiddleModal from './RiddleModal';
+import PlayerCompass from './PlayerCompass';
+import GameLogger from './GameLogger';
 
 const GeolocationDeniedScreen = () => (
     <div className="absolute inset-0 z-[2000] bg-background bg-opacity-95 flex flex-col items-center justify-center text-center p-8">
@@ -50,11 +52,35 @@ const GameScreen = ({ user, userData }) => {
     // eslint-disable-next-line no-unused-vars
     const geoErrorLogged = useRef(false);
     const [riddleClosedByOtherPlayer, setRiddleClosedByOtherPlayer] = useState(false);
+    const [showCompass, setShowCompass] = useState(() => {
+        // Läs från localStorage eller använd true som default
+        const saved = localStorage.getItem('geoquest-show-compass');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
 
     const mapRef = useRef();
     const [currentZoomMode, setCurrentZoomMode] = useState('course'); // 'course' | 'gamearea'
 
     const isGeolocationPaused = !game;
+
+    // Toggle-funktion för compass
+    const toggleCompass = (visible) => {
+        const newVisibility = visible !== undefined ? visible : !showCompass;
+        setShowCompass(newVisibility);
+        localStorage.setItem('geoquest-show-compass', JSON.stringify(newVisibility));
+        if (isDebug) {
+            addLog(`Compass ${newVisibility ? 'visas' : 'döljs'}`);
+        }
+    };
+
+    // GameLogger för export av speldata
+    const gameLogger = GameLogger({
+        gameId,
+        game,
+        team,
+        teamMembers,
+        user
+    });
 
     const { position, error: geoError, advanceSimulation, simulationState, setPositionManually } = useGeolocation(
         { enableHighAccuracy: true },
@@ -516,15 +542,21 @@ const GameScreen = ({ user, userData }) => {
         const validObstacles = getValidObstacles();
         const allObstacles = game.course?.obstacles || [];
         const validObstacleIds = validObstacles.map(o => o.obstacleId);
+        const currentCompletedIds = game.completedObstacles || [];
 
-        // Kolla om alla hinder som ska vara lösta faktiskt är lösta
-        const expectedSolvedCount = Math.min(allObstacles.length, game.completedObstacles?.length || 0);
-        const missingCount = expectedSolvedCount - validObstacleIds.length;
+        // Kontrollera om det finns diskrepans mellan completedObstacles och giltiga lösningar
+        const needsSync = JSON.stringify(currentCompletedIds.sort()) !== JSON.stringify(validObstacleIds.sort());
 
-        if (missingCount > 0) {
-            addLog(`Hittade ${missingCount} hinder som behöver lösas igen (lösaren är inaktiv)`);
+        if (needsSync) {
+            const missingFromCurrent = validObstacleIds.filter(id => !currentCompletedIds.includes(id));
+            const extraInCurrent = currentCompletedIds.filter(id => !validObstacleIds.includes(id));
 
-            // Uppdatera bara completedObstacles (behåll completedObstaclesDetailed för historik)
+            if (missingFromCurrent.length > 0) {
+                addLog(`Hinder som behöver läggas till: ${missingFromCurrent.join(', ')}`);
+            }
+            if (extraInCurrent.length > 0) {
+                addLog(`Hinder som behöver tas bort (lösaren inaktiv): ${extraInCurrent.join(', ')}`);
+            }
 
             // Hitta vilket hinder som nu ska vara aktivt (hinder måste lösas i ordning)
             let nextActiveObstacle = null;
@@ -536,14 +568,31 @@ const GameScreen = ({ user, userData }) => {
                 }
             }
 
-            addLog(`Giltiga hinder: ${validObstacleIds.length}/${allObstacles.length}, nästa: ${nextActiveObstacle || 'mål'}`);
+            addLog(`Synkroniserar: ${validObstacleIds.length}/${allObstacles.length} giltiga hinder, nästa: ${nextActiveObstacle || 'mål'}`);
 
-            // Uppdatera spelet
+            // Uppdatera spelet med korrekt information
             const gameRef = doc(db, 'games', gameId);
-            updateDoc(gameRef, {
+            const updateData = {
                 completedObstacles: validObstacleIds,
                 activeObstacleId: nextActiveObstacle
-            }).catch(err => {
+            };
+
+            // Om spelet har completedObstaclesDetailed men inte är startat, och det finns giltiga lösningar,
+            // uppdatera status till 'started' om det inte redan är 'finished'
+            if (game.status === 'created' && validObstacleIds.length > 0 && !game.startTime) {
+                // Hitta den tidigaste lösningen för att sätta startTime
+                const allSolutions = game.completedObstaclesDetailed || [];
+                const earliestSolution = allSolutions
+                    .sort((a, b) => new Date(a.solvedAt) - new Date(b.solvedAt))[0];
+
+                if (earliestSolution) {
+                    updateData.status = 'started';
+                    updateData.startTime = earliestSolution.solvedAt;
+                    addLog(`Uppdaterar spelstatus till 'started' med startTime från första lösning`);
+                }
+            }
+
+            updateDoc(gameRef, updateData).catch(err => {
                 console.error("Kunde inte uppdatera spelet efter validering:", err);
             });
         }
@@ -552,24 +601,31 @@ const GameScreen = ({ user, userData }) => {
     // Spåra föregående teamMembers för att endast köra validering när spelare blir inaktiva
     const prevActiveMembers = useRef([]);
 
-    // Kör validering endast när spelare blir inaktiva (inte när de blir aktiva)
+    // Kör initial validering när spelet laddas och när spelare ändras
     useEffect(() => {
-        if (!game || game.status !== 'started' || !teamMembers) return;
+        if (!game || !teamMembers || !game.completedObstaclesDetailed) return;
 
         const currentActiveUIDs = teamMembers.filter(m => m.isActive === true).map(m => m.uid);
         const prevActiveUIDs = prevActiveMembers.current;
 
-        // Kolla om någon spelare blev inaktiv (fanns i prev men inte i current)
-        const becameInactive = prevActiveUIDs.filter(uid => !currentActiveUIDs.includes(uid));
-
-        if (becameInactive.length > 0) {
-            addLog(`Spelare blev inaktiva: ${becameInactive.join(', ')} - kör validering`);
+        // Initial validering när data först laddas
+        if (prevActiveUIDs.length === 0 && currentActiveUIDs.length > 0) {
+            addLog(`Initial validering av spelstatus och lösta hinder`);
             validateCompletedObstacles();
-        } else if (prevActiveUIDs.length > 0) {
-            // Endast logga när spelare blir aktiva (för debug)
-            const becameActive = currentActiveUIDs.filter(uid => !prevActiveUIDs.includes(uid));
-            if (becameActive.length > 0) {
-                addLog(`Spelare blev aktiva: ${becameActive.join(', ')} - ingen validering behövs`);
+        }
+        // Validering när spelare blir inaktiva
+        else if (prevActiveUIDs.length > 0) {
+            const becameInactive = prevActiveUIDs.filter(uid => !currentActiveUIDs.includes(uid));
+
+            if (becameInactive.length > 0) {
+                addLog(`Spelare blev inaktiva: ${becameInactive.join(', ')} - kör validering`);
+                validateCompletedObstacles();
+            } else {
+                // Endast logga när spelare blir aktiva (för debug)
+                const becameActive = currentActiveUIDs.filter(uid => !prevActiveUIDs.includes(uid));
+                if (becameActive.length > 0) {
+                    addLog(`Spelare blev aktiva: ${becameActive.join(', ')} - ingen validering behövs`);
+                }
             }
         }
 
@@ -945,6 +1001,9 @@ const GameScreen = ({ user, userData }) => {
                 team={team}
                 user={user}
                 teamMembers={teamMembers}
+                showCompass={showCompass}
+                onToggleCompass={toggleCompass}
+                onExportGameLog={gameLogger?.exportGameLog}
             />
             <div className="absolute top-8 left-0 right-0 bottom-0 w-full">
                 <MapContainer
@@ -1060,7 +1119,12 @@ const GameScreen = ({ user, userData }) => {
             </MapContainer>
             </div>
 
-
+            {/* PlayerCompass - visas både i verkligt och simulerat spel */}
+            <PlayerCompass
+                position={position}
+                isVisible={showCompass}
+                onToggleVisibility={toggleCompass}
+            />
 
             {isDebug && (
                 <div className={`fixed ${minimalControls ? 'bottom-4 left-4' : 'bottom-4 left-4 right-4'} z-[1000] ${minimalControls ? '' : 'p-4'} flex gap-4`}>
