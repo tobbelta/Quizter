@@ -49,7 +49,7 @@ const getNextObjective = (game, team, user) => {
     return "Okänt status";
 };
 
-const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, teamMembers }) => {
+const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, teamMembers, showCompass = true, onToggleCompass, onExportGameLog }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
     const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
 
@@ -112,6 +112,28 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game,
                         {formatTime(elapsedTime)}
                     </div>
                     <HamburgerMenu teamMembers={teamMembers}>
+                        {onToggleCompass && (
+                            <button
+                                onClick={() => onToggleCompass()}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-cyan-100 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-all duration-200 justify-center bg-cyan-500/10 w-full"
+                            >
+                                <span className="text-xs">{showCompass ? '📍' : '🔍'}</span>
+                                <span>{showCompass ? 'Dölj koordinater' : 'Visa koordinater'}</span>
+                            </button>
+                        )}
+                        {onExportGameLog && (
+                            <button
+                                onClick={() => {
+                                    addLog('Exporterar spelrapport...');
+                                    onExportGameLog();
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-green-100 hover:text-green-300 hover:bg-green-500/20 rounded transition-all duration-200 justify-center bg-green-500/10 w-full"
+                                title="Ladda ner detaljerad spelrapport"
+                            >
+                                <span className="text-xs">📊</span>
+                                <span>Ladda ner spelrapport</span>
+                            </button>
+                        )}
                     </HamburgerMenu>
                 </div>
             </div>
