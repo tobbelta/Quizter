@@ -35,9 +35,9 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
 
     // Position smoothing function
     const addPositionToBuffer = useCallback((pos) => {
-        // Filtrera bort oprecisa positioner
-        if (pos.coords.accuracy > 20) {
-            return null; // Ignorera positioner sämre än 20m noggrannhet
+        // Mer generös accuracy-filtrering för mobilnät (Samsung Galaxy har ofta 30-50m accuracy utomhus)
+        if (pos.coords.accuracy > 100) {
+            return null; // Ignorera bara riktigt dåliga positioner
         }
 
         positionBuffer.current.push(pos);
@@ -466,12 +466,12 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
             return;
         }
 
-        // Optimera för mobil och desktop med förbättrade inställningar
+        // Förbättrade inställningar optimerade för mobilnät och Android
         const deviceOptimizedOptions = {
             ...options,
-            enableHighAccuracy: true,
-            timeout: isMobile ? (game?.status === 'started' ? 15000 : 25000) : (game?.status === 'started' ? 10000 : 20000),
-            maximumAge: game?.status === 'started' ? (isMobile ? 1000 : 500) : (isMobile ? 3000 : 2000)
+            enableHighAccuracy: game?.status === 'started' ? true : false, // Mindre aggressiv high accuracy
+            timeout: isMobile ? (game?.status === 'started' ? 30000 : 45000) : (game?.status === 'started' ? 15000 : 30000), // Längre timeout för mobilnät
+            maximumAge: game?.status === 'started' ? (isMobile ? 10000 : 5000) : (isMobile ? 30000 : 20000) // Mer generöst maximumAge
         };
 
         const watcher = navigator.geolocation.watchPosition(
@@ -479,10 +479,13 @@ export const useGeolocation = (options, isDebug, game, paused = false, userId = 
                 // Reset permission denied flag on successful position
                 permissionDenied.current = false;
 
-                // Använd position smoothing och accuracy-filtrering
+                // Använd position smoothing och accuracy-filtrering, men acceptera första position direkt
                 const smoothedPosition = addPositionToBuffer(pos);
                 if (smoothedPosition) {
                     setPosition(smoothedPosition);
+                } else if (!position) {
+                    // Acceptera första position även om accuracy är dålig för att undvika att fastna
+                    setPosition(pos);
                 }
             },
             (err) => {

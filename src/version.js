@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 11,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "Feature: Förbättrad GPS-noggrannhet med accuracy-filtrering och position smoothing"
+  description: "Fix: Mobilnätoptimering för GPS - längre timeout och generösare accuracy för Samsung/Android"
 };
 
 export const getVersionString = () => {
