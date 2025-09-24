@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 12,
-  patch: 2,
+  minor: 13,
+  patch: 0,
   build: Date.now(),
-  description: "Fix: GameReport visar lösta hinder korrekt för enpersoners-lag - kollar completedObstaclesDetailed"
+  description: "Feature: Mobilvibrationer när spelaren når start, hinder, mål + korrekt/fel svar på gåtor"
 };
 
 export const getVersionString = () => {

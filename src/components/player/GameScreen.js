@@ -11,6 +11,7 @@ import { useDebug } from '../../context/DebugContext';
 import { calculateDistance } from '../../utils/location';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAdaptiveLoading } from '../../hooks/useNetworkStatus';
+import { vibrationEvents } from '../../utils/vibration';
 
 import GameHeader from './GameHeader';
 import { selfIcon, TeamMarker, ObstacleMarker, startIcon, finishIcon, leaderIcon } from '../shared/MapIcons';
@@ -396,6 +397,7 @@ const GameScreen = ({ user, userData }) => {
 
             if (distance <= START_RADIUS) {
                 setIsStarting(true); // Förhindra flera starter
+                vibrationEvents.reachedStart(); // Vibrera när start nås
                 const gameRef = doc(db, 'games', gameId);
                 const firstObstacle = game.course?.obstacles?.[0];
                 const updateData = {
@@ -650,6 +652,7 @@ const GameScreen = ({ user, userData }) => {
 
         // Bara gå vidare om svaret är korrekt
         if (isCorrect) {
+            vibrationEvents.correctAnswer(); // Vibrera för korrekt svar
             // Skapa ett objekt som sparar både hinder-ID och vem som löste det
             const completedObstacleEntry = {
                 obstacleId: game.activeObstacleId,
@@ -715,6 +718,7 @@ const GameScreen = ({ user, userData }) => {
                 // Låt advanceSimulation hantera övergången till mål automatiskt
             }
         } else {
+            vibrationEvents.wrongAnswer(); // Vibrera för fel svar
             addLog("Fel svar! Du måste svara rätt för att fortsätta. Försök igen när du är redo.");
             // Gör ingenting mer - låt spelaren försöka igen
         }
@@ -769,6 +773,9 @@ const GameScreen = ({ user, userData }) => {
                 addLog(`Gåta ${activeObstacle.obstacleId} är redan löst - visar inte igen`);
                 return;
             }
+
+            // Vibrera när hinder nås
+            vibrationEvents.reachedObstacle();
 
             // I riktigt spel: visa gåtan automatiskt
             // I simulering: bara logga att man nått hindret
@@ -845,6 +852,9 @@ const GameScreen = ({ user, userData }) => {
                 addLog("Du är redan i mål!");
                 return;
             }
+
+            // Vibrera när mål nås
+            vibrationEvents.reachedFinish();
 
             // Lägg till denne spelare till de som nått målet
             await updateDoc(gameRef, {
