@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 12,
-  patch: 1,
+  patch: 2,
   build: Date.now(),
-  description: "Fix: GPS-watcher startar inte om konstant - tog bort position från useEffect dependencies"
+  description: "Fix: GameReport visar lösta hinder korrekt för enpersoners-lag - kollar completedObstaclesDetailed"
 };
 
 export const getVersionString = () => {
