@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 13,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "Feature: Mobilvibrationer när spelaren når start, hinder, mål + korrekt/fel svar på gåtor"
+  description: "Fix: Vibrationsspam i simulering - cooldown på 5s för start/hinder, 10s för mål"
 };
 
 export const getVersionString = () => {

@@ -47,31 +47,52 @@ export const vibratePattern = (pattern) => {
     }
 };
 
+// Spårning för att undvika vibrationsspam
+const lastVibrations = {
+    start: 0,
+    obstacle: 0,
+    finish: 0
+};
+
 /**
- * Bekvämlighetsmetoder för olika händelser
+ * Bekvämlighetsmetoder för olika händelser med spam-skydd
  */
 export const vibrationEvents = {
     reachedStart: () => {
-        console.log('📳 Vibration: Nådde start');
-        vibratePattern(VibrationPatterns.START);
+        const now = Date.now();
+        if (now - lastVibrations.start > 5000) { // 5 sekunder cooldown
+            console.log('📳 Vibration: Nådde start');
+            vibratePattern(VibrationPatterns.START);
+            lastVibrations.start = now;
+        }
     },
 
     reachedObstacle: () => {
-        console.log('📳 Vibration: Nådde hinder');
-        vibratePattern(VibrationPatterns.OBSTACLE);
+        const now = Date.now();
+        if (now - lastVibrations.obstacle > 5000) { // 5 sekunder cooldown
+            console.log('📳 Vibration: Nådde hinder');
+            vibratePattern(VibrationPatterns.OBSTACLE);
+            lastVibrations.obstacle = now;
+        }
     },
 
     reachedFinish: () => {
-        console.log('📳 Vibration: Nådde mål');
-        vibratePattern(VibrationPatterns.FINISH);
+        const now = Date.now();
+        if (now - lastVibrations.finish > 10000) { // 10 sekunder cooldown för mål
+            console.log('📳 Vibration: Nådde mål');
+            vibratePattern(VibrationPatterns.FINISH);
+            lastVibrations.finish = now;
+        }
     },
 
     correctAnswer: () => {
+        // Alltid tillåt vibrationer för svar (ingen cooldown)
         console.log('📳 Vibration: Korrekt svar');
         vibratePattern(VibrationPatterns.SUCCESS);
     },
 
     wrongAnswer: () => {
+        // Alltid tillåt vibrationer för svar (ingen cooldown)
         console.log('📳 Vibration: Fel svar');
         vibratePattern(VibrationPatterns.ERROR);
     }
