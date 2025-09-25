@@ -24,10 +24,33 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Use real Firebase config for iOS testing
+    - name: Ensure Firebase config exists
       run: |
-        echo "Using real Firebase config for iOS login testing..."
-        # Firebase config is already in the repo
+        if [ -f "src/firebase.js" ]; then
+          echo "✅ Firebase config found"
+          ls -la src/firebase.js
+        else
+          echo "❌ Firebase config missing, creating it..."
+          cat > src/firebase.js << 'EOF'
+        import { initializeApp } from "firebase/app";
+        import { getAuth } from "firebase/auth";
+        import { getFirestore } from "firebase/firestore";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyCwPymSYI2ozAWxq_N7mTWbhLvQ6ygqUtk",
+          authDomain: "geoquest-1c461.firebaseapp.com",
+          projectId: "geoquest-1c461",
+          storageBucket: "geoquest-1c461.appspot.com",
+          messagingSenderId: "107222362587",
+          appId: "1:107222362587:web:b536e415d8dcbab6915ffe",
+          measurementId: "G-Y1XKWY8J4L"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        export const auth = getAuth(app);
+        export const db = getFirestore(app);
+        EOF
+        fi
 
     - name: Build app
       run: npm run build
