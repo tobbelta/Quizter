@@ -1,0 +1,188 @@
+name: Mobile Browser Testing
+
+on:
+  workflow_dispatch: # Manual trigger
+    inputs:
+      test_url:
+        description: 'URL to test (leave empty for local build)'
+        required: false
+        default: ''
+
+jobs:
+  mobile-chrome-test:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Create Firebase config for build
+      run: |
+        # Check if firebase.js exists
+        if [ ! -f "src/firebase.js" ]; then
+          echo "Firebase config not found, creating dummy config for build..."
+          cat > src/firebase.js << 'EOF'
+        import { initializeApp } from "firebase/app";
+        import { getAuth } from "firebase/auth";
+        import { getFirestore } from "firebase/firestore";
+
+        const firebaseConfig = {
+          apiKey: "dummy-key-for-build",
+          authDomain: "dummy.firebaseapp.com",
+          projectId: "dummy-project",
+          storageBucket: "dummy.appspot.com",
+          messagingSenderId: "123456789",
+          appId: "1:123456789:web:dummy"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        export const auth = getAuth(app);
+        export const db = getFirestore(app);
+        EOF
+        fi
+
+    - name: Build app
+      run: npm run build
+
+    - name: Install Puppeteer
+      run: npm install puppeteer
+
+    - name: Start local server
+      run: |
+        npm install -g http-server
+        cd build && http-server -p 3000 --cors &
+        sleep 5
+        echo "Server started on http://localhost:3000"
+
+    - name: Test with Mobile Chrome simulation
+      run: |
+        cat > mobile-test.js << 'EOF'
+        const puppeteer = require('puppeteer');
+
+        (async () => {
+          console.log('🚀 Starting mobile Chrome simulation...');
+
+          const browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+
+          const page = await browser.newPage();
+
+          // iPhone 16 Chrome user agent
+          await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/117.0.5938.108 Mobile/15E148 Safari/604.1');
+
+          // iPhone 16 viewport
+          await page.setViewport({
+            width: 393,
+            height: 852,
+            deviceScaleFactor: 3,
+            isMobile: true,
+            hasTouch: true
+          });
+
+          try {
+            console.log('📱 Navigating to app...');
+            const testUrl = process.env.TEST_URL || 'http://localhost:3000';
+            await page.goto(testUrl, { waitUntil: 'networkidle2' });
+
+            console.log('📸 Taking screenshot...');
+            await page.screenshot({
+              path: 'screenshots/mobile-chrome-homepage.png',
+              fullPage: true
+            });
+
+            console.log('🔍 Checking for header...');
+            const headerExists = await page.$('.absolute.top-0') !== null;
+            console.log('Header found:', headerExists);
+
+            // Check if header is visible (not black)
+            const headerStyles = await page.evaluate(() => {
+              const header = document.querySelector('.absolute.top-0, [style*="position: fixed"]');
+              if (!header) return null;
+
+              const computed = window.getComputedStyle(header);
+              return {
+                backgroundColor: computed.backgroundColor,
+                color: computed.color,
+                position: computed.position,
+                zIndex: computed.zIndex,
+                height: computed.height
+              };
+            });
+
+            console.log('Header styles:', JSON.stringify(headerStyles, null, 2));
+
+            // Test navigation
+            console.log('🧪 Testing navigation...');
+
+            // Try to find and click team button
+            try {
+              await page.waitForSelector('a[href="/teams"], button:contains("Teams")', { timeout: 5000 });
+              console.log('✅ Teams navigation found');
+            } catch (e) {
+              console.log('⚠️  Teams navigation not found');
+            }
+
+            // Take another screenshot after potential interactions
+            await page.screenshot({
+              path: 'screenshots/mobile-chrome-after-interaction.png',
+              fullPage: true
+            });
+
+            console.log('✅ Mobile Chrome test completed!');
+
+          } catch (error) {
+            console.error('❌ Test failed:', error);
+
+            // Take error screenshot
+            try {
+              await page.screenshot({
+                path: 'screenshots/mobile-chrome-error.png',
+                fullPage: true
+              });
+            } catch (screenshotError) {
+              console.error('Failed to take error screenshot:', screenshotError);
+            }
+
+            throw error;
+          } finally {
+            await browser.close();
+          }
+        })();
+        EOF
+
+        mkdir -p screenshots
+        TEST_URL="${{ github.event.inputs.test_url }}" node mobile-test.js
+
+    - name: Upload mobile test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: mobile-browser-test-results
+        path: screenshots/
+        retention-days: 30
+
+    - name: Display test summary
+      if: always()
+      run: |
+        echo "## 📱 Mobile Browser Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "Screenshots have been uploaded as artifacts." >> $GITHUB_STEP_SUMMARY
+        echo "Check the 'mobile-browser-test-results' artifact for:" >> $GITHUB_STEP_SUMMARY
+        echo "- Homepage screenshot" >> $GITHUB_STEP_SUMMARY
+        echo "- Post-interaction screenshot" >> $GITHUB_STEP_SUMMARY
+        echo "- Error screenshot (if any errors occurred)" >> $GITHUB_STEP_SUMMARY
+
+    - name: Cleanup
+      if: always()
+      run: |
+        pkill -f "http-server" || true
