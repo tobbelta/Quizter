@@ -175,7 +175,15 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
               <div className="space-y-1">
                 {teamMembers.map((member, index) => (
                   <div key={member.uid || index} className="flex justify-between items-center text-xs">
-                    <span className="text-white truncate flex-1">
+                    <span className="text-white truncate flex-1 flex items-center">
+                      {/* Visibility indikator */}
+                      {member.isActive && (
+                        <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                          member.isVisible ? 'bg-green-400' : 'bg-yellow-400'
+                        }`}
+                        title={member.isVisible ? 'Spelet är synligt' : 'Spelet är minimerat/dolt'}
+                        />
+                      )}
                       {member.displayName || member.email || `Spelare ${index + 1}`}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${

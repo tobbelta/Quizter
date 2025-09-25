@@ -11,6 +11,7 @@ import { useDebug } from '../../context/DebugContext';
 import { calculateDistance } from '../../utils/location';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAdaptiveLoading } from '../../hooks/useNetworkStatus';
+import { usePlayerActivity } from '../../hooks/usePlayerActivity';
 import { vibrationEvents } from '../../utils/vibration';
 
 import GameHeader from './GameHeader';
@@ -61,6 +62,10 @@ const GameScreen = ({ user, userData }) => {
 
     const mapRef = useRef();
     const [currentZoomMode, setCurrentZoomMode] = useState('course'); // 'course' | 'gamearea'
+
+    // Hantera spelaraktivitet baserat på browser-händelser
+    const isGameActive = game && ['created', 'ready', 'started'].includes(game.status);
+    usePlayerActivity(gameId, user?.uid, isGameActive);
 
     const isGeolocationPaused = !game;
 
@@ -1015,7 +1020,7 @@ const GameScreen = ({ user, userData }) => {
                 onToggleCompass={toggleCompass}
                 onExportGameLog={gameLogger?.exportGameLog}
             />
-            <div className="absolute top-8 left-0 right-0 bottom-0 w-full">
+            <div className="absolute left-0 right-0 bottom-0 w-full" style={{ top: '32px' }}>
                 <MapContainer
                     center={center}
                     zoom={initialZoom}

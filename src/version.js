@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 13,
+  minor: 15,
   patch: 1,
   build: Date.now(),
-  description: "Fix: Vibrationsspam i simulering - cooldown på 5s för start/hinder, 10s för mål"
+  description: "Fix: iOS Chrome header-problem - fixar svart platta genom förbättrad CSS och explicit styling"
 };
 
 export const getVersionString = () => {

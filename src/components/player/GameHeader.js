@@ -89,26 +89,63 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game,
     }, [startTime, gameFinished, addLog]); // Effekt-hooken körs om när 'startTime', 'gameFinished' eller 'addLog' ändras
 
     return (
-        <div className="absolute top-0 left-0 right-0 z-[1000] bg-black bg-opacity-90 px-2 py-1 shadow-lg border-b border-primary h-8">
-            <div className="flex items-center justify-between h-full">
+        <div
+            className="absolute top-0 left-0 right-0 bg-black px-2 py-1 shadow-lg border-b border-primary"
+            style={{
+                zIndex: 1000,
+                height: '32px',
+                backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                WebkitBackfaceVisibility: 'hidden', // iOS fix
+                backfaceVisibility: 'hidden',
+                transform: 'translateZ(0)', // Force hardware acceleration
+                position: 'fixed' // Change to fixed for better iOS support
+            }}
+        >
+            <div
+                className="flex items-center justify-between w-full"
+                style={{ height: '30px' }} // Explicit height for iOS
+            >
                 {/* Vänster: Logo och namn */}
-                <div className="flex items-center gap-1 flex-1 min-w-0">
+                <div className="flex items-center gap-1" style={{ flex: '1 1 0%', minWidth: '0' }}>
                     <Logo size={12} className="flex-shrink-0" />
-                    <div className="text-xs text-white font-medium truncate">
+                    <div
+                        className="text-xs text-white font-medium"
+                        style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            color: '#ffffff' // Explicit color for iOS
+                        }}
+                    >
                         {gameName} | {teamName}
                     </div>
                 </div>
 
                 {/* Mitten: Nästa uppgift */}
-                <div className="flex-shrink-0">
-                    <div className="bg-gradient-to-r from-cyan-600 to-blue-600 px-1.5 py-0.5 rounded text-xs text-white font-bold">
+                <div className="flex-shrink-0 mx-1">
+                    <div
+                        className="px-1.5 py-0.5 rounded text-xs text-white font-bold"
+                        style={{
+                            background: 'linear-gradient(to right, #0891b2, #2563eb)',
+                            color: '#ffffff' // Explicit color for iOS
+                        }}
+                    >
                         {getNextObjective(game, team, user)}
                     </div>
                 </div>
 
                 {/* Höger: Timer och hamburger */}
-                <div className="flex items-center gap-1 flex-1 justify-end min-w-0">
-                    <div className="text-xs text-white font-mono">
+                <div
+                    className="flex items-center gap-1 justify-end"
+                    style={{ flex: '1 1 0%', minWidth: '0' }}
+                >
+                    <div
+                        className="text-xs font-mono"
+                        style={{
+                            color: '#ffffff',
+                            fontFamily: 'monospace'
+                        }}
+                    >
                         {formatTime(elapsedTime)}
                     </div>
                     <HamburgerMenu teamMembers={teamMembers}>
@@ -116,6 +153,7 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game,
                             <button
                                 onClick={() => onToggleCompass()}
                                 className="flex items-center gap-1 px-2 py-1 text-xs text-cyan-100 hover:text-cyan-300 hover:bg-cyan-500/20 rounded transition-all duration-200 justify-center bg-cyan-500/10 w-full"
+                                style={{ color: '#a5f3fc' }} // Explicit color
                             >
                                 <span className="text-xs">{showCompass ? '📍' : '🔍'}</span>
                                 <span>{showCompass ? 'Dölj koordinater' : 'Visa koordinater'}</span>
@@ -129,6 +167,7 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game,
                                 }}
                                 className="flex items-center gap-1 px-2 py-1 text-xs text-green-100 hover:text-green-300 hover:bg-green-500/20 rounded transition-all duration-200 justify-center bg-green-500/10 w-full"
                                 title="Ladda ner detaljerad spelrapport"
+                                style={{ color: '#bbf7d0' }} // Explicit color
                             >
                                 <span className="text-xs">📊</span>
                                 <span>Ladda ner spelrapport</span>
