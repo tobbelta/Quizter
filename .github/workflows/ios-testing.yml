@@ -24,6 +24,31 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Create Firebase config for build
+      run: |
+        # Check if firebase.js exists
+        if [ ! -f "src/firebase.js" ]; then
+          echo "Firebase config not found, creating dummy config for build..."
+          cat > src/firebase.js << 'EOF'
+        import { initializeApp } from "firebase/app";
+        import { getAuth } from "firebase/auth";
+        import { getFirestore } from "firebase/firestore";
+
+        const firebaseConfig = {
+          apiKey: "dummy-key-for-build",
+          authDomain: "dummy.firebaseapp.com",
+          projectId: "dummy-project",
+          storageBucket: "dummy.appspot.com",
+          messagingSenderId: "123456789",
+          appId: "1:123456789:web:dummy"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        export const auth = getAuth(app);
+        export const db = getFirestore(app);
+        EOF
+        fi
+
     - name: Build app
       run: npm run build
 
