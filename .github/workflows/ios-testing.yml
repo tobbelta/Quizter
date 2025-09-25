@@ -1,0 +1,95 @@
+name: iOS Testing
+
+on:
+  workflow_dispatch: # Manual trigger
+  push:
+    branches: [ main, visa-koordinater ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ios-test:
+    runs-on: macos-14 # Latest macOS with Xcode
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build app
+      run: npm run build
+
+    - name: List available iOS simulators
+      run: xcrun simctl list devices available
+
+    - name: Start iOS Simulator (iPhone 15 Pro)
+      run: |
+        # Start iPhone 15 Pro simulator (closest to iPhone 16)
+        DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone 15 Pro (" | head -1 | grep -o '[0-9A-F\-]\{36\}')
+        echo "Starting device: $DEVICE_ID"
+        xcrun simctl boot $DEVICE_ID
+        xcrun simctl list devices booted
+
+    - name: Install and start local server
+      run: |
+        # Install a simple HTTP server
+        npm install -g http-server
+        # Start server in background
+        cd build && http-server -p 3000 --cors &
+        sleep 5
+        echo "Server started on http://localhost:3000"
+
+    - name: Open Safari in iOS Simulator
+      run: |
+        # Get booted device
+        DEVICE_ID=$(xcrun simctl list devices booted | grep "iPhone" | grep -o '[0-9A-F\-]\{36\}' | head -1)
+        echo "Using device: $DEVICE_ID"
+
+        # Open Safari and navigate to our app
+        xcrun simctl openurl $DEVICE_ID "http://localhost:3000"
+        sleep 10
+
+    - name: Take screenshots
+      run: |
+        # Get booted device
+        DEVICE_ID=$(xcrun simctl list devices booted | grep "iPhone" | grep -o '[0-9A-F\-]\{36\}' | head -1)
+
+        # Create screenshots directory
+        mkdir -p screenshots
+
+        # Take screenshot
+        xcrun simctl io $DEVICE_ID screenshot screenshots/ios-safari-homepage.png
+
+        # Try to navigate to different routes and take more screenshots
+        sleep 5
+        xcrun simctl io $DEVICE_ID screenshot screenshots/ios-safari-after-load.png
+
+    - name: Upload screenshots as artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: ios-screenshots
+        path: screenshots/
+        retention-days: 30
+
+    - name: Test Chrome simulation (via user agent)
+      run: |
+        echo "Testing with Chrome user agent simulation..."
+        # This would require more complex setup with puppeteer or similar
+        # For now, we document this as future enhancement
+
+    - name: Cleanup
+      if: always()
+      run: |
+        # Kill any running simulators
+        xcrun simctl shutdown all || true
+        # Kill background processes
+        pkill -f "http-server" || true
