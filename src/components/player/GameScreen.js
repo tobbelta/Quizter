@@ -11,6 +11,7 @@ import { useDebug } from '../../context/DebugContext';
 import { calculateDistance } from '../../utils/location';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAdaptiveLoading } from '../../hooks/useNetworkStatus';
+import { usePlayerActivity } from '../../hooks/usePlayerActivity';
 import { vibrationEvents } from '../../utils/vibration';
 
 import GameHeader from './GameHeader';
@@ -61,6 +62,10 @@ const GameScreen = ({ user, userData }) => {
 
     const mapRef = useRef();
     const [currentZoomMode, setCurrentZoomMode] = useState('course'); // 'course' | 'gamearea'
+
+    // Hantera spelaraktivitet baserat på browser-händelser
+    const isGameActive = game && ['created', 'ready', 'started'].includes(game.status);
+    usePlayerActivity(gameId, user?.uid, isGameActive);
 
     const isGeolocationPaused = !game;
 

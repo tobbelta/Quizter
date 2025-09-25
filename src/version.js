@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 13,
-  patch: 1,
+  minor: 14,
+  patch: 0,
   build: Date.now(),
-  description: "Fix: Vibrationsspam i simulering - cooldown på 5s för start/hinder, 10s för mål"
+  description: "Feature: Automatisk inaktivering när spelare stänger browser/flik - smart detektering av verklig stängning vs minimering"
 };
 
 export const getVersionString = () => {
