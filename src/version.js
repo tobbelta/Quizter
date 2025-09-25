@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 15,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "Feature: Visibility-status för spelare - se om lagmedlemmar har spelet synligt eller minimerat/dolt"
+  description: "Fix: iOS Chrome header-problem - fixar svart platta genom förbättrad CSS och explicit styling"
 };
 
 export const getVersionString = () => {

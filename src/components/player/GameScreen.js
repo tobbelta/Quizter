@@ -1020,7 +1020,7 @@ const GameScreen = ({ user, userData }) => {
                 onToggleCompass={toggleCompass}
                 onExportGameLog={gameLogger?.exportGameLog}
             />
-            <div className="absolute top-8 left-0 right-0 bottom-0 w-full">
+            <div className="absolute left-0 right-0 bottom-0 w-full" style={{ top: '32px' }}>
                 <MapContainer
                     center={center}
                     zoom={initialZoom}
