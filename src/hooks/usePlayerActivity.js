@@ -56,7 +56,8 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             await updateDoc(playerRef, {
                 isActive: true,
                 lastSeen: new Date(),
-                inactiveReason: null
+                inactiveReason: null,
+                isVisible: !document.hidden // Lägg till visibility status
             });
         } catch (error) {
             console.error('Kunde inte uppdatera spelarstatus:', error);
@@ -83,6 +84,21 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
         const handleVisibilityChange = () => {
             const now = Date.now();
             lastVisibilityChange.current = now;
+
+            // Uppdatera visibility status omedelbart
+            const updateVisibilityStatus = async () => {
+                try {
+                    const playerRef = doc(db, 'games', gameId, 'players', userId);
+                    await updateDoc(playerRef, {
+                        isVisible: !document.hidden,
+                        lastSeen: new Date()
+                    });
+                } catch (error) {
+                    console.error('Kunde inte uppdatera visibility status:', error);
+                }
+            };
+
+            updateVisibilityStatus();
 
             if (document.hidden) {
                 console.log('👁️ Sida blev dold - startar inaktivitetstimer');

@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 14,
+  minor: 15,
   patch: 0,
   build: Date.now(),
-  description: "Feature: Automatisk inaktivering när spelare stänger browser/flik - smart detektering av verklig stängning vs minimering"
+  description: "Feature: Visibility-status för spelare - se om lagmedlemmar har spelet synligt eller minimerat/dolt"
 };
 
 export const getVersionString = () => {
