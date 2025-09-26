@@ -1,7 +1,7 @@
 // KORRIGERING: Importerar 'useMemo' från react
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polygon } from 'react-leaflet';
 import L from 'leaflet';
@@ -320,13 +320,9 @@ const GameScreen = ({ user, userData }) => {
                             }
 
                             if (teamData.memberIds?.length > 0) {
-                                // OPTIMERING: Begränsa player listener till endast teamets medlemmar
-                                const playerPositionsQuery = query(
-                                    collection(db, 'games', gameId, 'players'),
-                                    where('__name__', 'in', teamData.memberIds.slice(0, 10)) // Max 10 members
-                                );
-
-                                unsubscribePlayers = onSnapshot(playerPositionsQuery, async (playersSnapshot) => {
+                                // Lyssna på alla players för detta spel (återställt för att fixa team member synlighet)
+                                const playerPositionsRef = collection(db, 'games', gameId, 'players');
+                                unsubscribePlayers = onSnapshot(playerPositionsRef, async (playersSnapshot) => {
                                     const playerData = {};
                                     playersSnapshot.forEach(playerDoc => {
                                         const data = playerDoc.data();
@@ -337,9 +333,22 @@ const GameScreen = ({ user, userData }) => {
                                         };
                                     });
 
-                                    // OPTIMERING: Cacha user data och hämta bara vid behov
-                                    const cachedMembers = JSON.parse(localStorage.getItem(`team-${gameData.teamId}-members`) || '{}');
-                                    const needsFetch = teamData.memberIds.filter(id => !cachedMembers[id]);
+                                    // OPTIMERING: Cacha user data och hämta bara vid behov (behållen optimering)
+                                    const cacheKey = `team-${gameData.teamId}-members`;
+                                    const timestampKey = `${cacheKey}-timestamp`;
+                                    const cacheAge = Date.now() - (parseInt(localStorage.getItem(timestampKey)) || 0);
+                                    const isExpired = cacheAge > 5 * 60 * 1000; // 5 minuter
+
+                                    let cachedMembers = {};
+                                    if (!isExpired) {
+                                        try {
+                                            cachedMembers = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+                                        } catch (e) {
+                                            // Ignore cache parsing errors
+                                        }
+                                    }
+
+                                    const needsFetch = teamData.memberIds.filter(id => !cachedMembers[id] || isExpired);
 
                                     let newMemberData = { ...cachedMembers };
                                     if (needsFetch.length > 0) {
@@ -352,9 +361,9 @@ const GameScreen = ({ user, userData }) => {
                                             }
                                         });
 
-                                        // Cache för 5 minuter
-                                        localStorage.setItem(`team-${gameData.teamId}-members`, JSON.stringify(newMemberData));
-                                        localStorage.setItem(`team-${gameData.teamId}-members-timestamp`, Date.now().toString());
+                                        // Uppdatera cache
+                                        localStorage.setItem(cacheKey, JSON.stringify(newMemberData));
+                                        localStorage.setItem(timestampKey, Date.now().toString());
                                     }
 
                                     const validMembers = teamData.memberIds
