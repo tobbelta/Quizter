@@ -18,20 +18,31 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
     const lastVisibilityChange = useRef(Date.now());
     const inactivityTimer = useRef(null);
     const hasSetInactive = useRef(false);
-    const visibilityUpdateTimer = useRef(null); // FIX: Flytta timer till rätt scope
-    const lastActivityToggle = useRef(0); // Förhindra rapid toggling
+    const visibilityUpdateTimer = useRef(null);
+
+    // FÖRBÄTTRAD ANTI-LOOP: Per-reason throttling
+    const lastToggleByReason = useRef({});
+    const isProcessingChange = useRef(false); // Global lock
 
     // Markera spelare som inaktiv
     const setPlayerInactive = useCallback(async (reason = 'unknown') => {
         if (!gameId || !userId || hasSetInactive.current) return;
 
-        // ANTI-LOOP: Förhindra toggling snabbare än var 5:e sekund
-        const now = Date.now();
-        if (now - lastActivityToggle.current < 5000) {
-            console.log(`🚫 Anti-loop: Skippar inactivity toggle, för snabbt (${reason})`);
+        // FÖRBÄTTRAD ANTI-LOOP: Global processing lock + per-reason throttle
+        if (isProcessingChange.current) {
+            console.log(`🚫 Processing lock: Skippar inactivity (${reason})`);
             return;
         }
-        lastActivityToggle.current = now;
+
+        const now = Date.now();
+        const lastToggleForReason = lastToggleByReason.current[reason] || 0;
+        if (now - lastToggleForReason < 3000) { // 3 sekunder per reason
+            console.log(`🚫 Reason throttle: Skippar inactivity ${reason} (${Math.round((now - lastToggleForReason)/1000)}s sedan)`);
+            return;
+        }
+
+        isProcessingChange.current = true;
+        lastToggleByReason.current[reason] = now;
 
         console.log(`🔴 Markerar spelare som inaktiv: ${reason}`);
         hasSetInactive.current = true;
@@ -52,17 +63,25 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
     const setPlayerActive = useCallback(async () => {
         if (!gameId || !userId) return;
 
-        // ANTI-LOOP: Förhindra toggling snabbare än var 5:e sekund
-        const now = Date.now();
-        if (hasSetInactive.current && now - lastActivityToggle.current < 5000) {
-            console.log(`🚫 Anti-loop: Skippar activity toggle, för snabbt`);
+        // FÖRBÄTTRAD ANTI-LOOP för active
+        if (isProcessingChange.current) {
+            console.log(`🚫 Processing lock: Skippar activity toggle`);
             return;
         }
         if (!hasSetInactive.current) {
-            // Redan aktiv, skippa
+            // Redan aktiv, skippa tyst
             return;
         }
-        lastActivityToggle.current = now;
+
+        const now = Date.now();
+        const lastActiveToggle = lastToggleByReason.current['activation'] || 0;
+        if (now - lastActiveToggle < 2000) { // 2 sekunder för aktivering
+            console.log(`🚫 Activation throttle: Skippar activity toggle (${Math.round((now - lastActiveToggle)/1000)}s sedan)`);
+            return;
+        }
+
+        isProcessingChange.current = true;
+        lastToggleByReason.current['activation'] = now;
 
         console.log('🟢 Markerar spelare som aktiv');
         hasSetInactive.current = false;
