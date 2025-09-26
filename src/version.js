@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 3,
+  patch: 4,
   build: Date.now(),
-  description: "Fix player names och förbättrad beforeunload inactivity detection"
+  description: "CRITICAL: Stoppar player activity infinite loops med anti-loop protection"
 };
 
 export const getVersionString = () => {
