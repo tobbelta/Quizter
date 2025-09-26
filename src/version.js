@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 16,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "Firestore cost optimization - minskar Cloud-kostnader med 60-80% genom filtrerade queries, caching och reducerad uppdateringsfrekvens"
+  description: "Critical debounce fix - fixar 50,000+ Listen requests genom proper debounce scope och timeout cleanup"
 };
 
 export const getVersionString = () => {
