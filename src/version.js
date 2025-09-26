@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 1,
+  patch: 2,
   build: Date.now(),
-  description: "EMERGENCY FIX - stoppar runaway Firestore calls genom selektiv field comparison och circuit breaker"
+  description: "Fix team member visibility - fallback data för missing users så alla spelare visas"
 };
 
 export const getVersionString = () => {
