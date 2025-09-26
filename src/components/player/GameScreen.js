@@ -1,7 +1,7 @@
 // KORRIGERING: Importerar 'useMemo' från react
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polygon } from 'react-leaflet';
 import L from 'leaflet';
@@ -320,8 +320,13 @@ const GameScreen = ({ user, userData }) => {
                             }
 
                             if (teamData.memberIds?.length > 0) {
-                                const playerPositionsRef = collection(db, 'games', gameId, 'players');
-                                unsubscribePlayers = onSnapshot(playerPositionsRef, async (playersSnapshot) => {
+                                // OPTIMERING: Begränsa player listener till endast teamets medlemmar
+                                const playerPositionsQuery = query(
+                                    collection(db, 'games', gameId, 'players'),
+                                    where('__name__', 'in', teamData.memberIds.slice(0, 10)) // Max 10 members
+                                );
+
+                                unsubscribePlayers = onSnapshot(playerPositionsQuery, async (playersSnapshot) => {
                                     const playerData = {};
                                     playersSnapshot.forEach(playerDoc => {
                                         const data = playerDoc.data();
@@ -332,17 +337,34 @@ const GameScreen = ({ user, userData }) => {
                                         };
                                     });
 
-                                    const memberPromises = teamData.memberIds.map(id => getDoc(doc(db, 'users', id)));
-                                    const memberDocs = await Promise.all(memberPromises);
+                                    // OPTIMERING: Cacha user data och hämta bara vid behov
+                                    const cachedMembers = JSON.parse(localStorage.getItem(`team-${gameData.teamId}-members`) || '{}');
+                                    const needsFetch = teamData.memberIds.filter(id => !cachedMembers[id]);
 
-                                    const validMembers = memberDocs
-                                        .filter(mdoc => mdoc.exists())
-                                        .map(mdoc => ({
-                                            uid: mdoc.id,
-                                            ...mdoc.data(),
-                                            position: playerData[mdoc.id]?.position || null,
-                                            lastUpdate: playerData[mdoc.id]?.lastUpdate || null,
-                                            isActive: playerData[mdoc.id]?.isActive || false
+                                    let newMemberData = { ...cachedMembers };
+                                    if (needsFetch.length > 0) {
+                                        const memberPromises = needsFetch.map(id => getDoc(doc(db, 'users', id)));
+                                        const memberDocs = await Promise.all(memberPromises);
+
+                                        memberDocs.forEach(mdoc => {
+                                            if (mdoc.exists()) {
+                                                newMemberData[mdoc.id] = mdoc.data();
+                                            }
+                                        });
+
+                                        // Cache för 5 minuter
+                                        localStorage.setItem(`team-${gameData.teamId}-members`, JSON.stringify(newMemberData));
+                                        localStorage.setItem(`team-${gameData.teamId}-members-timestamp`, Date.now().toString());
+                                    }
+
+                                    const validMembers = teamData.memberIds
+                                        .filter(id => newMemberData[id])
+                                        .map(id => ({
+                                            uid: id,
+                                            ...newMemberData[id],
+                                            position: playerData[id]?.position || null,
+                                            lastUpdate: playerData[id]?.lastUpdate || null,
+                                            isActive: playerData[id]?.isActive || false
                                         }));
                                     setTeamMembers(validMembers);
                                 });

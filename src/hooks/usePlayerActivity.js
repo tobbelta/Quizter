@@ -85,17 +85,25 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             const now = Date.now();
             lastVisibilityChange.current = now;
 
-            // Uppdatera visibility status omedelbart
-            const updateVisibilityStatus = async () => {
-                try {
-                    const playerRef = doc(db, 'games', gameId, 'players', userId);
-                    await updateDoc(playerRef, {
-                        isVisible: !document.hidden,
-                        lastSeen: new Date()
-                    });
-                } catch (error) {
-                    console.error('Kunde inte uppdatera visibility status:', error);
+            // OPTIMERING: Batcha visibility uppdateringar med debounce
+            let visibilityUpdateTimer = null;
+            const updateVisibilityStatus = () => {
+                if (visibilityUpdateTimer) {
+                    clearTimeout(visibilityUpdateTimer);
                 }
+
+                // Vänta 2 sekunder innan uppdatering för att undvika spam
+                visibilityUpdateTimer = setTimeout(async () => {
+                    try {
+                        const playerRef = doc(db, 'games', gameId, 'players', userId);
+                        await updateDoc(playerRef, {
+                            isVisible: !document.hidden,
+                            lastSeen: new Date()
+                        });
+                    } catch (error) {
+                        console.error('Kunde inte uppdatera visibility status:', error);
+                    }
+                }, 2000); // 2 sekunders debounce
             };
 
             updateVisibilityStatus();
@@ -108,15 +116,16 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
                     clearTimeout(inactivityTimer.current);
                 }
 
+                // OPTIMERING: Öka timeout för att minska Firestore-uppdateringar
                 // Sätt timer för att markera som inaktiv efter längre tids frånvaro
                 inactivityTimer.current = setTimeout(() => {
                     const timeSinceHidden = Date.now() - lastVisibilityChange.current;
 
-                    // Om sidan fortfarande är dold efter 3 minuter, markera som inaktiv
-                    if (document.hidden && timeSinceHidden >= (3 * 60 * 1000)) {
+                    // Om sidan fortfarande är dold efter 10 minuter, markera som inaktiv
+                    if (document.hidden && timeSinceHidden >= (10 * 60 * 1000)) {
                         setPlayerInactive('long_absence');
                     }
-                }, 3 * 60 * 1000); // 3 minuter
+                }, 10 * 60 * 1000); // 10 minuter istället för 3
 
             } else {
                 console.log('👁️ Sida blev synlig - återställer aktivitet');
@@ -127,9 +136,10 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
                     inactivityTimer.current = null;
                 }
 
+                // OPTIMERING: Utöka tidsramen för återaktivering
                 // Återställ som aktiv om spelaren kommer tillbaka inom rimlig tid
                 const timeSinceHidden = now - lastVisibilityChange.current;
-                if (timeSinceHidden < (5 * 60 * 1000)) { // Inom 5 minuter
+                if (timeSinceHidden < (15 * 60 * 1000)) { // Inom 15 minuter istället för 5
                     setPlayerActive();
                 }
             }

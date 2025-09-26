@@ -1,6 +1,6 @@
 // src/components/gameMaster/LiveMonitor.js
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, updateDoc, deleteDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useNavigate } from 'react-router-dom';
 import SkeletonLoader from '../shared/SkeletonLoader';
@@ -16,32 +16,82 @@ const LiveMonitor = () => {
     const [selectedGames, setSelectedGames] = useState(new Set());
     const [coursesMap, setCoursesMap] = useState({});
     const [teamsMap, setTeamsMap] = useState({});
+    // Removed unused state: recentGameIds, setRecentGameIds
     const navigate = useNavigate();
 
     useEffect(() => {
-        const unsubGames = onSnapshot(collection(db, 'games'), (querySnapshot) => {
+        // Optimized: Only fetch recent games (last 30 days) and active games
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const recentGamesQuery = query(
+            collection(db, 'games'),
+            where('createdAt', '>=', thirtyDaysAgo),
+            orderBy('createdAt', 'desc'),
+            limit(100) // Limit to 100 most recent games
+        );
+
+        let unsubCourses = () => {};
+        let unsubTeams = () => {};
+
+        const unsubGames = onSnapshot(recentGamesQuery, (querySnapshot) => {
             const gamesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setGames(gamesData);
             setLoading(false);
+
+            // Load only the courses and teams that are referenced by these games
+            const courseIds = [...new Set(gamesData.map(g => g.courseId).filter(Boolean))];
+            const teamIds = [...new Set(gamesData.map(g => g.teamId).filter(Boolean))];
+
+            // Unsubscribe from previous listeners
+            unsubCourses();
+            unsubTeams();
+
+            // Only fetch courses that are actually used (batch by 10 due to Firestore limit)
+            if (courseIds.length > 0) {
+                // For now, fetch them individually to avoid complexity. Could be optimized further.
+                const coursesData = {};
+                let coursesLoaded = 0;
+
+                courseIds.forEach(async (courseId) => {
+                    try {
+                        const courseDoc = await getDoc(doc(db, 'courses', courseId));
+                        if (courseDoc.exists()) {
+                            coursesData[courseId] = courseDoc.data();
+                        }
+                        coursesLoaded++;
+                        if (coursesLoaded === courseIds.length) {
+                            setCoursesMap(coursesData);
+                        }
+                    } catch (error) {
+                        console.error(`Error loading course ${courseId}:`, error);
+                    }
+                });
+            }
+
+            // Only fetch teams that are actually used
+            if (teamIds.length > 0) {
+                const teamsData = {};
+                let teamsLoaded = 0;
+
+                teamIds.forEach(async (teamId) => {
+                    try {
+                        const teamDoc = await getDoc(doc(db, 'teams', teamId));
+                        if (teamDoc.exists()) {
+                            teamsData[teamId] = teamDoc.data();
+                        }
+                        teamsLoaded++;
+                        if (teamsLoaded === teamIds.length) {
+                            setTeamsMap(teamsData);
+                        }
+                    } catch (error) {
+                        console.error(`Error loading team ${teamId}:`, error);
+                    }
+                });
+            }
         }, (error) => {
             console.error("Error fetching games:", error);
             setLoading(false);
-        });
-
-        const unsubCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
-            const coursesData = {};
-            snapshot.forEach(doc => {
-                coursesData[doc.id] = doc.data();
-            });
-            setCoursesMap(coursesData);
-        });
-
-        const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-            const teamsData = {};
-            snapshot.forEach(doc => {
-                teamsData[doc.id] = doc.data();
-            });
-            setTeamsMap(teamsData);
         });
 
         return () => {

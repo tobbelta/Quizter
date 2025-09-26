@@ -9,7 +9,7 @@ import { onSnapshot } from 'firebase/firestore';
  * - Connection status awareness
  * - Automatic retry with exponential backoff
  */
-export const useOptimizedFirestore = (query, debounceMs = 300) => {
+export const useOptimizedFirestore = (query, debounceMs = 300, cacheTimeMs = 5 * 60 * 1000) => { // 5 min cache
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -40,6 +40,29 @@ export const useOptimizedFirestore = (query, debounceMs = 300) => {
             return;
         }
 
+        // Check for cached data first
+        const cacheKey = query.path || 'default';
+        let cachedEntry = cacheRef.current.get(cacheKey);
+
+        if (!cachedEntry) {
+            try {
+                const stored = localStorage.getItem(`firestore-cache-${cacheKey}`);
+                if (stored) {
+                    cachedEntry = JSON.parse(stored);
+                    cacheRef.current.set(cacheKey, cachedEntry);
+                }
+            } catch (e) {
+                // Ignore localStorage errors
+            }
+        }
+
+        // Use cached data if available and not expired
+        if (cachedEntry && (!cachedEntry.expiresAt || Date.now() < cachedEntry.expiresAt)) {
+            setData(cachedEntry.data || cachedEntry);
+            setLoading(false);
+            // Continue with real-time updates but show cached data immediately
+        }
+
         const setupSubscription = () => {
             try {
                 unsubscribeRef.current = onSnapshot(
@@ -60,9 +83,21 @@ export const useOptimizedFirestore = (query, debounceMs = 300) => {
                                 ...doc.data()
                             }));
 
-                            // Simple cache key based on query path
+                            // Enhanced cache with timestamp
                             const cacheKey = query.path || 'default';
-                            cacheRef.current.set(cacheKey, newData);
+                            const cacheEntry = {
+                                data: newData,
+                                timestamp: Date.now(),
+                                expiresAt: Date.now() + cacheTimeMs
+                            };
+                            cacheRef.current.set(cacheKey, cacheEntry);
+
+                            // Store in localStorage for persistence
+                            try {
+                                localStorage.setItem(`firestore-cache-${cacheKey}`, JSON.stringify(cacheEntry));
+                            } catch (e) {
+                                // Ignore localStorage errors
+                            }
 
                             setData(newData);
                             setLoading(false);
@@ -73,12 +108,24 @@ export const useOptimizedFirestore = (query, debounceMs = 300) => {
                     (err) => {
                         console.error('Firestore error:', err);
 
-                        // Try to use cached data if available
+                        // Try to use cached data if available and not expired
                         const cacheKey = query.path || 'default';
-                        const cachedData = cacheRef.current.get(cacheKey);
+                        const cachedEntry = cacheRef.current.get(cacheKey);
 
-                        if (cachedData) {
-                            setData(cachedData);
+                        // Also check localStorage for persistent cache
+                        let fallbackEntry = null;
+                        try {
+                            const stored = localStorage.getItem(`firestore-cache-${cacheKey}`);
+                            if (stored) {
+                                fallbackEntry = JSON.parse(stored);
+                            }
+                        } catch (e) {
+                            // Ignore localStorage errors
+                        }
+
+                        const entry = cachedEntry || fallbackEntry;
+                        if (entry && (!entry.expiresAt || Date.now() < entry.expiresAt)) {
+                            setData(entry.data || entry); // Handle both new and old cache format
                             setError({ ...err, usingCache: true });
                         } else {
                             setError(err);
