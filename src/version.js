@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 4,
+  patch: 5,
   build: Date.now(),
-  description: "CRITICAL: Stoppar player activity infinite loops med anti-loop protection"
+  description: "ADVANCED anti-loop: Per-reason throttling + global processing lock stoppar event conflicts"
 };
 
 export const getVersionString = () => {
