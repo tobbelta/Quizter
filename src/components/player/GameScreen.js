@@ -278,9 +278,11 @@ const GameScreen = ({ user, userData }) => {
         let unsubscribeTeam = () => {};
         let unsubscribePlayers = () => {};
 
-        // RIKTIGT EVENT-DRIVEN: Spara senaste data för change detection
+        // EMERGENCY CIRCUIT BREAKER: Begränsa uppdateringar
         let lastGameData = null;
         let lastPlayerData = null;
+        let updateCount = 0;
+        let lastUpdateTime = Date.now();
 
         const gameRef = doc(db, 'games', gameId);
         const unsubscribeGame = onSnapshot(gameRef, (gameDoc) => {
@@ -291,17 +293,28 @@ const GameScreen = ({ user, userData }) => {
                 return;
             }
 
-            const gameData = { id: gameDoc.id, ...gameDoc.data() };
-
-            // CHANGE DETECTION: Bara uppdatera om data faktiskt ändrats
-            const gameDataString = JSON.stringify(gameData);
-            if (lastGameData && lastGameData === gameDataString) {
-                console.log('🚫 Game data oförändrat, skippar uppdatering');
-                return;
+            // CIRCUIT BREAKER: Max 10 uppdateringar per 10 sekunder
+            const now = Date.now();
+            if (now - lastUpdateTime < 10000) {
+                updateCount++;
+                if (updateCount > 10) {
+                    console.warn('🚨 CIRCUIT BREAKER: För många game updates, pausar 10s');
+                    return;
+                }
+            } else {
+                updateCount = 0;
+                lastUpdateTime = now;
             }
 
-            lastGameData = gameDataString;
-            console.log('✅ Game data ändrat, uppdaterar UI');
+            const gameData = { id: gameDoc.id, ...gameDoc.data() };
+
+            // EMERGENCY FIX: Selektiv jämförelse istället för JSON.stringify
+            const gameKey = `${gameData.status}-${gameData.activeObstacleId}-${gameData.completedObstacles?.length || 0}`;
+            if (lastGameData && lastGameData === gameKey) {
+                return; // Skippa utan log för att minska noise
+            }
+
+            lastGameData = gameKey;
             setGame(gameData);
 
             if (gameData.activeObstacleId) {
@@ -347,15 +360,16 @@ const GameScreen = ({ user, userData }) => {
                                         };
                                     });
 
-                                    // CHANGE DETECTION: Bara uppdatera om player data ändrats
-                                    const playerDataString = JSON.stringify(playerData);
-                                    if (lastPlayerData && lastPlayerData === playerDataString) {
-                                        console.log('🚫 Player data oförändrat, skippar team member uppdatering');
-                                        return;
+                                    // EMERGENCY FIX: Enbart position-baserad jämförelse
+                                    const positionKey = Object.keys(playerData)
+                                        .map(id => `${id}:${playerData[id].position?.latitude || 0},${playerData[id].position?.longitude || 0}`)
+                                        .join('|');
+
+                                    if (lastPlayerData && lastPlayerData === positionKey) {
+                                        return; // Skippa utan log
                                     }
 
-                                    lastPlayerData = playerDataString;
-                                    console.log('✅ Player data ändrat, uppdaterar team members');
+                                    lastPlayerData = positionKey;
 
                                     // FIX: Återställ caching men med debounce för att minska Firestore-anrop
                                     const cacheKey = `team-${gameData.teamId}-members`;
