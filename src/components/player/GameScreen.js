@@ -277,9 +277,16 @@ const GameScreen = ({ user, userData }) => {
 
         let unsubscribeTeam = () => {};
         let unsubscribePlayers = () => {};
+        let gameUpdateTimeout = null;
 
         const gameRef = doc(db, 'games', gameId);
         const unsubscribeGame = onSnapshot(gameRef, (gameDoc) => {
+            // Debounce game updates också
+            if (gameUpdateTimeout) {
+                clearTimeout(gameUpdateTimeout);
+            }
+
+            gameUpdateTimeout = setTimeout(() => {
             if (!gameDoc.exists()) {
                 setError('Spelet hittades inte.');
                 setLoading(false);
@@ -320,9 +327,18 @@ const GameScreen = ({ user, userData }) => {
                             }
 
                             if (teamData.memberIds?.length > 0) {
-                                // Lyssna på alla players för detta spel (återställt för att fixa team member synlighet)
+                                // KRITISK FIX: Lägg till debounce för att minska Firestore Listen-anrop
+                                let updateTimeout = null;
+
+                                // Lyssna på alla players för detta spel med debounce
                                 const playerPositionsRef = collection(db, 'games', gameId, 'players');
                                 unsubscribePlayers = onSnapshot(playerPositionsRef, async (playersSnapshot) => {
+                                    // Debounce för att undvika för många uppdateringar
+                                    if (updateTimeout) {
+                                        clearTimeout(updateTimeout);
+                                    }
+
+                                    updateTimeout = setTimeout(async () => {
                                     const playerData = {};
                                     playersSnapshot.forEach(playerDoc => {
                                         const data = playerDoc.data();
@@ -333,17 +349,29 @@ const GameScreen = ({ user, userData }) => {
                                         };
                                     });
 
-                                    // TEMPORÄR FIX: Rensa cache för att testa team members
+                                    // FIX: Återställ caching men med debounce för att minska Firestore-anrop
                                     const cacheKey = `team-${gameData.teamId}-members`;
                                     const timestampKey = `${cacheKey}-timestamp`;
+                                    const cacheAge = Date.now() - (parseInt(localStorage.getItem(timestampKey)) || 0);
+                                    const isExpired = cacheAge > 2 * 60 * 1000; // Minska till 2 min för debug
 
-                                    // Rensa cache temporärt för felsökning
-                                    localStorage.removeItem(cacheKey);
-                                    localStorage.removeItem(timestampKey);
+                                    let cachedMembers = {};
+                                    if (!isExpired) {
+                                        try {
+                                            cachedMembers = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+                                        } catch (e) {
+                                            console.warn('Cache parsing error:', e);
+                                        }
+                                    }
 
-                                    let cachedMembers = {}; // Tom cache för att forcera fresh fetch
+                                    // DEBUG: Logga först vad vi har
+                                    console.log('🔍 Cache status:', {
+                                        cacheAge: Math.round(cacheAge / 1000) + 's',
+                                        isExpired,
+                                        cachedKeys: Object.keys(cachedMembers)
+                                    });
 
-                                    const needsFetch = teamData.memberIds; // Hämta alla för debug
+                                    const needsFetch = teamData.memberIds.filter(id => !cachedMembers[id] || isExpired);
 
                                     let newMemberData = { ...cachedMembers };
                                     if (needsFetch.length > 0) {
@@ -382,6 +410,7 @@ const GameScreen = ({ user, userData }) => {
 
                                     console.log('👥 Valid members result:', validMembers.map(m => m.displayName || m.email));
                                     setTeamMembers(validMembers);
+                                    }, 1000); // 1 sekund debounce
                                 });
                             } else {
                                 setTeamMembers([]);
@@ -400,12 +429,18 @@ const GameScreen = ({ user, userData }) => {
                 setTeamMembers([]);
                 setLoading(false);
             }
+            }, 500); // 500ms debounce för game updates
         });
 
         return () => {
             unsubscribeGame();
             unsubscribeTeam();
             unsubscribePlayers();
+
+            // Rensa timeout-handlers för att förhindra memory leaks
+            if (gameUpdateTimeout) {
+                clearTimeout(gameUpdateTimeout);
+            }
         };
     }, [gameId, navigate, user, addLog, userData?.displayName]);
 
