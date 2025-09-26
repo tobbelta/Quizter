@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 16,
-  patch: 1,
+  minor: 17,
+  patch: 0,
   build: Date.now(),
-  description: "Critical debounce fix - fixar 50,000+ Listen requests genom proper debounce scope och timeout cleanup"
+  description: "TRUE event-driven approach - change detection eliminerar 90%+ onödiga uppdateringar när spelare står still"
 };
 
 export const getVersionString = () => {
