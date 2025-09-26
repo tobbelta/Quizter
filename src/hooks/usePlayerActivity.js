@@ -73,11 +73,24 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
         // Sätt spelare som aktiv när hook aktiveras
         setPlayerActive();
 
-        // 1. Hantera browser/flik stängning
+        // 1. Hantera browser/flik stängning - FÖRBÄTTRAD FIX
         const handleBeforeUnload = (event) => {
             console.log('📤 beforeunload - sätter spelare som inaktiv');
-            // Använd synkron updateDoc för att säkerställa data når Firestore
-            setPlayerInactive('browser_closed');
+
+            // Markera som inaktiv omedelbart utan await
+            if (!hasSetInactive.current) {
+                hasSetInactive.current = true;
+
+                // Använd updateDoc utan await för snabbast möjliga exekvering
+                const playerRef = doc(db, 'games', gameId, 'players', userId);
+                updateDoc(playerRef, {
+                    isActive: false,
+                    lastSeen: new Date(),
+                    inactiveReason: 'browser_closed'
+                }).catch(err => {
+                    console.error('beforeunload updateDoc misslyckades:', err);
+                });
+            }
         };
 
         // 2. Hantera visibility changes (minimering, app-switching, etc.)
