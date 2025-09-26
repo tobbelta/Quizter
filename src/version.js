@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 2,
+  patch: 3,
   build: Date.now(),
-  description: "Fix team member visibility - fallback data för missing users så alla spelare visas"
+  description: "Fix player names och förbättrad beforeunload inactivity detection"
 };
 
 export const getVersionString = () => {
