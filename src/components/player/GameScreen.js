@@ -333,22 +333,17 @@ const GameScreen = ({ user, userData }) => {
                                         };
                                     });
 
-                                    // OPTIMERING: Cacha user data och hämta bara vid behov (behållen optimering)
+                                    // TEMPORÄR FIX: Rensa cache för att testa team members
                                     const cacheKey = `team-${gameData.teamId}-members`;
                                     const timestampKey = `${cacheKey}-timestamp`;
-                                    const cacheAge = Date.now() - (parseInt(localStorage.getItem(timestampKey)) || 0);
-                                    const isExpired = cacheAge > 5 * 60 * 1000; // 5 minuter
 
-                                    let cachedMembers = {};
-                                    if (!isExpired) {
-                                        try {
-                                            cachedMembers = JSON.parse(localStorage.getItem(cacheKey) || '{}');
-                                        } catch (e) {
-                                            // Ignore cache parsing errors
-                                        }
-                                    }
+                                    // Rensa cache temporärt för felsökning
+                                    localStorage.removeItem(cacheKey);
+                                    localStorage.removeItem(timestampKey);
 
-                                    const needsFetch = teamData.memberIds.filter(id => !cachedMembers[id] || isExpired);
+                                    let cachedMembers = {}; // Tom cache för att forcera fresh fetch
+
+                                    const needsFetch = teamData.memberIds; // Hämta alla för debug
 
                                     let newMemberData = { ...cachedMembers };
                                     if (needsFetch.length > 0) {
@@ -366,6 +361,15 @@ const GameScreen = ({ user, userData }) => {
                                         localStorage.setItem(timestampKey, Date.now().toString());
                                     }
 
+                                    // DEBUG: Logga teamData och memberData för felsökning
+                                    console.log('🔍 Team member debug:', {
+                                        teamMemberIds: teamData.memberIds,
+                                        cachedMembers: Object.keys(cachedMembers),
+                                        newMemberData: Object.keys(newMemberData),
+                                        needsFetch: needsFetch,
+                                        playerData: Object.keys(playerData)
+                                    });
+
                                     const validMembers = teamData.memberIds
                                         .filter(id => newMemberData[id])
                                         .map(id => ({
@@ -375,6 +379,8 @@ const GameScreen = ({ user, userData }) => {
                                             lastUpdate: playerData[id]?.lastUpdate || null,
                                             isActive: playerData[id]?.isActive || false
                                         }));
+
+                                    console.log('👥 Valid members result:', validMembers.map(m => m.displayName || m.email));
                                     setTeamMembers(validMembers);
                                 });
                             } else {
