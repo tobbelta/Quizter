@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 5,
+  patch: 6,
   build: Date.now(),
-  description: "ADVANCED anti-loop: Per-reason throttling + global processing lock stoppar event conflicts"
+  description: "Fix anti-loop blocking legitima state changes + bättre fallback namn"
 };
 
 export const getVersionString = () => {
