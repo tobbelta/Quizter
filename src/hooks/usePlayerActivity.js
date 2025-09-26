@@ -18,10 +18,20 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
     const lastVisibilityChange = useRef(Date.now());
     const inactivityTimer = useRef(null);
     const hasSetInactive = useRef(false);
+    const visibilityUpdateTimer = useRef(null); // FIX: Flytta timer till rätt scope
+    const lastActivityToggle = useRef(0); // Förhindra rapid toggling
 
     // Markera spelare som inaktiv
     const setPlayerInactive = useCallback(async (reason = 'unknown') => {
         if (!gameId || !userId || hasSetInactive.current) return;
+
+        // ANTI-LOOP: Förhindra toggling snabbare än var 5:e sekund
+        const now = Date.now();
+        if (now - lastActivityToggle.current < 5000) {
+            console.log(`🚫 Anti-loop: Skippar inactivity toggle, för snabbt (${reason})`);
+            return;
+        }
+        lastActivityToggle.current = now;
 
         console.log(`🔴 Markerar spelare som inaktiv: ${reason}`);
         hasSetInactive.current = true;
@@ -41,6 +51,18 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
     // Återställ spelare som aktiv
     const setPlayerActive = useCallback(async () => {
         if (!gameId || !userId) return;
+
+        // ANTI-LOOP: Förhindra toggling snabbare än var 5:e sekund
+        const now = Date.now();
+        if (hasSetInactive.current && now - lastActivityToggle.current < 5000) {
+            console.log(`🚫 Anti-loop: Skippar activity toggle, för snabbt`);
+            return;
+        }
+        if (!hasSetInactive.current) {
+            // Redan aktiv, skippa
+            return;
+        }
+        lastActivityToggle.current = now;
 
         console.log('🟢 Markerar spelare som aktiv');
         hasSetInactive.current = false;
@@ -98,15 +120,14 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             const now = Date.now();
             lastVisibilityChange.current = now;
 
-            // OPTIMERING: Batcha visibility uppdateringar med debounce
-            let visibilityUpdateTimer = null;
+            // FIX: Använd rätt scope för visibility timer
             const updateVisibilityStatus = () => {
-                if (visibilityUpdateTimer) {
-                    clearTimeout(visibilityUpdateTimer);
+                if (visibilityUpdateTimer.current) {
+                    clearTimeout(visibilityUpdateTimer.current);
                 }
 
                 // Vänta 2 sekunder innan uppdatering för att undvika spam
-                visibilityUpdateTimer = setTimeout(async () => {
+                visibilityUpdateTimer.current = setTimeout(async () => {
                     try {
                         const playerRef = doc(db, 'games', gameId, 'players', userId);
                         await updateDoc(playerRef, {
@@ -116,6 +137,7 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
                     } catch (error) {
                         console.error('Kunde inte uppdatera visibility status:', error);
                     }
+                    visibilityUpdateTimer.current = null; // Rensa efter exekvering
                 }, 2000); // 2 sekunders debounce
             };
 
@@ -179,6 +201,9 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
 
             if (inactivityTimer.current) {
                 clearTimeout(inactivityTimer.current);
+            }
+            if (visibilityUpdateTimer.current) {
+                clearTimeout(visibilityUpdateTimer.current);
             }
         };
     }, [gameId, userId, isGameActive, setPlayerActive, setPlayerInactive]);
