@@ -409,29 +409,31 @@ const GameScreen = ({ user, userData }) => {
                                         localStorage.setItem(timestampKey, Date.now().toString());
                                     }
 
-                                    // DEBUG: Minska loggning - bara vid problem
-                                    const validMembers = teamData.memberIds
-                                        .filter(id => newMemberData[id])
-                                        .map(id => ({
-                                            uid: id,
-                                            ...newMemberData[id],
-                                            position: playerData[id]?.position || null,
-                                            lastUpdate: playerData[id]?.lastUpdate || null,
-                                            isActive: playerData[id]?.isActive || false
-                                        }));
-
-                                    // Logga bara om antalet inte stämmer
-                                    if (validMembers.length !== teamData.memberIds.length) {
-                                        console.warn('🚨 Team member mismatch:', {
-                                            expected: teamData.memberIds.length,
-                                            actual: validMembers.length,
-                                            memberIds: teamData.memberIds,
-                                            validMembers: validMembers.map(m => m.displayName || m.email),
-                                            missingIds: teamData.memberIds.filter(id => !newMemberData[id]),
-                                            newMemberDataKeys: Object.keys(newMemberData)
-                                        });
-                                    }
-                                    setTeamMembers(validMembers);
+                                    // FIX: Skapa fallback data för missing users istället för att filtrera bort
+                                    const allMembers = teamData.memberIds.map(id => {
+                                        if (newMemberData[id]) {
+                                            return {
+                                                uid: id,
+                                                ...newMemberData[id],
+                                                position: playerData[id]?.position || null,
+                                                lastUpdate: playerData[id]?.lastUpdate || null,
+                                                isActive: playerData[id]?.isActive || false
+                                            };
+                                        } else {
+                                            // Fallback för missing user
+                                            console.warn(`⚠️ User ${id} saknas i /users collection, skapar fallback`);
+                                            return {
+                                                uid: id,
+                                                displayName: `Användare ${id.substring(0, 8)}...`,
+                                                email: 'okänd@email.com',
+                                                position: playerData[id]?.position || null,
+                                                lastUpdate: playerData[id]?.lastUpdate || null,
+                                                isActive: playerData[id]?.isActive || false,
+                                                isFallback: true
+                                            };
+                                        }
+                                    });
+                                    setTeamMembers(allMembers);
                                 });
                             } else {
                                 setTeamMembers([]);
