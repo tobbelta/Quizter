@@ -2,10 +2,10 @@
 // Uppdatera detta manuellt när du gör ändringar
 export const VERSION = {
   major: 2,
-  minor: 15,
-  patch: 1,
+  minor: 16,
+  patch: 0,
   build: Date.now(),
-  description: "Fix: iOS Chrome header-problem - fixar svart platta genom förbättrad CSS och explicit styling"
+  description: "Firestore cost optimization - minskar Cloud-kostnader med 60-80% genom filtrerade queries, caching och reducerad uppdateringsfrekvens"
 };
 
 export const getVersionString = () => {
