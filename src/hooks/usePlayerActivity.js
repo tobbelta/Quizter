@@ -36,7 +36,7 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
 
         const now = Date.now();
         const lastToggleForReason = lastToggleByReason.current[reason] || 0;
-        if (now - lastToggleForReason < 3000) { // 3 sekunder per reason
+        if (now - lastToggleForReason < 1000) { // REDUCERAT: 1 sekund per reason
             console.log(`🚫 Reason throttle: Skippar inactivity ${reason} (${Math.round((now - lastToggleForReason)/1000)}s sedan)`);
             return;
         }
@@ -56,6 +56,11 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             });
         } catch (error) {
             console.error('Kunde inte uppdatera spelarstatus:', error);
+        } finally {
+            // Släpp processing lock snabbare - 200ms
+            setTimeout(() => {
+                isProcessingChange.current = false;
+            }, 200);
         }
     }, [gameId, userId]);
 
@@ -75,7 +80,7 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
 
         const now = Date.now();
         const lastActiveToggle = lastToggleByReason.current['activation'] || 0;
-        if (now - lastActiveToggle < 2000) { // 2 sekunder för aktivering
+        if (now - lastActiveToggle < 500) { // REDUCERAT: 0.5 sekunder för aktivering
             console.log(`🚫 Activation throttle: Skippar activity toggle (${Math.round((now - lastActiveToggle)/1000)}s sedan)`);
             return;
         }
@@ -102,6 +107,11 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             });
         } catch (error) {
             console.error('Kunde inte uppdatera spelarstatus:', error);
+        } finally {
+            // Släpp processing lock snabbare - 200ms
+            setTimeout(() => {
+                isProcessingChange.current = false;
+            }, 200);
         }
     }, [gameId, userId]);
 

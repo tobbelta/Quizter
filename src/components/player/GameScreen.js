@@ -423,14 +423,17 @@ const GameScreen = ({ user, userData }) => {
                                             // FÖRBÄTTRAD FALLBACK: Försök få användaremail från Auth-systemet
                                             console.warn(`⚠️ User ${id} saknas i /users collection, skapar fallback`);
 
-                                            // Hämta email från nuvarande user eller visa enklare fallback
+                                            // FÖRBÄTTRAT FALLBACK: Hämta från teamMembers i andra browsern
                                             let fallbackName = `Spelare ${id.substring(0, 6)}`;
                                             let fallbackEmail = 'okänd@email.com';
 
-                                            // Om det är current user, använd deras email
+                                            // Försök få email från current user i denna browser
                                             if (user?.uid === id && user?.email) {
                                                 fallbackEmail = user.email;
-                                                fallbackName = user.email.split('@')[0]; // Användarnamn före @
+                                                fallbackName = user.email.split('@')[0]; // ex: "cypress" från "cypress@cypress.se"
+                                            } else {
+                                                // Alternativ: Använd kort player ID som namn
+                                                fallbackName = `Player-${id.substring(0, 8)}`;
                                             }
 
                                             return {
