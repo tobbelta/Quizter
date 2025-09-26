@@ -3,9 +3,9 @@
 export const VERSION = {
   major: 2,
   minor: 17,
-  patch: 0,
+  patch: 1,
   build: Date.now(),
-  description: "TRUE event-driven approach - change detection eliminerar 90%+ onödiga uppdateringar när spelare står still"
+  description: "EMERGENCY FIX - stoppar runaway Firestore calls genom selektiv field comparison och circuit breaker"
 };
 
 export const getVersionString = () => {
