@@ -49,7 +49,7 @@ const getNextObjective = (game, team, user) => {
     return "Okänt status";
 };
 
-const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, teamMembers, showCompass = true, onToggleCompass, onExportGameLog }) => {
+const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game, team, user, userData, teamMembers, showCompass = true, onToggleCompass, onExportGameLog }) => {
     const [elapsedTime, setElapsedTime] = useState(0);
     const { addLog } = useDebug(); // Hämtar loggfunktionen från kontexten
 
@@ -117,7 +117,7 @@ const GameHeader = ({ gameName, teamName, startTime, gameFinished = false, game,
                             color: '#ffffff' // Explicit color for iOS
                         }}
                     >
-                        {gameName} | {teamName}
+{gameName} | {teamName} | {userData?.displayName || user?.email || 'Okänd'}
                     </div>
                 </div>
 

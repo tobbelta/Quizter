@@ -1046,6 +1046,7 @@ const GameScreen = ({ user, userData }) => {
                 game={game}
                 team={team}
                 user={user}
+                userData={userData}
                 teamMembers={teamMembers}
                 showCompass={showCompass}
                 onToggleCompass={toggleCompass}
