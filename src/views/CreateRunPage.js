@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
@@ -31,11 +31,18 @@ const CreateRunPage = () => {
   const { createHostedRun, currentRun, participants } = useRun();
   const navigate = useNavigate();
   const [form, setForm] = useState(defaultForm);
+  const [availableQuestions, setAvailableQuestions] = useState(questionService.listAll());
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = questionService.subscribe(setAvailableQuestions);
+    return unsubscribe;
+  }, []);
 
   const maxQuestionsPerAudience = useMemo(() => {
-    const counts = questionService.listAll().reduce((acc, question) => {
+    const counts = availableQuestions.reduce((acc, question) => {
       acc[question.audience] = (acc[question.audience] || 0) + 1;
       return acc;
     }, {});
@@ -59,6 +66,24 @@ const CreateRunPage = () => {
     }));
   };
 
+  const handleImportQuestions = async () => {
+    setError('');
+    setSuccessMessage('');
+    setIsImporting(true);
+    try {
+      const fetched = await questionService.fetchAndAddFromOpenTDB({
+        amount: Math.max(5, Number(form.questionCount) || 5),
+        difficulty: form.difficulty,
+        audience: form.audience
+      });
+      setSuccessMessage(`Importerade ${fetched.length} frågor från OpenTDB.`);
+    } catch (importError) {
+      setError(importError.message);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
     setError('');
@@ -76,7 +101,7 @@ const CreateRunPage = () => {
         id: currentUser?.id || 'admin',
         name: currentUser?.name || 'Admin'
       });
-      setSuccessMessage(`Runda skapad! Ansutningskod: ${run.joinCode}`);
+      setSuccessMessage(`Runda skapad! Anslutningskod: ${run.joinCode}`);
     } catch (creationError) {
       setError(creationError.message);
     }
@@ -92,6 +117,21 @@ const CreateRunPage = () => {
       {error && (
         <div className="rounded border border-red-500 bg-red-900/40 px-4 py-3 text-red-200">{error}</div>
       )}
+
+      <div className="flex flex-wrap gap-3 rounded border border-slate-600 bg-slate-900/60 p-4">
+        <div>
+          <p className="text-sm text-gray-300">Tillgängliga frågor: <strong>{availableQuestions.length}</strong></p>
+          <p className="text-xs text-gray-500">Målgrupp {form.audience}: <strong>{maxQuestionsPerAudience[form.audience] || 0}</strong></p>
+        </div>
+        <button
+          type="button"
+          onClick={handleImportQuestions}
+          disabled={isImporting}
+          className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
+        >
+          {isImporting ? 'Importerar...' : 'Hämta frågor från OpenTDB'}
+        </button>
+      </div>
 
       {successMessage && currentRun && (
         <div className="rounded border border-emerald-500 bg-emerald-900/30 px-4 py-3 text-emerald-100">
