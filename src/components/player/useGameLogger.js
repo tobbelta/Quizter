@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
-const GameLogger = ({ gameId, game, team, teamMembers, user }) => {
+const useGameLogger = ({ gameId, game, team, teamMembers, user }) => {
 
     const formatTimestamp = useCallback((timestamp) => {
         if (!timestamp) return 'N/A';
@@ -415,23 +415,35 @@ const GameLogger = ({ gameId, game, team, teamMembers, user }) => {
             // Hämta detaljerad information om hinder
             const obstacleDetails = {};
             if (game.course?.obstacles) {
-                for (const obstacle of game.course.obstacles) {
+                const obstacleTasks = game.course.obstacles.map(async (obstacle) => {
+                    const obstacleId = obstacle.obstacleId;
                     try {
-                        const obstacleDoc = await getDoc(doc(db, 'obstacles', obstacle.obstacleId));
+                        const obstacleDoc = await getDoc(doc(db, 'obstacles', obstacleId));
                         if (obstacleDoc.exists()) {
-                            obstacleDetails[obstacle.obstacleId] = {
+                            return [obstacleId, {
                                 ...obstacleDoc.data(),
                                 locationInCourse: obstacle
-                            };
+                            }];
                         }
+
+                        console.warn(`Hinder ${obstacleId} saknas i databasen.`);
+                        return [obstacleId, {
+                            error: 'Hinder saknas i databasen',
+                            locationInCourse: obstacle
+                        }];
                     } catch (error) {
-                        console.warn(`Kunde inte hämta hinder ${obstacle.obstacleId}:`, error);
-                        obstacleDetails[obstacle.obstacleId] = {
+                        console.warn(`Kunde inte hämta hinder ${obstacleId}:`, error);
+                        return [obstacleId, {
                             error: `Kunde inte hämta hinderdata: ${error.message}`,
                             locationInCourse: obstacle
-                        };
+                        }];
                     }
-                }
+                });
+
+                const obstacleResults = await Promise.all(obstacleTasks);
+                obstacleResults.forEach(([obstacleId, data]) => {
+                    obstacleDetails[obstacleId] = data;
+                });
             }
 
             // Skapa detaljerad logg
@@ -470,4 +482,4 @@ const GameLogger = ({ gameId, game, team, teamMembers, user }) => {
     };
 };
 
-export default GameLogger;
+export default useGameLogger;

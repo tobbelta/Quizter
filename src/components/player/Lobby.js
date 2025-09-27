@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, doc, getDoc, updateDoc, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Spinner from '../shared/Spinner';
@@ -43,17 +43,20 @@ const Lobby = ({ user, userData }) => {
             setSelectedTeamId(preselectedTeamId);
         }
 
-        const unsubscribe = onSnapshot(collection(db, 'teams'), (snapshot) => {
-            const userTeams = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(team => team.memberIds && team.memberIds.includes(user.uid));
+        const teamsQuery = query(
+            collection(db, 'teams'),
+            where('memberIds', 'array-contains', user.uid)
+        );
+
+        const unsubscribe = onSnapshot(teamsQuery, (snapshot) => {
+            const userTeams = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setTeams(userTeams);
 
             if (!preselectedTeamId && userTeams.length === 1) {
                 addLog(`Endast ett lag hittades, väljer automatiskt: ${userTeams[0].id}`);
                 setSelectedTeamId(userTeams[0].id);
             }
-            
+
             setLoading(false);
         }, (err) => {
             console.error("Error fetching teams:", err);

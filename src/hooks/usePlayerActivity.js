@@ -1,6 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { sendPlayerStatusBeacon } from '../utils/firestoreBeacon';
+
+const CRITICAL_INACTIVE_REASONS = new Set(['browser_closed', 'pagehide', 'unload', 'component_unmount']);
+
+const HEARTBEAT_INTERVAL_MS = 8000; // ms between heartbeats when active
 
 /**
  * Hook för att hantera spelaraktivitet baserat på browser-händelser
@@ -19,6 +24,7 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
     const inactivityTimer = useRef(null);
     const hasSetInactive = useRef(false);
     const visibilityUpdateTimer = useRef(null);
+    const heartbeatTimer = useRef(null);
 
     // FÖRBÄTTRAD ANTI-LOOP: Per-reason throttling
     const lastToggleByReason = useRef({});
@@ -26,19 +32,24 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
 
     // Markera spelare som inaktiv
     const setPlayerInactive = useCallback(async (reason = 'unknown') => {
-        if (!gameId || !userId || hasSetInactive.current) return;
+        if (!gameId || !userId) return;
 
-        // FÖRBÄTTRAD ANTI-LOOP: Global processing lock + per-reason throttle
-        if (isProcessingChange.current) {
+        const isCritical = CRITICAL_INACTIVE_REASONS.has(reason);
+
+        if (hasSetInactive.current && !isCritical) return;
+
+        if (isProcessingChange.current && !isCritical) {
             console.log(`🚫 Processing lock: Skippar inactivity (${reason})`);
             return;
         }
 
         const now = Date.now();
-        const lastToggleForReason = lastToggleByReason.current[reason] || 0;
-        if (now - lastToggleForReason < 1000) { // REDUCERAT: 1 sekund per reason
-            console.log(`🚫 Reason throttle: Skippar inactivity ${reason} (${Math.round((now - lastToggleForReason)/1000)}s sedan)`);
-            return;
+        if (!isCritical) {
+            const lastToggleForReason = lastToggleByReason.current[reason] || 0;
+            if (now - lastToggleForReason < 1000) { // REDUCERAT: 1 sekund per reason
+                console.log(`🚫 Reason throttle: Skippar inactivity ${reason} (${Math.round((now - lastToggleForReason)/1000)}s sedan)`);
+                return;
+            }
         }
 
         isProcessingChange.current = true;
@@ -47,10 +58,28 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
         console.log(`🔴 Markerar spelare som inaktiv: ${reason}`);
         hasSetInactive.current = true;
 
+        if (isCritical) {
+            try {
+                const beaconSent = sendPlayerStatusBeacon({
+                    gameId,
+                    userId,
+                    reason,
+                    isActive: false,
+                    isVisible: false
+                });
+                if (!beaconSent) {
+                    console.warn(`🚫 Firestore-beacon kunde inte skickas (${reason})`);
+                }
+            } catch (error) {
+                console.error('Kunde inte skicka Firestore-beacon:', error);
+            }
+        }
+
         try {
             const playerRef = doc(db, 'games', gameId, 'players', userId);
             await updateDoc(playerRef, {
                 isActive: false,
+                isVisible: false,
                 lastSeen: new Date(),
                 inactiveReason: reason
             });
@@ -124,24 +153,37 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
         // Sätt spelare som aktiv när hook aktiveras
         setPlayerActive();
 
-        // 1. Hantera browser/flik stängning - FÖRBÄTTRAD FIX
-        const handleBeforeUnload = (event) => {
-            console.log('📤 beforeunload - sätter spelare som inaktiv');
-
-            // Markera som inaktiv omedelbart utan await
-            if (!hasSetInactive.current) {
-                hasSetInactive.current = true;
-
-                // Använd updateDoc utan await för snabbast möjliga exekvering
-                const playerRef = doc(db, 'games', gameId, 'players', userId);
-                updateDoc(playerRef, {
-                    isActive: false,
-                    lastSeen: new Date(),
-                    inactiveReason: 'browser_closed'
-                }).catch(err => {
-                    console.error('beforeunload updateDoc misslyckades:', err);
-                });
+        // Heartbeat för att hålla lastSeen färskt medan spelaren är aktiv
+        const sendHeartbeat = async () => {
+            if (!gameId || !userId || document.hidden || hasSetInactive.current) {
+                return;
             }
+
+            try {
+                const playerRef = doc(db, 'games', gameId, 'players', userId);
+                await updateDoc(playerRef, {
+                    lastSeen: new Date(),
+                    isActive: true,
+                    inactiveReason: null
+                });
+            } catch (error) {
+                console.error('Kunde inte skicka heartbeat:', error);
+            }
+        };
+
+        if (!heartbeatTimer.current) {
+            // Skicka ett första heartbeat omedelbart
+            sendHeartbeat();
+
+            heartbeatTimer.current = setInterval(() => {
+                sendHeartbeat();
+            }, HEARTBEAT_INTERVAL_MS);
+        }
+
+        // 1. Hantera browser/flik stängning - FÖRBÄTTRAD FIX
+        const handleBeforeUnload = () => {
+            console.log('📤 beforeunload - markerar spelare som inaktiv');
+            setPlayerInactive('browser_closed');
         };
 
         // 2. Hantera visibility changes (minimering, app-switching, etc.)
@@ -217,14 +259,32 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             }
         };
 
+        const handlePageHide = (event) => {
+            if (event && event.persisted) {
+                console.log('🚧 pagehide persisted - hoppar inaktivitet');
+                return;
+            }
+            console.log('🚫 pagehide - markerar spelare som inaktiv');
+            setPlayerInactive('pagehide');
+        };
+
+        const handleUnload = () => {
+            console.log('🚫 unload - markerar spelare som inaktiv');
+            setPlayerInactive('unload');
+        };
+
         // Lägg till event listeners
         window.addEventListener('beforeunload', handleBeforeUnload);
+        window.addEventListener('pagehide', handlePageHide);
+        window.addEventListener('unload', handleUnload);
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('focus', handleFocus);
 
         // Cleanup
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('pagehide', handlePageHide);
+            window.removeEventListener('unload', handleUnload);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('focus', handleFocus);
 
@@ -233,6 +293,15 @@ export const usePlayerActivity = (gameId, userId, isGameActive = false) => {
             }
             if (visibilityUpdateTimer.current) {
                 clearTimeout(visibilityUpdateTimer.current);
+            }
+
+            if (heartbeatTimer.current) {
+                clearInterval(heartbeatTimer.current);
+                heartbeatTimer.current = null;
+            }
+
+            if (!hasSetInactive.current) {
+                setPlayerInactive('component_unmount');
             }
         };
     }, [gameId, userId, isGameActive, setPlayerActive, setPlayerInactive]);

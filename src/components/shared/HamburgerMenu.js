@@ -69,19 +69,19 @@ const HamburgerMenu = ({ children, teamMembers }) => {
                                             <div key={member.uid || index} className="flex justify-between items-center text-xs">
                                                 <span className="text-white truncate mr-2 flex items-center">
                                                     {/* Visibility indikator */}
-                                                    {member.isActive && (
+                                                    {(member.isConsideredActive ?? member.isActive) && (
                                                         <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                                                            member.isVisible ? 'bg-green-400' : 'bg-yellow-400'
+                                                            member.isVisible !== false ? 'bg-green-400' : 'bg-yellow-400'
                                                         }`}
-                                                        title={member.isVisible ? 'Spelet är synligt' : 'Spelet är minimerat/dolt'}
+                                                        title={member.isVisible !== false ? 'Spelet är synligt' : 'Spelet är minimerat/dolt'}
                                                         />
                                                     )}
                                                     {member.displayName || member.email || `Spelare ${index + 1}`}
                                                 </span>
                                                 <span className={`px-1 py-0.5 rounded text-xs font-bold ${
-                                                    member.isActive ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                                                    (member.isConsideredActive ?? member.isActive) ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
                                                 }`}>
-                                                    {member.isActive ? 'AKTIV' : 'INAKTIV'}
+                                                    {(member.isConsideredActive ?? member.isActive) ? 'AKTIV' : 'INAKTIV'}
                                                 </span>
                                             </div>
                                         ))}

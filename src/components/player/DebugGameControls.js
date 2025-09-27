@@ -13,7 +13,7 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
     }
 
     // Räkna endast aktiva spelare
-    const activeMembers = teamMembers.filter(member => member.isActive === true);
+    const activeMembers = teamMembers.filter(member => member.isConsideredActive === true);
     const activeMembersAtFinish = game.playersAtFinish.filter(playerId =>
       activeMembers.some(member => member.uid === playerId)
     );
@@ -34,7 +34,7 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
   const allFinished = game?.allPlayersFinished === true;
 
   // Räkna aktiva spelare för visning
-  const activeMembers = teamMembers?.filter(member => member.isActive === true) || [];
+  const activeMembers = teamMembers?.filter(member => member.isConsideredActive === true) || [];
   const activeMembersAtFinish = game?.playersAtFinish?.filter(playerId =>
     activeMembers.some(member => member.uid === playerId)
   ) || [];
@@ -177,19 +177,19 @@ const DebugGameControls = ({ onAdvanceSimulation, simulationState, onCompleteObs
                   <div key={member.uid || index} className="flex justify-between items-center text-xs">
                     <span className="text-white truncate flex-1 flex items-center">
                       {/* Visibility indikator */}
-                      {member.isActive && (
+                      {(member.isConsideredActive ?? member.isActive) && (
                         <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                          member.isVisible ? 'bg-green-400' : 'bg-yellow-400'
+                          member.isVisible !== false ? 'bg-green-400' : 'bg-yellow-400'
                         }`}
-                        title={member.isVisible ? 'Spelet är synligt' : 'Spelet är minimerat/dolt'}
+                        title={member.isVisible !== false ? 'Spelet är synligt' : 'Spelet är minimerat/dolt'}
                         />
                       )}
                       {member.displayName || member.email || `Spelare ${index + 1}`}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                      member.isActive ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                      (member.isConsideredActive ?? member.isActive) ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
                     }`}>
-                      {member.isActive ? 'AKTIV' : 'INAKTIV'}
+                      {(member.isConsideredActive ?? member.isActive) ? 'AKTIV' : 'INAKTIV'}
                     </span>
                   </div>
                 ))}

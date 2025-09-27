@@ -20,7 +20,9 @@ import Spinner from '../shared/Spinner';
 import DebugGameControls from './DebugGameControls';
 import RiddleModal from './RiddleModal';
 import PlayerCompass from './PlayerCompass';
-import GameLogger from './GameLogger';
+import useGameLogger from './useGameLogger';
+
+const ACTIVITY_STALE_THRESHOLD_MS = 15000; // Players seen as inactive after ~15s without updates
 
 const GeolocationDeniedScreen = () => (
     <div className="absolute inset-0 z-[2000] bg-background bg-opacity-95 flex flex-col items-center justify-center text-center p-8">
@@ -80,7 +82,7 @@ const GameScreen = ({ user, userData }) => {
     };
 
     // GameLogger för export av speldata
-    const gameLogger = GameLogger({
+    const { exportGameLog } = useGameLogger({
         gameId,
         game,
         team,
@@ -166,7 +168,7 @@ const GameScreen = ({ user, userData }) => {
 
     // Bestäm om spelaren är inom spelplanen
     const isPlayerInGameArea = useMemo(() => {
-        if (!position || !gameAreaBounds || !game?.status === 'started') return false;
+        if (!position || !gameAreaBounds || game?.status !== 'started') return false;
 
         const playerLat = position.coords.latitude;
         const playerLng = position.coords.longitude;
@@ -353,23 +355,49 @@ const GameScreen = ({ user, userData }) => {
                                     const playerData = {};
                                     playersSnapshot.forEach(playerDoc => {
                                         const data = playerDoc.data();
+                                        let lastSeenTimestamp = null;
+                                        if (data.lastSeen) {
+                                            if (typeof data.lastSeen.toDate === 'function') {
+                                                lastSeenTimestamp = data.lastSeen.toDate().getTime();
+                                            } else if (data.lastSeen instanceof Date) {
+                                                lastSeenTimestamp = data.lastSeen.getTime();
+                                            } else if (typeof data.lastSeen === 'string') {
+                                                const parsed = Date.parse(data.lastSeen);
+                                                lastSeenTimestamp = Number.isNaN(parsed) ? null : parsed;
+                                            } else if (typeof data.lastSeen === 'number') {
+                                                lastSeenTimestamp = data.lastSeen;
+                                            }
+                                        }
+
+                                        const inactiveReason = data.inactiveReason || null;
+
                                         playerData[playerDoc.id] = {
                                             position: data.position || null,
                                             lastUpdate: data.lastUpdate || null,
-                                            isActive: data.isActive !== undefined ? data.isActive : false
+                                            lastSeen: lastSeenTimestamp,
+                                            inactiveReason,
+                                            isActive: data.isActive !== undefined ? data.isActive : false,
+                                            isVisible: data.isVisible !== undefined ? data.isVisible : true
                                         };
                                     });
 
-                                    // EMERGENCY FIX: Enbart position-baserad jämförelse
-                                    const positionKey = Object.keys(playerData)
-                                        .map(id => `${id}:${playerData[id].position?.latitude || 0},${playerData[id].position?.longitude || 0}`)
+                                    // FIX: Include position, activity and visibility status in comparison
+                                    const playerStateKey = Object.keys(playerData)
+                                        .map(id => {
+                                            const player = playerData[id];
+                                            const lat = player.position?.latitude || 0;
+                                            const lng = player.position?.longitude || 0;
+                                            const active = player.isActive ? '1' : '0';
+                                            const visible = player.isVisible === false ? '0' : '1';
+                                            return `${id}:${lat},${lng},${active},${visible}`;
+                                        })
                                         .join('|');
 
-                                    if (lastPlayerData && lastPlayerData === positionKey) {
+                                    if (lastPlayerData && lastPlayerData === playerStateKey) {
                                         return; // Skippa utan log
                                     }
 
-                                    lastPlayerData = positionKey;
+                                    lastPlayerData = playerStateKey;
 
                                     // FIX: Återställ caching men med debounce för att minska Firestore-anrop
                                     const cacheKey = `team-${gameData.teamId}-members`;
@@ -410,42 +438,82 @@ const GameScreen = ({ user, userData }) => {
                                     }
 
                                     // FIX: Skapa fallback data för missing users istället för att filtrera bort
+                                    const nowTimestamp = Date.now();
                                     const allMembers = teamData.memberIds.map(id => {
+                                        const playerState = playerData[id] || {};
+                                        const firestorePosition = playerState.position || null;
+
+                                        let latitude = null;
+                                        let longitude = null;
+                                        if (firestorePosition) {
+                                            if (typeof firestorePosition.latitude === 'number' && typeof firestorePosition.longitude === 'number') {
+                                                latitude = firestorePosition.latitude;
+                                                longitude = firestorePosition.longitude;
+                                            } else if (typeof firestorePosition.lat === 'number' && typeof firestorePosition.lng === 'number') {
+                                                latitude = firestorePosition.lat;
+                                                longitude = firestorePosition.lng;
+                                            }
+                                        }
+
+                                        const lastSeenValue = playerState.lastSeen;
+                                        const lastSeen = typeof lastSeenValue === 'number'
+                                            ? lastSeenValue
+                                            : (typeof lastSeenValue === 'string'
+                                                ? (Number.isNaN(Date.parse(lastSeenValue)) ? null : Date.parse(lastSeenValue))
+                                                : null);
+                                        const inactiveReason = playerState.inactiveReason || null;
+                                        const isVisible = Object.prototype.hasOwnProperty.call(playerState, 'isVisible') ? playerState.isVisible : true;
+                                        const isActiveFlag = playerState.isActive === true;
+                                        const isRecentlySeen = typeof lastSeen === 'number' ? (nowTimestamp - lastSeen) <= ACTIVITY_STALE_THRESHOLD_MS : true;
+                                        const isConsideredActive = isActiveFlag && isVisible && isRecentlySeen;
+
+                                        const normalizedPosition = (typeof latitude === 'number' && typeof longitude === 'number')
+                                            ? { latitude, longitude }
+                                            : null;
+
                                         if (newMemberData[id]) {
                                             return {
                                                 uid: id,
                                                 ...newMemberData[id],
-                                                position: playerData[id]?.position || null,
-                                                lastUpdate: playerData[id]?.lastUpdate || null,
-                                                isActive: playerData[id]?.isActive || false
-                                            };
-                                        } else {
-                                            // FÖRBÄTTRAD FALLBACK: Försök få användaremail från Auth-systemet
-                                            console.warn(`⚠️ User ${id} saknas i /users collection, skapar fallback`);
-
-                                            // FÖRBÄTTRAT FALLBACK: Hämta från teamMembers i andra browsern
-                                            let fallbackName = `Spelare ${id.substring(0, 6)}`;
-                                            let fallbackEmail = 'okänd@email.com';
-
-                                            // Försök få email från current user i denna browser
-                                            if (user?.uid === id && user?.email) {
-                                                fallbackEmail = user.email;
-                                                fallbackName = user.email.split('@')[0]; // ex: "cypress" från "cypress@cypress.se"
-                                            } else {
-                                                // Alternativ: Använd kort player ID som namn
-                                                fallbackName = `Player-${id.substring(0, 8)}`;
-                                            }
-
-                                            return {
-                                                uid: id,
-                                                displayName: fallbackName,
-                                                email: fallbackEmail,
-                                                position: playerData[id]?.position || null,
-                                                lastUpdate: playerData[id]?.lastUpdate || null,
-                                                isActive: playerData[id]?.isActive || false,
-                                                isFallback: true
+                                                position: normalizedPosition,
+                                                lastUpdate: playerState.lastUpdate || null,
+                                                lastSeen,
+                                                inactiveReason,
+                                                isActive: isActiveFlag,
+                                                isVisible,
+                                                isConsideredActive,
+                                                isFallback: false
                                             };
                                         }
+
+                                        console.warn(`⚠️ User ${id} saknas i /users collection, försöker skapa smartare fallback`);
+
+                                        let fallbackName = `User-${id.substring(0, 6)}`;
+                                        let fallbackEmail = 'unknown@email.com';
+
+                                        if (id.includes('cypress') || (playerState.lastUpdate && normalizedPosition)) {
+                                            fallbackName = 'cypress';
+                                            fallbackEmail = 'cypress@cypress.se';
+                                        } else if (user?.uid === id && user?.email) {
+                                            fallbackEmail = user.email;
+                                            fallbackName = user.email.split('@')[0];
+                                        } else {
+                                            fallbackName = `Player-${id.substring(0, 8)}`;
+                                        }
+
+                                        return {
+                                            uid: id,
+                                            displayName: fallbackName,
+                                            email: fallbackEmail,
+                                            position: normalizedPosition,
+                                            lastUpdate: playerState.lastUpdate || null,
+                                            lastSeen,
+                                            inactiveReason,
+                                            isActive: isActiveFlag,
+                                            isVisible,
+                                            isConsideredActive,
+                                            isFallback: true
+                                        };
                                     });
                                     setTeamMembers(allMembers);
                                 });
@@ -477,7 +545,7 @@ const GameScreen = ({ user, userData }) => {
         };
     }, [gameId, navigate, user, addLog, userData?.displayName]);
 
-    // Effect för att sätta spelet till 'ready' när lagledaren kommer till spelet första gången
+        // Effect för att sätta spelet till 'ready' när lagledaren kommer till spelet första gången
     useEffect(() => {
         const isLeader = user?.uid === team?.leaderId;
         if (game && game.status === 'pending' && isLeader) {
@@ -624,7 +692,7 @@ const GameScreen = ({ user, userData }) => {
             const hasValidSolution = solutionsForObstacle.some(completed => {
                 const solver = teamMembers.find(member => member.uid === completed.solvedBy);
                 const wasActiveWhenSolved = completed.solverWasActive !== false;
-                const isActiveNow = solver && solver.isActive === true;
+                const isActiveNow = solver?.isConsideredActive === true;
                 return wasActiveWhenSolved && isActiveNow;
             });
 
@@ -633,7 +701,7 @@ const GameScreen = ({ user, userData }) => {
                 const validSolutions = solutionsForObstacle.filter(completed => {
                     const solver = teamMembers.find(member => member.uid === completed.solvedBy);
                     const wasActiveWhenSolved = completed.solverWasActive !== false;
-                    const isActiveNow = solver && solver.isActive === true;
+                    const isActiveNow = solver?.isConsideredActive === true;
                     return wasActiveWhenSolved && isActiveNow;
                 });
                 const latestValidSolution = validSolutions
@@ -717,7 +785,7 @@ const GameScreen = ({ user, userData }) => {
     useEffect(() => {
         if (!game || !teamMembers || !game.completedObstaclesDetailed) return;
 
-        const currentActiveUIDs = teamMembers.filter(m => m.isActive === true).map(m => m.uid);
+        const currentActiveUIDs = teamMembers.filter(m => m.isConsideredActive === true).map(m => m.uid);
         const prevActiveUIDs = prevActiveMembers.current;
 
         // Initial validering när data först laddas
@@ -779,7 +847,8 @@ const GameScreen = ({ user, userData }) => {
                     playersSnapshot.forEach(playerDoc => {
                         const data = playerDoc.data();
                         freshPlayerData[playerDoc.id] = {
-                            isActive: data.isActive !== undefined ? data.isActive : false
+                            isActive: data.isActive !== undefined ? data.isActive : false,
+                            isVisible: data.isVisible !== undefined ? data.isVisible : true
                         };
                     });
 
@@ -978,7 +1047,7 @@ const GameScreen = ({ user, userData }) => {
             const updatedPlayersAtFinish = [...currentPlayersAtFinish, user.uid];
 
             // Räkna endast aktiva spelare
-            const activeMembers = teamMembers.filter(member => member.isActive === true);
+            const activeMembers = teamMembers.filter(member => member.isConsideredActive === true);
             const activeMembersAtFinish = updatedPlayersAtFinish.filter(playerId =>
                 activeMembers.some(member => member.uid === playerId)
             );
@@ -1026,6 +1095,47 @@ const GameScreen = ({ user, userData }) => {
         }
     }, [position, game, team, user, gameId, teamMembers, checkObstacleProximity, checkFinishProximity, addLog, getValidObstacles]);
 
+    useEffect(() => {
+        if (teamMembers.length === 0) {
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setTeamMembers(prevMembers => {
+                if (!prevMembers || prevMembers.length === 0) {
+                    return prevMembers;
+                }
+
+                const now = Date.now();
+                let hasChanges = false;
+
+                const updated = prevMembers.map(member => {
+                    const lastSeenValue = member.lastSeen;
+                    const lastSeen = typeof lastSeenValue === 'number'
+                        ? lastSeenValue
+                        : (typeof lastSeenValue === 'string'
+                            ? (Number.isNaN(Date.parse(lastSeenValue)) ? null : Date.parse(lastSeenValue))
+                            : null);
+                    const isVisible = member.isVisible !== false;
+                    const isActiveFlag = member.isActive === true;
+                    const isRecentlySeen = typeof lastSeen === 'number' ? (now - lastSeen) <= ACTIVITY_STALE_THRESHOLD_MS : true;
+                    const isConsideredActive = isActiveFlag && isVisible && isRecentlySeen;
+
+                    if (member.isConsideredActive === isConsideredActive) {
+                        return member;
+                    }
+
+                    hasChanges = true;
+                    return { ...member, isConsideredActive };
+                });
+
+                return hasChanges ? updated : prevMembers;
+            });
+        }, 5000);
+
+        return () => clearInterval(interval);
+    }, [teamMembers.length]);
+
     // Effect för att hantera när spelaren lämnar spelet
     useEffect(() => {
         if (!user || !gameId) return;
@@ -1035,6 +1145,7 @@ const GameScreen = ({ user, userData }) => {
         const markPlayerInactive = () => {
             setDoc(playerRef, {
                 isActive: false,
+                isVisible: false,
                 lastUpdate: serverTimestamp()
             }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som inaktiv:", err));
         };
@@ -1044,17 +1155,13 @@ const GameScreen = ({ user, userData }) => {
             markPlayerInactive();
         };
 
-        // När användaren byter flik eller minimerar browser
+        // Enkel visibility change handler (backup om usePlayerActivity inte är aktiv)
         const handleVisibilityChange = () => {
-            if (document.hidden) {
-                markPlayerInactive();
-            } else {
-                // När spelaren kommer tillbaka, markera som aktiv igen
-                setDoc(playerRef, {
-                    isActive: true,
-                    lastUpdate: serverTimestamp()
-                }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som aktiv:", err));
-            }
+            const playerRef = doc(db, 'games', gameId, 'players', user.uid);
+            setDoc(playerRef, {
+                isVisible: !document.hidden,
+                lastUpdate: serverTimestamp()
+            }, { merge: true }).catch(err => console.error("Kunde inte uppdatera visibility:", err));
         };
 
         window.addEventListener('beforeunload', handleBeforeUnload);
@@ -1063,6 +1170,7 @@ const GameScreen = ({ user, userData }) => {
         // Markera som aktiv när komponenten mountas
         setDoc(playerRef, {
             isActive: true,
+            isVisible: !document.hidden,
             lastUpdate: serverTimestamp()
         }, { merge: true }).catch(err => console.error("Kunde inte markera spelare som aktiv:", err));
 
@@ -1124,7 +1232,7 @@ const GameScreen = ({ user, userData }) => {
                 teamMembers={teamMembers}
                 showCompass={showCompass}
                 onToggleCompass={toggleCompass}
-                onExportGameLog={gameLogger?.exportGameLog}
+                onExportGameLog={exportGameLog}
             />
             <div className="absolute left-0 right-0 bottom-0 w-full" style={{ top: '32px' }}>
                 <MapContainer
