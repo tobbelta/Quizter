@@ -1,0 +1,250 @@
+import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useRun } from '../context/RunContext';
+import { questionService } from '../services/questionService';
+
+const defaultForm = {
+  name: 'Fredagsquiz',
+  description: 'En promenad med blandade frågor.',
+  audience: 'family',
+  difficulty: 'family',
+  questionCount: 6,
+  lengthMeters: 2000,
+  allowAnonymous: true
+};
+
+const audienceOptions = [
+  { value: 'kid', label: 'Barn' },
+  { value: 'family', label: 'Familj' },
+  { value: 'adult', label: 'Vuxen' }
+];
+
+const difficultyOptions = [
+  { value: 'kid', label: 'Barn' },
+  { value: 'family', label: 'Familj' },
+  { value: 'adult', label: 'Vuxen' }
+];
+
+const CreateRunPage = () => {
+  const { currentUser, isAdmin } = useAuth();
+  const { createHostedRun, currentRun, participants } = useRun();
+  const navigate = useNavigate();
+  const [form, setForm] = useState(defaultForm);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const maxQuestionsPerAudience = useMemo(() => {
+    const counts = questionService.listAll().reduce((acc, question) => {
+      acc[question.audience] = (acc[question.audience] || 0) + 1;
+      return acc;
+    }, {});
+    return counts;
+  }, []);
+
+  if (!isAdmin) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <h1 className="text-2xl font-semibold mb-4">Behörighet krävs</h1>
+        <p className="text-gray-300">Du behöver logga in som administratör för att skapa en runda.</p>
+      </div>
+    );
+  }
+
+  const handleChange = (event) => {
+    const { name, value, type, checked } = event.target;
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    setError('');
+    setSuccessMessage('');
+    try {
+      if (!form.name.trim()) {
+        setError('Ange ett namn på rundan.');
+        return;
+      }
+      const run = createHostedRun({
+        ...form,
+        questionCount: Number(form.questionCount),
+        lengthMeters: Number(form.lengthMeters)
+      }, {
+        id: currentUser?.id || 'admin',
+        name: currentUser?.name || 'Admin'
+      });
+      setSuccessMessage(`Runda skapad! Ansutningskod: ${run.joinCode}`);
+    } catch (creationError) {
+      setError(creationError.message);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+      <header>
+        <h1 className="text-3xl font-bold mb-2">Skapa tipspromenad</h1>
+        <p className="text-gray-300">Ställ in målgrupp, svårighetsgrad och antal frågor. En anslutningskod genereras automatiskt.</p>
+      </header>
+
+      {error && (
+        <div className="rounded border border-red-500 bg-red-900/40 px-4 py-3 text-red-200">{error}</div>
+      )}
+
+      {successMessage && currentRun && (
+        <div className="rounded border border-emerald-500 bg-emerald-900/30 px-4 py-3 text-emerald-100">
+          <p className="font-semibold">{successMessage}</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(currentRun.joinCode)}
+              className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
+            >
+              Kopiera kod
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/run/${currentRun.id}/admin`)}
+              className="rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
+            >
+              Öppna administratörsvy
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Rundans namn</label>
+            <input
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Beskrivning</label>
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              rows={4}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Tillåt anonyma deltagare</label>
+            <input
+              type="checkbox"
+              name="allowAnonymous"
+              checked={form.allowAnonymous}
+              onChange={handleChange}
+            />
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Målgrupp</label>
+            <select
+              name="audience"
+              value={form.audience}
+              onChange={handleChange}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            >
+              {audienceOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">Tillgängliga frågor: {maxQuestionsPerAudience[form.audience] || 0}</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Svårighetsgrad</label>
+            <select
+              name="difficulty"
+              value={form.difficulty}
+              onChange={handleChange}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            >
+              {difficultyOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Antal frågor</label>
+            <input
+              type="number"
+              name="questionCount"
+              min={3}
+              max={20}
+              value={form.questionCount}
+              onChange={handleChange}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-cyan-200">Rundans längd (meter)</label>
+            <input
+              type="number"
+              name="lengthMeters"
+              min={500}
+              max={10000}
+              step={100}
+              value={form.lengthMeters}
+              onChange={handleChange}
+              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+          >
+            Skapa runda
+          </button>
+        </div>
+      </form>
+
+      {currentRun && (
+        <aside className="rounded-lg border border-cyan-500/40 bg-slate-900/60 p-6">
+          <h2 className="text-xl font-semibold mb-3">Aktiv runda</h2>
+          <dl className="grid gap-2 md:grid-cols-2">
+            <div>
+              <dt className="text-sm text-gray-400">Namn</dt>
+              <dd className="font-medium">{currentRun.name}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-400">Anslutningskod</dt>
+              <dd className="font-mono text-lg">{currentRun.joinCode}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-400">Antal frågor</dt>
+              <dd>{currentRun.questionCount}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-400">Status</dt>
+              <dd className="capitalize">{currentRun.status}</dd>
+            </div>
+          </dl>
+          <div className="mt-4">
+            <h3 className="font-semibold text-cyan-200 mb-2">Deltagare ({participants.length})</h3>
+            <ul className="space-y-1 text-sm">
+              {participants.length === 0 && <li className="text-gray-400">Inga deltagare har anslutit ännu.</li>}
+              {participants.map((participant) => (
+                <li key={participant.id} className="flex justify-between">
+                  <span>{participant.alias}</span>
+                  <span className="text-gray-400">{participant.score} poäng</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+      )}
+    </div>
+  );
+};
+
+export default CreateRunPage;
