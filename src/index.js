@@ -1,3 +1,6 @@
+/**
+ * Entrypoint som monterar appen i DOM:en.
+ */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';

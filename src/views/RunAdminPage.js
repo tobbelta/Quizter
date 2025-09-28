@@ -1,7 +1,13 @@
+/**
+ * Administrationsvy med live-status över deltagare och kontrollknappar.
+ */
 import React, { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
+import { describeParticipantStatus } from '../utils/participantStatus';
+import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import { buildJoinLink } from '../utils/joinLink';
 
 const RunAdminPage = () => {
   const { runId } = useParams();
@@ -10,14 +16,15 @@ const RunAdminPage = () => {
 
   useEffect(() => {
     if (!currentRun || currentRun.id !== runId) {
-      loadRunById(runId);
+      loadRunById(runId).catch((error) => console.warn('Kunde inte ladda runda', error));
     }
   }, [currentRun, loadRunById, runId]);
 
   useEffect(() => {
-    refreshParticipants();
+    refreshParticipants().catch((error) => console.warn('Kunde inte uppdatera deltagare', error));
   }, [refreshParticipants]);
 
+    /** Slår upp frågetexterna en gång så att tabellen blir snabb. */
   const questionMap = useMemo(() => {
     if (!currentRun) return {};
     return currentRun.questionIds.reduce((acc, questionId) => {
@@ -35,7 +42,9 @@ const RunAdminPage = () => {
     );
   }
 
+    /** Sorterar deltagarna så att toppresultatet visas först. */
   const rankedParticipants = [...participants].sort((a, b) => b.score - a.score);
+  const joinLink = buildJoinLink(currentRun.joinCode);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
@@ -62,7 +71,13 @@ const RunAdminPage = () => {
           </button>
           <button
             type="button"
-            onClick={() => closeRun()}
+            onClick={async () => {
+              try {
+                await closeRun();
+              } catch (error) {
+                console.error('Kunde inte avsluta runda', error);
+              }
+            }}
             className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
           >
             Avsluta runda
@@ -70,37 +85,56 @@ const RunAdminPage = () => {
         </div>
       </header>
 
-      <section className="grid gap-6 md:grid-cols-2">
-        <div className="rounded border border-indigo-400/40 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-semibold mb-3">Deltagarlista</h2>
-          <ul className="space-y-2">
-            {rankedParticipants.length === 0 && <li className="text-gray-400">Inga deltagare har anslutit ännu.</li>}
-            {rankedParticipants.map((participant, index) => (
-              <li key={participant.id} className="flex justify-between rounded bg-slate-800/60 px-3 py-2">
-                <span>
-                  {index + 1}. {participant.alias}
-                  {participant.isAnonymous ? ' (anonym)' : ''}
-                </span>
-                <span className="text-gray-300">{participant.score} poäng</span>
-              </li>
-            ))}
-          </ul>
+      <section className="grid gap-6 md:grid-cols-[2fr_1fr]">
+        <div className="space-y-6">
+          <div className="rounded border border-indigo-400/40 bg-slate-900/60 p-6">
+            <h2 className="text-xl font-semibold mb-3">Deltagarlista</h2>
+            <ul className="space-y-2">
+              {rankedParticipants.length === 0 && <li className="text-gray-400">Inga deltagare har anslutit ännu.</li>}
+              {rankedParticipants.map((participant, index) => {
+                const statusMeta = describeParticipantStatus(participant.status);
+                return (
+                  <li key={participant.id} className="flex items-center justify-between rounded bg-slate-800/60 px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <span className={`h-2 w-2 rounded-full ${statusMeta.dotClass}`} />
+                      <span>
+                        {index + 1}. {participant.alias}
+                        {participant.isAnonymous ? ' (anonym)' : ''}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-gray-300">{participant.score} poäng</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.pillClass}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="rounded border border-slate-600 bg-slate-900/60 p-6">
+            <h2 className="text-xl font-semibold mb-3">Frågor</h2>
+            <ol className="space-y-3 list-decimal list-inside text-sm text-gray-300">
+              {currentRun.questionIds.map((questionId) => {
+                const question = questionMap[questionId];
+                return (
+                  <li key={questionId}>
+                    <p className="font-semibold text-cyan-100">{question?.text}</p>
+                    <p className="text-xs text-gray-400">Kategori: {question?.category} - Rätt svar: {question?.options[question?.correctOption || 0]}</p>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
         </div>
 
-        <div className="rounded border border-slate-600 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-semibold mb-3">Frågor</h2>
-          <ol className="space-y-3 list-decimal list-inside text-sm text-gray-300">
-            {currentRun.questionIds.map((questionId) => {
-              const question = questionMap[questionId];
-              return (
-                <li key={questionId}>
-                  <p className="font-semibold text-cyan-100">{question?.text}</p>
-                  <p className="text-xs text-gray-400">Kategori: {question?.category} – Rätt svar: {question?.options[question?.correctOption || 0]}</p>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
+        <QRCodeDisplay
+          value={joinLink}
+          title="QR för anslutning"
+          description="Låt deltagarna skanna koden för att ansluta direkt."
+        />
       </section>
 
       <section className="rounded border border-cyan-500/40 bg-slate-900/60 p-6">
@@ -129,7 +163,7 @@ const RunAdminPage = () => {
                             {answer.correct ? '✔' : '✖'}
                           </span>
                         ) : (
-                          <span className="text-slate-600">–</span>
+                          <span className="text-slate-600">-</span>
                         )}
                       </td>
                     );

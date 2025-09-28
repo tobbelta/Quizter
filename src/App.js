@@ -1,3 +1,6 @@
+/**
+ * Router-konfiguration för tipspromenaden samt auth-/run-provider.
+ */
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -11,6 +14,9 @@ import PlayRunPage from './views/PlayRunPage';
 import RunAdminPage from './views/RunAdminPage';
 import RunResultsPage from './views/RunResultsPage';
 
+/**
+ * Skyddar admin-rutter så att gäster hamnar på startsidan.
+ */
 const RequireAdmin = ({ children }) => {
   const { isAdmin } = useAuth();
   if (!isAdmin) {
@@ -19,6 +25,9 @@ const RequireAdmin = ({ children }) => {
   return children;
 };
 
+/**
+ * Samlar alla routes så att <App /> blir enkel.
+ */
 const AppRoutes = () => (
   <Routes>
     <Route path="/" element={<LandingPage />} />

@@ -1,7 +1,12 @@
+/**
+ * Vy för att skapa en auto-genererad runda på plats.
+ */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
+import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import { buildJoinLink } from '../utils/joinLink';
 
 const defaultForm = {
   alias: '',
@@ -22,6 +27,7 @@ const GenerateRunPage = () => {
   });
   const [error, setError] = useState('');
 
+  /** Uppdaterar önskad profil för den genererade rundan. */
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
     setForm((prev) => ({
@@ -30,7 +36,7 @@ const GenerateRunPage = () => {
     }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
     try {
@@ -38,13 +44,15 @@ const GenerateRunPage = () => {
         setError('Ange ett namn på den som genererar rundan.');
         return;
       }
-      const run = generateRun({
+      const run = await generateRun({
         ...form,
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         origin: { lat: 56.662, lng: 16.361 }
       }, { id: currentUser?.id || form.alias, name: form.alias });
-      navigate(`/run/${run.id}/admin`);
+      if (run) {
+        navigate(`/run/${run.id}/admin`);
+      }
     } catch (generationError) {
       setError(generationError.message);
     }
@@ -143,10 +151,15 @@ const GenerateRunPage = () => {
       </form>
 
       {currentRun && (
-        <aside className="rounded border border-purple-500/40 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-semibold mb-3">Senast genererade runda</h2>
+        <aside className="rounded border border-purple-500/40 bg-slate-900/60 p-6 space-y-4">
+          <h2 className="text-xl font-semibold">Senast genererade runda</h2>
           <p className="text-gray-200">Anslutningskod: <span className="font-mono text-lg">{currentRun.joinCode}</span></p>
-          <div className="mt-3 flex flex-wrap gap-3">
+          <QRCodeDisplay
+            value={buildJoinLink(currentRun.joinCode)}
+            title="QR för anslutning"
+            description="Skanna för att ansluta till rundan."
+          />
+          <div className="flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => navigator.clipboard.writeText(currentRun.joinCode)}

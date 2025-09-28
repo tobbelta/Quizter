@@ -1,8 +1,14 @@
+/**
+ * Adminvy för att skapa en handplanerad tipspromenad.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
+import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import { buildJoinLink } from '../utils/joinLink';
+import { describeParticipantStatus } from '../utils/participantStatus';
 
 const defaultForm = {
   name: 'Fredagsquiz',
@@ -47,7 +53,7 @@ const CreateRunPage = () => {
       return acc;
     }, {});
     return counts;
-  }, []);
+  }, [availableQuestions]);
 
   if (!isAdmin) {
     return (
@@ -58,6 +64,7 @@ const CreateRunPage = () => {
     );
   }
 
+  /** Uppdaterar formuläret när admin ändrar fält. */
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
     setForm((prev) => ({
@@ -66,6 +73,7 @@ const CreateRunPage = () => {
     }));
   };
 
+  /** Hämtar fler frågor från OpenTDB med aktuell profil. */
   const handleImportQuestions = async () => {
     setError('');
     setSuccessMessage('');
@@ -84,7 +92,8 @@ const CreateRunPage = () => {
     }
   };
 
-  const handleSubmit = (event) => {
+  /** Skapar rundan och nollställer feedback. */
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setSuccessMessage('');
@@ -93,7 +102,7 @@ const CreateRunPage = () => {
         setError('Ange ett namn på rundan.');
         return;
       }
-      const run = createHostedRun({
+      const run = await createHostedRun({
         ...form,
         questionCount: Number(form.questionCount),
         lengthMeters: Number(form.lengthMeters)
@@ -101,7 +110,9 @@ const CreateRunPage = () => {
         id: currentUser?.id || 'admin',
         name: currentUser?.name || 'Admin'
       });
-      setSuccessMessage(`Runda skapad! Anslutningskod: ${run.joinCode}`);
+      if (run) {
+        setSuccessMessage(`Runda skapad! Anslutningskod: ${run.joinCode}`);
+      }
     } catch (creationError) {
       setError(creationError.message);
     }
@@ -249,8 +260,8 @@ const CreateRunPage = () => {
       </form>
 
       {currentRun && (
-        <aside className="rounded-lg border border-cyan-500/40 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-semibold mb-3">Aktiv runda</h2>
+        <aside className="rounded-lg border border-cyan-500/40 bg-slate-900/60 p-6 space-y-4">
+          <h2 className="text-xl font-semibold">Aktiv runda</h2>
           <dl className="grid gap-2 md:grid-cols-2">
             <div>
               <dt className="text-sm text-gray-400">Namn</dt>
@@ -269,16 +280,32 @@ const CreateRunPage = () => {
               <dd className="capitalize">{currentRun.status}</dd>
             </div>
           </dl>
-          <div className="mt-4">
+          <QRCodeDisplay
+            value={buildJoinLink(currentRun.joinCode)}
+            title="QR för anslutning"
+            description="Dela med deltagare genom att låta dem skanna koden."
+          />
+          <div>
             <h3 className="font-semibold text-cyan-200 mb-2">Deltagare ({participants.length})</h3>
             <ul className="space-y-1 text-sm">
               {participants.length === 0 && <li className="text-gray-400">Inga deltagare har anslutit ännu.</li>}
-              {participants.map((participant) => (
-                <li key={participant.id} className="flex justify-between">
-                  <span>{participant.alias}</span>
-                  <span className="text-gray-400">{participant.score} poäng</span>
-                </li>
-              ))}
+              {participants.map((participant) => {
+                const statusMeta = describeParticipantStatus(participant.status);
+                return (
+                  <li key={participant.id} className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${statusMeta.dotClass}`} />
+                      <span>{participant.alias}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400">{participant.score} poäng</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.pillClass}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </aside>
@@ -288,3 +315,4 @@ const CreateRunPage = () => {
 };
 
 export default CreateRunPage;
+

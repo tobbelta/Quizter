@@ -1,11 +1,23 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { runService } from '../services/runService';
+/**
+ * Delar pågående run-data mellan sidor och kapslar realtidslyssning.
+ */
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
+import { runRepository } from '../repositories/runRepository';
 import { questionService } from '../services/questionService';
 
 const RunContext = createContext();
 
 const ACTIVE_PARTICIPANT_KEY = 'tipspromenad:activeParticipant';
 
+/** Plockar upp senast aktiva deltagaren från localStorage. */
 const readActiveParticipant = () => {
   if (typeof window === 'undefined') return null;
   try {
@@ -17,6 +29,7 @@ const readActiveParticipant = () => {
   }
 };
 
+/** Sparar eller rensar kopplingen mellan användare och runda. */
 const writeActiveParticipant = (payload) => {
   if (typeof window === 'undefined') return;
   try {
@@ -30,6 +43,7 @@ const writeActiveParticipant = (payload) => {
   }
 };
 
+/** Översätter runens fråge-id till faktiska frågeobjekt. */
 const mapRunQuestions = (run) => {
   if (!run) return [];
   return questionService.getManyByIds(run.questionIds);
@@ -41,65 +55,99 @@ export const RunProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [participants, setParticipants] = useState([]);
+  const runId = currentRun?.id || null;
+  const participantId = currentParticipant?.id || null;
+  const participantIdRef = useRef(null);
 
-  const loadRunState = useCallback((run) => {
+  useEffect(() => {
+    participantIdRef.current = currentParticipant?.id || null;
+  }, [currentParticipant]);
+
+  /** Laddar en run med frågor och deltagare till minnet. */
+  const loadRunState = useCallback(async (run) => {
     if (!run) return;
     setCurrentRun(run);
     setQuestions(mapRunQuestions(run));
-    setParticipants(runService.listParticipants(run.id));
+    try {
+      const list = await runRepository.listParticipants(run.id);
+      setParticipants(list);
+      const trackedId = participantIdRef.current;
+      if (trackedId) {
+        const updated = list.find((entry) => entry.id === trackedId);
+        if (updated) {
+          setCurrentParticipant(updated);
+        }
+      }
+    } catch (error) {
+      console.warn('Kunde inte ladda deltagare för run', error);
+    }
   }, []);
 
-  const createHostedRun = useCallback((input, creator) => {
-    const run = runService.createRun(input, creator);
-    loadRunState(run);
+  /** Skapar en administratörsstyrd runda och gör den aktiv i contexten. */
+  const createHostedRun = useCallback(async (input, creator) => {
+    const run = await runRepository.createRun(input, creator);
+    await loadRunState(run);
     return run;
   }, [loadRunState]);
 
-  const generateRun = useCallback((options, creator) => {
-    const run = runService.generateRouteRun(options, creator);
-    loadRunState(run);
+  /** Genererar en runda on-demand och gör den aktiv i contexten. */
+  const generateRun = useCallback(async (options, creator) => {
+    const run = await runRepository.generateRouteRun(options, creator);
+    await loadRunState(run);
     return run;
   }, [loadRunState]);
 
-  const loadRunById = useCallback((runId) => {
-    const run = runService.getRun(runId);
+  /** Hämtar en runda via id (t.ex. vid sidladdning). */
+  const loadRunById = useCallback(async (id) => {
+    const run = await runRepository.getRun(id);
     if (!run) {
       throw new Error('Runda hittades inte');
     }
-    loadRunState(run);
+    await loadRunState(run);
     return run;
   }, [loadRunState]);
 
-  const joinRunByCode = useCallback((joinCode, participantData) => {
-    const run = runService.getRunByCode(joinCode);
+  /** Ansluter en deltagare med join-kod och sparar kopplingen. */
+  const joinRunByCode = useCallback(async (joinCode, participantData) => {
+    const run = await runRepository.getRunByCode(joinCode);
     if (!run) {
       throw new Error('Ingen runda hittades med angiven kod');
     }
-    const participant = runService.registerParticipant(run.id, participantData);
-    loadRunState(run);
+    const participant = await runRepository.registerParticipant(run.id, participantData);
+    await loadRunState(run);
     setCurrentParticipant(participant);
     return { run, participant };
   }, [loadRunState]);
 
-  const attachToRun = useCallback((runId, participantId) => {
-    const run = runService.getRun(runId);
+  /** Återansluter till en runda utifrån sparad run- och deltagar-id. */
+  const attachToRun = useCallback(async (id, participant) => {
+    const run = await runRepository.getRun(id);
     if (!run) {
       throw new Error('Runda hittades inte');
     }
-    const participant = runService.listParticipants(runId).find((entry) => entry.id === participantId) || null;
-    loadRunState(run);
-    setCurrentParticipant(participant);
-    return { run, participant };
+    const participantData = participant ? await runRepository.getParticipant(id, participant) : null;
+    await loadRunState(run);
+    setCurrentParticipant(participantData);
+    return { run, participant: participantData };
   }, [loadRunState]);
 
-  const refreshParticipants = useCallback(() => {
-    if (!currentRun) return [];
-    const list = runService.listParticipants(currentRun.id);
+  /** Hämtar den senaste deltagarlistan och uppdaterar aktuell deltagare. */
+  const refreshParticipants = useCallback(async () => {
+    if (!runId) return [];
+    const list = await runRepository.listParticipants(runId);
     setParticipants(list);
+    const trackedId = participantIdRef.current;
+    if (trackedId) {
+      const updated = list.find((entry) => entry.id === trackedId);
+      if (updated) {
+        setCurrentParticipant(updated);
+      }
+    }
     return list;
-  }, [currentRun]);
+  }, [runId]);
 
-  const submitAnswer = useCallback(({ questionId, answerIndex }) => {
+  /** Sparar ett svar och räknar om deltagarens status. */
+  const submitAnswer = useCallback(async ({ questionId, answerIndex }) => {
     if (!currentRun || !currentParticipant) {
       throw new Error('Ingen aktiv runda eller deltagare.');
     }
@@ -108,27 +156,33 @@ export const RunProvider = ({ children }) => {
       throw new Error('Frågan hittades inte.');
     }
     const correct = question.correctOption === answerIndex;
-    const participant = runService.recordAnswer(currentRun.id, currentParticipant.id, {
+    const participant = await runRepository.recordAnswer(currentRun.id, currentParticipant.id, {
       questionId,
       answerIndex,
       correct
     });
     setCurrentParticipant(participant);
-    refreshParticipants();
+    await refreshParticipants();
     return { participant, correct };
   }, [currentRun, currentParticipant, refreshParticipants]);
 
-  const completeRunForParticipant = useCallback(() => {
-    if (!currentRun || !currentParticipant) return;
-    runService.completeRun(currentRun.id, currentParticipant.id);
-    refreshParticipants();
-  }, [currentRun, currentParticipant, refreshParticipants]);
+  /** Markerar att deltagaren är klar och uppdaterar listorna. */
+  const completeRunForParticipant = useCallback(async () => {
+    if (!runId || !participantId) return;
+    await runRepository.completeRun(runId, participantId);
+    await refreshParticipants();
+  }, [runId, participantId, refreshParticipants]);
 
-  const closeRun = useCallback(() => {
-    if (!currentRun) return;
-    runService.closeRun(currentRun.id);
-    loadRunState(runService.getRun(currentRun.id));
-  }, [currentRun, loadRunState]);
+  /** Stänger rundan så att nya svar inte längre tas emot. */
+  const closeRun = useCallback(async () => {
+    if (!runId) return;
+    await runRepository.closeRun(runId);
+    const updated = await runRepository.getRun(runId);
+    if (updated) {
+      setCurrentRun(updated);
+      setQuestions(mapRunQuestions(updated));
+    }
+  }, [runId]);
 
   useEffect(() => {
     if (currentRun && currentParticipant) {
@@ -142,14 +196,82 @@ export const RunProvider = ({ children }) => {
     if (isRestored) return;
     const stored = readActiveParticipant();
     if (stored?.runId && stored?.participantId) {
-      try {
-        attachToRun(stored.runId, stored.participantId);
-      } catch (error) {
+      attachToRun(stored.runId, stored.participantId).catch((error) => {
         console.warn('Kunde inte återställa deltagare', error);
-      }
+      });
     }
     setIsRestored(true);
   }, [isRestored, attachToRun]);
+
+  useEffect(() => {
+    if (!runId) return () => {};
+    const unsubscribe = runRepository.subscribeRuns((runs) => {
+      const updated = runs.find((run) => run.id === runId);
+      if (updated) {
+        setCurrentRun(updated);
+        setQuestions(mapRunQuestions(updated));
+      }
+    });
+    return unsubscribe;
+  }, [runId]);
+
+  useEffect(() => {
+    if (!runId) return () => {};
+    const unsubscribe = runRepository.subscribeParticipants(runId, (snapshot) => {
+      setParticipants(snapshot);
+      const trackedId = participantIdRef.current;
+      if (trackedId) {
+        const updated = snapshot.find((entry) => entry.id === trackedId);
+        if (updated) {
+          setCurrentParticipant(updated);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [runId]);
+
+  useEffect(() => {
+    if (!runId || !participantId) return undefined;
+    if (typeof window === 'undefined') return undefined;
+
+    const heartbeat = () => {
+      runRepository.heartbeatParticipant(runId, participantId).catch((error) => {
+        console.warn('Heartbeat misslyckades', error);
+      });
+    };
+
+    heartbeat();
+    const intervalId = window.setInterval(heartbeat, 15000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        heartbeat();
+      }
+    };
+
+    const handleBeforeUnload = () => heartbeat();
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.clearInterval(intervalId);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [runId, participantId]);
+
+  useEffect(() => {
+    refreshParticipants().catch((error) => {
+      if (runId) {
+        console.warn('Kunde inte uppdatera deltagare', error);
+      }
+    });
+  }, [refreshParticipants, runId]);
 
   const value = useMemo(() => ({
     currentRun,

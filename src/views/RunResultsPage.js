@@ -1,6 +1,10 @@
+/**
+ * Resultatvy efter avslutad runda.
+ */
 import React, { useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
+import { describeParticipantStatus } from '../utils/participantStatus';
 
 const RunResultsPage = () => {
   const { runId } = useParams();
@@ -9,14 +13,15 @@ const RunResultsPage = () => {
 
   useEffect(() => {
     if (!currentRun || currentRun.id !== runId) {
-      loadRunById(runId);
+      loadRunById(runId).catch((error) => console.warn('Kunde inte ladda runda', error));
     }
   }, [currentRun, loadRunById, runId]);
 
   useEffect(() => {
-    refreshParticipants();
+    refreshParticipants().catch((error) => console.warn('Kunde inte uppdatera deltagare', error));
   }, [refreshParticipants]);
 
+    /** Skapar topplistan baserat på poäng och sluttider. */
   const ranking = useMemo(() => {
     return [...participants].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
@@ -43,15 +48,23 @@ const RunResultsPage = () => {
         <h2 className="text-xl font-semibold mb-3 text-emerald-200">Ledartavla</h2>
         <ol className="space-y-2">
           {ranking.length === 0 && <li className="text-gray-300">Inga svar registrerade ännu.</li>}
-          {ranking.map((participant, index) => (
-            <li key={participant.id} className="flex justify-between rounded bg-emerald-900/40 px-3 py-2">
-              <span>
-                #{index + 1} {participant.alias}
-                {participant.isAnonymous ? ' (anonym)' : ''}
-              </span>
-              <span className="font-semibold">{participant.score} poäng</span>
-            </li>
-          ))}
+          {ranking.map((participant, index) => {
+            const statusMeta = describeParticipantStatus(participant.status);
+            return (
+              <li key={participant.id} className="flex items-center justify-between rounded bg-emerald-900/40 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 rounded-full ${statusMeta.dotClass}`} />
+                  <span>#{index + 1} {participant.alias}{participant.isAnonymous ? ' (anonym)' : ''}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{participant.score} poäng</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.pillClass}`}>
+                    {statusMeta.label}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ol>
       </section>
 

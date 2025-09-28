@@ -1,3 +1,6 @@
+/**
+ * Startsida där användaren väljer inloggningssätt för tipspromenaden.
+ */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +16,7 @@ const LandingPage = () => {
   const [playerForm, setPlayerForm] = useState({ name: '', email: '' });
   const [error, setError] = useState('');
 
+  /** Besvarar formuläret för anonym deltagare och skickar vidare till join-sidan. */
   const handleAliasSubmit = (event) => {
     event.preventDefault();
     if (!aliasForm.alias.trim()) {
@@ -24,6 +28,7 @@ const LandingPage = () => {
     navigate('/join');
   };
 
+  /** Loggar in admin och skickar till skapaflödet. */
   const handleAdminSubmit = (event) => {
     event.preventDefault();
     if (!adminForm.email.trim()) {
@@ -35,6 +40,7 @@ const LandingPage = () => {
     navigate('/admin/create');
   };
 
+  /** Loggar in registrerad spelare med namn + e-post. */
   const handlePlayerLogin = (event) => {
     event.preventDefault();
     if (!playerForm.name.trim() || !playerForm.email.trim()) {
@@ -46,6 +52,7 @@ const LandingPage = () => {
     navigate('/join');
   };
 
+  /** Loggar ut aktuell användare och rensar formulär. */
   const handleLogout = () => {
     logout();
     navigate('/');

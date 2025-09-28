@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "geoquest-1c461"
-  }
+    "default": "geoquest-1c461",
+    "staging": "geoquest2-7e45c"
+  },
+  "targets": {},
+  "etags": {}
 }

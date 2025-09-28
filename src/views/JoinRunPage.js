@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+/**
+ * Vy där spelare ansluter med en join-kod eller QR-länk.
+ */
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, loginAsGuest } = useAuth();
   const { joinRunByCode } = useRun();
 
@@ -14,7 +18,16 @@ const JoinRunPage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleJoin = (event) => {
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const codeParam = params.get('code');
+    if (codeParam) {
+      setJoinCode(codeParam.toUpperCase());
+    }
+  }, [location.search]);
+
+
+  const handleJoin = async (event) => {
     event.preventDefault();
     setError('');
     setSuccess('');
@@ -35,7 +48,7 @@ const JoinRunPage = () => {
     }
 
     try {
-      const { run, participant } = joinRunByCode(code, {
+      const { run } = await joinRunByCode(code, {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
@@ -108,3 +121,4 @@ const JoinRunPage = () => {
 };
 
 export default JoinRunPage;
+

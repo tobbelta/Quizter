@@ -1,32 +1,84 @@
 /**
- * Import function triggers from their respective submodules:
- *
- * const {onCall} = require("firebase-functions/v2/https");
- * const {onDocumentWritten} = require("firebase-functions/v2/firestore");
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
+ * Cloud Functions-skelett för tipspromenadens backend-endpoints.
  */
-
-const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
+const functions = require("firebase-functions");
 const logger = require("firebase-functions/logger");
+const admin = require("firebase-admin");
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
-setGlobalOptions({ maxInstances: 10 });
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
 
-// Create and deploy your first functions
-// https://firebase.google.com/docs/functions/get-started
+const REGION = "europe-west1";
+const runtimeDefaults = { memory: "512MB", timeoutSeconds: 60 };
 
-// exports.helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+const createHttpsHandler = (handler) =>
+  functions.region(REGION).runWith(runtimeDefaults).https.onRequest(handler);
+
+const ensurePost = (req, res) => {
+  if (req.method !== "POST") {
+    res.set("Allow", "POST");
+    res.status(405).json({ error: "Method Not Allowed" });
+    return false;
+  }
+  return true;
+};
+
+exports.createRun = createHttpsHandler(async (req, res) => {
+  // TODO: Validera payload, skapa run i Firestore och svara med id/kod.
+  if (!ensurePost(req, res)) {
+    return;
+  }
+
+  logger.info("createRun called", { bodyKeys: Object.keys(req.body || {}) });
+  res.status(501).json({ error: "Not implemented" });
+});
+
+exports.generateRoute = createHttpsHandler(async (req, res) => {
+  // TODO: Anropa kart-API, skapa checkpoints och spara rundan.
+  if (!ensurePost(req, res)) {
+    return;
+  }
+
+  logger.info("generateRoute called", { payload: req.body });
+  res.status(501).json({ error: "Not implemented" });
+});
+
+exports.joinRun = createHttpsHandler(async (req, res) => {
+  // TODO: Registrera deltagare och returnera token/svarsdata.
+  if (!ensurePost(req, res)) {
+    return;
+  }
+
+  logger.info("joinRun called", { bodyKeys: Object.keys(req.body || {}) });
+  res.status(501).json({ error: "Not implemented" });
+});
+
+exports.submitAnswer = createHttpsHandler(async (req, res) => {
+  // TODO: Uppdatera deltagarens svar och poäng.
+  if (!ensurePost(req, res)) {
+    return;
+  }
+
+  logger.info("submitAnswer called", { participantId: req.body?.participantId });
+  res.status(501).json({ error: "Not implemented" });
+});
+
+exports.closeRun = createHttpsHandler(async (req, res) => {
+  // TODO: Stäng rundan och skriv closedAt i Firestore.
+  if (!ensurePost(req, res)) {
+    return;
+  }
+
+  logger.info("closeRun called", { runId: req.body?.runId });
+  res.status(501).json({ error: "Not implemented" });
+});
+
+// Schemalagd funktion som ska hämta fler frågor löpande.
+exports.questionImport = functions
+  .region(REGION)
+  .pubsub.schedule("every 6 hours")
+  .onRun(async (context) => {
+    logger.info("questionImport trigger executed", { timestamp: context.timestamp });
+    logger.warn("TODO: implement automatic question import");
+  });

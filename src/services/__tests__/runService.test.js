@@ -1,4 +1,4 @@
-import { runService } from '../runService';
+import { jest } from '@jest/globals';
 
 const mockLocalStorage = () => {
   let store = {};
@@ -17,7 +17,12 @@ const mockLocalStorage = () => {
 };
 
 describe('runService', () => {
+  let runService;
+  let PARTICIPANT_TIMEOUT_MS;
+
   beforeEach(() => {
+    jest.resetModules();
+    ({ runService, PARTICIPANT_TIMEOUT_MS } = require('../runService'));
     Object.defineProperty(window, 'localStorage', {
       value: mockLocalStorage(),
       writable: true
@@ -76,5 +81,66 @@ describe('runService', () => {
       alias: 'Anonym',
       isAnonymous: true
     })).toThrow('Anonyma deltagare är inte tillåtna');
+  });
+
+  test('subscribeParticipants notifierar prenumeranter vid uppdateringar', () => {
+    const run = runService.createRun({
+      name: 'Notifieringstest',
+      difficulty: 'family',
+      audience: 'family',
+      questionCount: 3,
+      allowAnonymous: true
+    }, { id: 'admin', name: 'Admin' });
+
+    const participant = runService.registerParticipant(run.id, {
+      alias: 'Prenumerant',
+      isAnonymous: true
+    });
+
+    const updates = [];
+    const unsubscribe = runService.subscribeParticipants(run.id, (snapshot) => {
+      updates.push(snapshot);
+    });
+
+    expect(updates).toHaveLength(1);
+
+    runService.recordAnswer(run.id, participant.id, {
+      questionId: run.questionIds[0],
+      answerIndex: 0,
+      correct: true
+    });
+
+    expect(updates.length).toBeGreaterThan(1);
+    const latestParticipant = updates.at(-1).find((entry) => entry.id === participant.id);
+    expect(latestParticipant.score).toBe(1);
+    unsubscribe();
+  });
+
+  test('heartbeatParticipant uppdaterar närvaro och status', () => {
+    const run = runService.createRun({
+      name: 'Heartbeat',
+      difficulty: 'family',
+      audience: 'family',
+      questionCount: 3,
+      allowAnonymous: true
+    }, { id: 'admin', name: 'Admin' });
+
+    runService.registerParticipant(run.id, {
+      alias: 'Närvaro',
+      isAnonymous: true
+    });
+
+    const baseParticipant = runService.listParticipants(run.id)[0];
+    expect(baseParticipant.status).toBe('active');
+
+    const baseTime = Date.now();
+    const staleSpy = jest.spyOn(Date, 'now').mockImplementation(() => baseTime + PARTICIPANT_TIMEOUT_MS + 1000);
+    const staleParticipant = runService.listParticipants(run.id)[0];
+    expect(staleParticipant.status).toBe('inactive');
+    staleSpy.mockRestore();
+
+    runService.heartbeatParticipant(run.id, baseParticipant.id);
+    const refreshed = runService.listParticipants(run.id)[0];
+    expect(refreshed.status).toBe('active');
   });
 });
