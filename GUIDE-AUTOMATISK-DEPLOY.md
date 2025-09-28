@@ -34,7 +34,7 @@ Hemligheter (Secrets) är ett säkert sätt att lagra känslig information (som 
 Du ska nu skapa **två** hemligheter:
 
 **Hemlighet 1: Firebase Service Account**
-- **Namn:** `FIREBASE_SERVICE_ACCOUNT_GEOQUEST_1C461`
+- **Namn:** `FIREBASE_SERVICE_ACCOUNT_GEOQUEST2`
 - **Värde (Secret):** Klistra in **hela innehållet** från JSON-filen du laddade ner i Steg 1.
 
 **Hemlighet 2: Firebase Config för din app**
@@ -59,3 +59,4 @@ Nu är allt klart! Nästa gång du:
 3. Slår ihop din feature branch med `main` via en Pull Request.
 
 ...så kommer GitHub automatiskt att starta processen. Du kan följa förloppet under "Actions"-fliken i ditt GitHub-repository. Efter några minuter kommer din live-app att vara uppdaterad!
+

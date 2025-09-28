@@ -51,6 +51,8 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST_1C461 }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST2 }}'
           channelId: live
-          projectId: 'geoquest-1c461' # Byt ut mot ditt projekt-ID
+          projectId: 'geoquest2-7e45c' # Byt ut mot ditt projekt-ID
+
+
