@@ -1,3 +1,4 @@
+
 /**
  * Startsida där användaren väljer inloggningssätt för tipspromenaden.
  */
@@ -5,51 +6,65 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const initialAliasState = { alias: '', contact: '' };
-const initialAdminState = { name: '', email: '' };
+const initialGuestState = { alias: '', contact: '' };
+const initialPlayerState = { name: '', email: '', password: '' };
+const initialAdminState = { name: '', email: '', password: '' };
 
 const LandingPage = () => {
   const navigate = useNavigate();
   const { currentUser, isAdmin, loginAsAdmin, loginAsGuest, loginAsRegistered, logout } = useAuth();
-  const [aliasForm, setAliasForm] = useState(initialAliasState);
+  const [guestForm, setGuestForm] = useState(initialGuestState);
+  const [playerForm, setPlayerForm] = useState(initialPlayerState);
   const [adminForm, setAdminForm] = useState(initialAdminState);
-  const [playerForm, setPlayerForm] = useState({ name: '', email: '' });
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({ guest: '', player: '', admin: '' });
+
+  const setFieldError = (key, message) => setErrors((prev) => ({ ...prev, [key]: message }));
 
   /** Besvarar formuläret för anonym deltagare och skickar vidare till join-sidan. */
-  const handleAliasSubmit = (event) => {
+  const handleGuestSubmit = (event) => {
     event.preventDefault();
-    if (!aliasForm.alias.trim()) {
-      setError('Ange ett alias för att fortsätta.');
+    if (!guestForm.alias.trim()) {
+      setFieldError('guest', 'Ange ett alias för att fortsätta.');
       return;
     }
-    loginAsGuest(aliasForm);
-    setAliasForm(initialAliasState);
+    setFieldError('guest', '');
+    loginAsGuest(guestForm);
+    setGuestForm(initialGuestState);
     navigate('/join');
   };
 
-  /** Loggar in admin och skickar till skapaflödet. */
-  const handleAdminSubmit = (event) => {
-    event.preventDefault();
-    if (!adminForm.email.trim()) {
-      setError('Ange en e-postadress för administratörsinloggning.');
-      return;
-    }
-    loginAsAdmin(adminForm);
-    setAdminForm(initialAdminState);
-    navigate('/admin/create');
-  };
-
-  /** Loggar in registrerad spelare med namn + e-post. */
-  const handlePlayerLogin = (event) => {
+  /** Loggar in registrerad spelare med namn, e-post och eventuellt lösenord. */
+  const handlePlayerSubmit = async (event) => {
     event.preventDefault();
     if (!playerForm.name.trim() || !playerForm.email.trim()) {
-      setError('Fyll i namn och e-post för deltagarlogin.');
+      setFieldError('player', 'Fyll i både namn och e-post.');
       return;
     }
-    loginAsRegistered(playerForm);
-    setPlayerForm({ name: '', email: '' });
-    navigate('/join');
+    try {
+      setFieldError('player', '');
+      await loginAsRegistered(playerForm);
+      setPlayerForm(initialPlayerState);
+      navigate('/join');
+    } catch (authError) {
+      setFieldError('player', authError?.message || 'Kunde inte logga in som spelare.');
+    }
+  };
+
+  /** Loggar in administratör och skickar till skapaflödet. */
+  const handleAdminSubmit = async (event) => {
+    event.preventDefault();
+    if (!adminForm.email.trim()) {
+      setFieldError('admin', 'Ange e-post för administratörsinloggning.');
+      return;
+    }
+    try {
+      setFieldError('admin', '');
+      await loginAsAdmin(adminForm);
+      setAdminForm(initialAdminState);
+      navigate('/admin/create');
+    } catch (authError) {
+      setFieldError('admin', authError?.message || 'Kunde inte logga in som administratör.');
+    }
   };
 
   /** Loggar ut aktuell användare och rensar formulär. */
@@ -60,28 +75,22 @@ const LandingPage = () => {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold text-center mb-2">Tipspromenad 2.0</h1>
-        <p className="text-center text-gray-300">Skapa, generera eller delta i tipspromenader direkt i mobilen.</p>
+      <header className="mb-8 text-center">
+        <h1 className="text-3xl font-bold mb-2">Tipspromenad 2.0</h1>
+        <p className="text-gray-300">Välj hur du vill delta: som gäst, registrerad spelare eller administratör.</p>
       </header>
 
-      {error && (
-        <div className="mb-4 rounded bg-red-900/40 border border-red-500 px-4 py-3 text-red-200">
-          {error}
-        </div>
-      )}
-
-      <section className="grid gap-6 md:grid-cols-2">
+      <section className="grid gap-6 md:grid-cols-3">
         <div className="rounded-lg border border-cyan-400/40 bg-slate-900/60 p-6">
           <h2 className="text-xl font-semibold mb-4">Snabbstarta som gäst</h2>
           <p className="text-sm text-gray-300 mb-4">Anslut med ett alias (och valfri kontaktuppgift) för att delta anonymt.</p>
-          <form onSubmit={handleAliasSubmit} className="space-y-3">
+          <form onSubmit={handleGuestSubmit} className="space-y-3">
             <div>
               <label className="block text-sm font-semibold text-cyan-200">Alias</label>
               <input
                 type="text"
-                value={aliasForm.alias}
-                onChange={(event) => setAliasForm((prev) => ({ ...prev, alias: event.target.value }))}
+                value={guestForm.alias}
+                onChange={(event) => setGuestForm((prev) => ({ ...prev, alias: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                 placeholder="Lag Lisa"
               />
@@ -90,12 +99,13 @@ const LandingPage = () => {
               <label className="block text-sm font-semibold text-cyan-200">Kontakt (valfritt)</label>
               <input
                 type="text"
-                value={aliasForm.contact}
-                onChange={(event) => setAliasForm((prev) => ({ ...prev, contact: event.target.value }))}
+                value={guestForm.contact}
+                onChange={(event) => setGuestForm((prev) => ({ ...prev, contact: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                 placeholder="E-post eller telefon"
               />
             </div>
+            {errors.guest && <p className="text-sm text-red-300">{errors.guest}</p>}
             <button
               type="submit"
               className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
@@ -106,9 +116,9 @@ const LandingPage = () => {
         </div>
 
         <div className="rounded-lg border border-emerald-400/40 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-semibold mb-4">Logga in som deltagare</h2>
-          <p className="text-sm text-gray-300 mb-4">Spara din historik genom att logga in med namn och e-post.</p>
-          <form onSubmit={handlePlayerLogin} className="space-y-3">
+          <h2 className="text-xl font-semibold mb-4">Logga in som spelare</h2>
+          <p className="text-sm text-gray-300 mb-4">Din identitet sparas och du kan följa historik i framtiden.</p>
+          <form onSubmit={handlePlayerSubmit} className="space-y-3">
             <div>
               <label className="block text-sm font-semibold text-emerald-200">Namn</label>
               <input
@@ -129,6 +139,17 @@ const LandingPage = () => {
                 placeholder="anna@example.com"
               />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-emerald-200">Lösenord (krävs vid Firebase-login)</label>
+              <input
+                type="password"
+                value={playerForm.password}
+                onChange={(event) => setPlayerForm((prev) => ({ ...prev, password: event.target.value }))}
+                className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                placeholder="********"
+              />
+            </div>
+            {errors.player && <p className="text-sm text-red-300">{errors.player}</p>}
             <button
               type="submit"
               className="w-full rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
@@ -137,40 +158,38 @@ const LandingPage = () => {
             </button>
           </form>
         </div>
-      </section>
 
-      <section className="mt-8 rounded-lg border border-indigo-400/40 bg-slate-900/70 p-6">
-        <h2 className="text-xl font-semibold mb-4">Administratör</h2>
-        {isAdmin ? (
-          <div className="space-y-3">
-            <p className="text-gray-200">Inloggad som <strong>{currentUser.name}</strong></p>
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/admin/create')}
-                className="rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
-              >
-                Skapa ny runda
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/generate')}
-                className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400"
-              >
-                Generera runda på plats
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
-              >
-                Logga ut
-              </button>
+        <div className="rounded-lg border border-indigo-400/40 bg-slate-900/70 p-6">
+          <h2 className="text-xl font-semibold mb-4">Administratör</h2>
+          {isAdmin ? (
+            <div className="space-y-3">
+              <p className="text-gray-200">Inloggad som <strong>{currentUser.name}</strong></p>
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/create')}
+                  className="rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
+                >
+                  Skapa ny runda
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/generate')}
+                  className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400"
+                >
+                  Generera runda på plats
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
+                >
+                  Logga ut
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <form onSubmit={handleAdminSubmit} className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
+          ) : (
+            <form onSubmit={handleAdminSubmit} className="space-y-3">
               <div>
                 <label className="block text-sm font-semibold text-indigo-200">Namn</label>
                 <input
@@ -191,15 +210,26 @@ const LandingPage = () => {
                   placeholder="admin@example.com"
                 />
               </div>
-            </div>
-            <button
-              type="submit"
-              className="rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
-            >
-              Logga in som administratör
-            </button>
-          </form>
-        )}
+              <div>
+                <label className="block text-sm font-semibold text-indigo-200">Lösenord (krävs vid Firebase-login)</label>
+                <input
+                  type="password"
+                  value={adminForm.password}
+                  onChange={(event) => setAdminForm((prev) => ({ ...prev, password: event.target.value }))}
+                  className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                  placeholder="********"
+                />
+              </div>
+              {errors.admin && <p className="text-sm text-red-300">{errors.admin}</p>}
+              <button
+                type="submit"
+                className="w-full rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
+              >
+                Logga in som administratör
+              </button>
+            </form>
+          )}
+        </div>
       </section>
     </div>
   );
