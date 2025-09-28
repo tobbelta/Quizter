@@ -43,3 +43,4 @@ src/utils/fileLogger.js
 playwright-report/
 test-results/
 
+.env
