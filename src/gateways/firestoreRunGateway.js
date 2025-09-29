@@ -1,5 +1,5 @@
 /**
- * Pratar med Firestore-versionen av runRepository och speglar samma API som runService.
+ * Firebase Firestore gateway för alla run- och deltagare-operationer.
  */
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -15,8 +15,7 @@ import {
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
-import { PARTICIPANT_TIMEOUT_MS } from '../services/runService';
-import { FALLBACK_POSITION } from '../utils/constants';
+import { FALLBACK_POSITION, PARTICIPANT_TIMEOUT_MS } from '../utils/constants';
 
 const db = getFirebaseDb();
 
