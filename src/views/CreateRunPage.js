@@ -7,10 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
-import RunMap from '../components/run/RunMap';
 import { buildJoinLink } from '../utils/joinLink';
-import { describeParticipantStatus } from '../utils/participantStatus';
-import { FALLBACK_POSITION } from '../utils/constants';
 
 const defaultForm = {
   name: 'Fredagsquiz',
@@ -36,7 +33,7 @@ const difficultyOptions = [
 
 const CreateRunPage = () => {
   const { currentUser, isAdmin } = useAuth();
-  const { createHostedRun, currentRun, participants } = useRun();
+  const { createHostedRun, currentRun } = useRun();
   const navigate = useNavigate();
   const [form, setForm] = useState(defaultForm);
   const [availableQuestions, setAvailableQuestions] = useState(questionService.listAll());
@@ -121,11 +118,24 @@ const CreateRunPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
-      <header>
-        <h1 className="text-3xl font-bold mb-2">Skapa tipspromenad</h1>
-        <p className="text-gray-300">Ställ in målgrupp, svårighetsgrad och antal frågor. En anslutningskod genereras automatiskt.</p>
+    <div className="min-h-screen bg-slate-950 text-white">
+      {/* Mobiloptimerad header */}
+      <header className="bg-slate-900 border-b border-slate-800 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Skapa tipspromenad</h1>
+            <p className="text-sm text-gray-400">Fyll i detaljer och skapa QR-kod</p>
+          </div>
+          <button
+            onClick={() => navigate('/')}
+            className="rounded bg-slate-700 px-3 py-2 text-sm font-semibold hover:bg-slate-600"
+          >
+            Tillbaka
+          </button>
+        </div>
       </header>
+
+      <div className="px-4 py-6 space-y-6">
 
       {error && (
         <div className="rounded border border-red-500 bg-red-900/40 px-4 py-3 text-red-200">{error}</div>
@@ -168,204 +178,171 @@ const CreateRunPage = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Rundans namn</label>
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            />
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-cyan-200">Rundans namn</label>
+              <input
+                name="name"
+                value={form.name}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                placeholder="T.ex. Fredagsquiz"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-cyan-200">Beskrivning</label>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                rows={3}
+                className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                placeholder="En promenad med blandade frågor"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-cyan-200">Målgrupp</label>
+                <select
+                  name="audience"
+                  value={form.audience}
+                  onChange={handleChange}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                >
+                  {audienceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">Tillgängliga: {maxQuestionsPerAudience[form.audience] || 0}</p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-cyan-200">Svårighetsgrad</label>
+                <select
+                  name="difficulty"
+                  value={form.difficulty}
+                  onChange={handleChange}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                >
+                  {difficultyOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-cyan-200">Antal frågor</label>
+                <input
+                  type="number"
+                  name="questionCount"
+                  min={3}
+                  max={20}
+                  value={form.questionCount}
+                  onChange={handleChange}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-cyan-200">Längd (meter)</label>
+                <input
+                  type="number"
+                  name="lengthMeters"
+                  min={500}
+                  max={10000}
+                  step={100}
+                  value={form.lengthMeters}
+                  onChange={handleChange}
+                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3 rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+              <input
+                type="checkbox"
+                name="allowAnonymous"
+                checked={form.allowAnonymous}
+                onChange={handleChange}
+                className="h-4 w-4 text-cyan-500"
+              />
+              <label className="text-sm font-semibold text-cyan-200">Tillåt anonyma deltagare</label>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Beskrivning</label>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              rows={4}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Tillåt anonyma deltagare</label>
-            <input
-              type="checkbox"
-              name="allowAnonymous"
-              checked={form.allowAnonymous}
-              onChange={handleChange}
-            />
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Målgrupp</label>
-            <select
-              name="audience"
-              value={form.audience}
-              onChange={handleChange}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            >
-              {audienceOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-gray-400">Tillgängliga frågor: {maxQuestionsPerAudience[form.audience] || 0}</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Svårighetsgrad</label>
-            <select
-              name="difficulty"
-              value={form.difficulty}
-              onChange={handleChange}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            >
-              {difficultyOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Antal frågor</label>
-            <input
-              type="number"
-              name="questionCount"
-              min={3}
-              max={20}
-              value={form.questionCount}
-              onChange={handleChange}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-semibold text-cyan-200">Rundans längd (meter)</label>
-            <input
-              type="number"
-              name="lengthMeters"
-              min={500}
-              max={10000}
-              step={100}
-              value={form.lengthMeters}
-              onChange={handleChange}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            />
-          </div>
+
           <button
             type="submit"
-            className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+            className="w-full rounded-lg bg-cyan-500 px-4 py-4 font-bold text-black hover:bg-cyan-400 text-lg"
           >
-            Skapa runda
+            🎯 Skapa runda
           </button>
-        </div>
-      </form>
+        </form>
 
-      {currentRun && (
-        <aside className="rounded-lg border border-cyan-500/40 bg-slate-900/60 p-6 space-y-4">
-          <h2 className="text-xl font-semibold">Aktiv runda</h2>
-          <dl className="grid gap-2 md:grid-cols-2">
-            <div>
-              <dt className="text-sm text-gray-400">Namn</dt>
-              <dd className="font-medium">{currentRun.name}</dd>
+        {currentRun && (
+          <div className="space-y-6">
+            {/* QR-kod sektion */}
+            <div className="rounded-lg border border-emerald-500/40 bg-emerald-900/20 p-6 text-center">
+              <h2 className="text-xl font-bold mb-4 text-emerald-200">🎉 Runda skapad!</h2>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
+                  <p className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4">
+                    {currentRun.joinCode}
+                  </p>
+                </div>
+
+                <div className="flex justify-center">
+                  <QRCodeDisplay
+                    value={buildJoinLink(currentRun.joinCode)}
+                    title="QR-kod för anslutning"
+                    description="Låt deltagarna skanna denna kod"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 mt-6">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(currentRun.joinCode)}
+                    className="rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400"
+                  >
+                    📋 Kopiera anslutningskod
+                  </button>
+                  <button
+                    onClick={() => navigate(`/run/${currentRun.id}/admin`)}
+                    className="rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
+                  >
+                    🎮 Öppna administratörsvy
+                  </button>
+                </div>
+              </div>
             </div>
-            <div>
-              <dt className="text-sm text-gray-400">Anslutningskod</dt>
-              <dd className="font-mono text-lg">{currentRun.joinCode}</dd>
+
+            {/* Rundinfo */}
+            <div className="rounded-lg border border-slate-600 bg-slate-900/60 p-4">
+              <h3 className="font-semibold text-cyan-200 mb-3">Rundans detaljer</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Namn:</span>
+                  <span className="font-medium">{currentRun.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Antal frågor:</span>
+                  <span className="font-medium">{currentRun.questionCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Längd:</span>
+                  <span className="font-medium">{currentRun.lengthMeters}m</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Målgrupp:</span>
+                  <span className="font-medium capitalize">{currentRun.audience}</span>
+                </div>
+              </div>
             </div>
-            <div>
-              <dt className="text-sm text-gray-400">Antal frågor</dt>
-              <dd>{currentRun.questionCount}</dd>
-            </div>
-            <div>
-              <dt className="text-sm text-gray-400">Status</dt>
-              <dd className="capitalize">{currentRun.status}</dd>
-            </div>
-          </dl>
-          <div className="space-y-3">
-            <h3 className="text-lg font-medium">Rutt på karta</h3>
-            <RunMap
-              checkpoints={currentRun.checkpoints || []}
-              userPosition={null}
-              activeOrder={0}
-              answeredCount={0}
-              route={currentRun.route}
-            />
-            {!currentRun.route && (
-              <button
-                type="button"
-                onClick={async () => {
-                  console.log('Lägger till rutt-data för befintlig runda...');
-                  try {
-                    // Importera route service för att generera rutt
-                    const { generateWalkingRoute } = await import('../services/routeService');
-                    const origin = currentRun.checkpoints?.[0]?.location || FALLBACK_POSITION;
-
-                    // Generera route-data
-                    const routeData = await generateWalkingRoute({
-                      origin,
-                      lengthMeters: currentRun.lengthMeters || 2000,
-                      checkpointCount: currentRun.checkpoints?.length || 6
-                    });
-
-                    if (routeData.route && routeData.route.length > 0) {
-                      // Uppdatera den befintliga rundan med route-data
-                      // Hämta och uppdatera från Firestore
-                      const updatedRun = { ...currentRun, route: routeData.route };
-
-                      // Uppdatera i Firestore genom att använda samma serialize-metod
-                      const { getFirebaseDb } = await import('../firebaseClient');
-                      const { doc, setDoc } = await import('firebase/firestore');
-                      const db = getFirebaseDb();
-                      const serialize = (payload) => JSON.parse(JSON.stringify(payload));
-
-                      await setDoc(doc(db, 'runs', currentRun.id), serialize(updatedRun));
-
-                      console.log('Route-data tillagd! Ladda om sidan för att se ändringen.');
-                      window.location.reload();
-                    }
-                  } catch (error) {
-                    console.error('Kunde inte lägga till route-data:', error);
-                    alert('Kunde inte lägga till route-data: ' + error.message);
-                  }
-                }}
-                className="rounded bg-yellow-500 px-4 py-2 font-semibold text-black hover:bg-yellow-400"
-              >
-                🗺️ Lägg till rutt-data
-              </button>
-            )}
           </div>
-
-          <QRCodeDisplay
-            value={buildJoinLink(currentRun.joinCode)}
-            title="QR för anslutning"
-            description="Dela med deltagare genom att låta dem skanna koden."
-          />
-          <div>
-            <h3 className="font-semibold text-cyan-200 mb-2">Deltagare ({participants.length})</h3>
-            <ul className="space-y-1 text-sm">
-              {participants.length === 0 && <li className="text-gray-400">Inga deltagare har anslutit ännu.</li>}
-              {participants.map((participant) => {
-                const statusMeta = describeParticipantStatus(participant.status);
-                return (
-                  <li key={participant.id} className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${statusMeta.dotClass}`} />
-                      <span>{participant.alias}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400">{participant.score} poäng</span>
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${statusMeta.pillClass}`}>
-                        {statusMeta.label}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </aside>
-      )}
+        )}
+      </div>
     </div>
   );
 };
