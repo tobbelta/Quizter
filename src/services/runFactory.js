@@ -155,7 +155,8 @@ export const buildHostedRun = async ({
   questionCount = 8,
   type = 'hosted',
   lengthMeters = 2000,
-  allowAnonymous = true
+  allowAnonymous = true,
+  origin = null
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount });
   const joinCode = generateJoinCode();
@@ -169,10 +170,10 @@ export const buildHostedRun = async ({
       console.debug('[RunFactory] buildHostedRun: genererar route-data för hosted runda');
     }
 
-    // Använd en standard startpunkt (kan göras konfigurerbar senare)
-    const origin = FALLBACK_POSITION;
+    // Använd GPS-position från admin eller fallback till Kalmar
+    const startOrigin = origin || FALLBACK_POSITION;
     const routeData = await generateWalkingRoute({
-      origin,
+      origin: startOrigin,
       lengthMeters,
       checkpointCount: questions.length
     });
@@ -203,14 +204,14 @@ export const buildHostedRun = async ({
       }
     } else {
       // Fallback om route-generering misslyckas
-      const origin = FALLBACK_POSITION;
-      checkpoints = createHostedCheckpoints(questions, origin);
+      const fallbackOrigin = origin || FALLBACK_POSITION;
+      checkpoints = createHostedCheckpoints(questions, fallbackOrigin);
     }
   } catch (error) {
     console.warn('[RunFactory] buildHostedRun: kunde inte generera route-data:', error);
     // Fallback till gamla metoden
-    const origin = FALLBACK_POSITION;
-    checkpoints = createHostedCheckpoints(questions, origin);
+    const errorOrigin = origin || FALLBACK_POSITION;
+    checkpoints = createHostedCheckpoints(questions, errorOrigin);
   }
 
   const run = {
