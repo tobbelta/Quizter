@@ -9,7 +9,7 @@ import { QUESTION_BANK } from '../data/questions';
 
 const AdminQuestionsPage = () => {
   const navigate = useNavigate();
-  const { currentUser, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

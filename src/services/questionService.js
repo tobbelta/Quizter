@@ -168,7 +168,6 @@ export const questionService = {
       throw new Error('Fråga hittades inte');
     }
 
-    const question = cachedQuestions[questionIndex];
 
     // Kontrollera om det är en bas-fråga från QUESTION_BANK
     const isBaseQuestion = QUESTION_BANK.some(q => q.id === questionId);
