@@ -310,8 +310,6 @@ const CreateRunPage = () => {
 
                     if (routeData.route && routeData.route.length > 0) {
                       // Uppdatera den befintliga rundan med route-data
-                      const { runRepository } = await import('../repositories/runRepository');
-
                       // Hämta och uppdatera från Firestore
                       const updatedRun = { ...currentRun, route: routeData.route };
 

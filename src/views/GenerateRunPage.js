@@ -222,6 +222,8 @@ const GenerateRunPage = () => {
                         name: currentRun.createdByName || 'Regenererad'
                       });
                       console.log('Ny runda skapad med route-data!');
+                      // Navigera till den nya rundan
+                      navigate(`/run/${newRun.id}`);
                     } catch (error) {
                       console.error('Kunde inte regenerera:', error);
                     }
