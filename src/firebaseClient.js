@@ -174,10 +174,11 @@ export {
 /**
  * Default export med alla funktioner samlade (för bakåtkompatibilitet)
  */
-export default {
+const firebaseClient = {
   getFirebaseApp: hämtaFirebaseApp,
   getFirebaseDb: hämtaFirebaseDb,
   getFirebaseAuth: hämtaFirebaseAuth,
   hasFirebaseConfig: harFirebaseKonfiguration
 };
 
+export default firebaseClient;

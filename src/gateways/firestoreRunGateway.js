@@ -23,8 +23,7 @@ import {
   query,
   setDoc,
   updateDoc,
-  where,
-  writeBatch
+  where
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
@@ -365,7 +364,3 @@ export const firestoreRunGateway = {
 };
 
 export default firestoreRunGateway;
-
-
-
-
