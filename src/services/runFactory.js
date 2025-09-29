@@ -228,6 +228,7 @@ export const buildHostedRun = async ({
     qrSlug: joinCode.toLowerCase(),
     checkpoints,
     route,
+    startPoint: origin || FALLBACK_POSITION, // Spara startpunkten
     questionIds: questions.map((question) => question.id)
   };
 
@@ -274,6 +275,7 @@ export const buildGeneratedRun = async ({
     qrSlug: joinCode.toLowerCase(),
     checkpoints: checkpointData.checkpoints,
     route: checkpointData.route, // Spara den faktiska rutten om tillgänglig
+    startPoint: origin || FALLBACK_POSITION, // Spara startpunkten
     questionIds: questions.map((question) => question.id)
   };
 

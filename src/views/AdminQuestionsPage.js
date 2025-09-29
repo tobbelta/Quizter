@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import { QUESTION_BANK } from '../data/questions';
+import PaymentSettings from '../components/admin/PaymentSettings';
 
 const AdminQuestionsPage = () => {
   const navigate = useNavigate();
@@ -132,6 +133,9 @@ const AdminQuestionsPage = () => {
             </select>
           </div>
         </div>
+
+        {/* Betalningsinställningar */}
+        <PaymentSettings />
       </header>
 
       {isLoading ? (
