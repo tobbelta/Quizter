@@ -264,17 +264,30 @@ const CreateRunPage = () => {
               <div className="space-y-4">
                 <div>
                   <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
-                  <p className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4">
+                  <button
+                    onClick={() => navigate(`/join/${createdRun.joinCode}`)}
+                    className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4 hover:bg-slate-700 transition-colors w-full cursor-pointer"
+                    title="Klicka för att ansluta till rundan som spelare"
+                  >
                     {createdRun.joinCode}
+                  </button>
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    👆 Klicka koden för att ansluta som spelare
                   </p>
                 </div>
 
                 <div className="flex justify-center">
-                  <QRCodeDisplay
-                    value={buildJoinLink(createdRun.joinCode)}
-                    title="QR-kod för anslutning"
-                    description="Låt deltagarna skanna denna kod"
-                  />
+                  <div
+                    onClick={() => navigate(`/join/${createdRun.joinCode}`)}
+                    className="cursor-pointer hover:opacity-80 transition-opacity"
+                    title="Klicka QR-koden för att ansluta som spelare"
+                  >
+                    <QRCodeDisplay
+                      value={buildJoinLink(createdRun.joinCode)}
+                      title="QR-kod för anslutning"
+                      description="Klicka eller skanna för att ansluta"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 mt-6">

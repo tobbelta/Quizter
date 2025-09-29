@@ -110,6 +110,16 @@ const RunAdminPage = () => {
               <div className="space-y-3">
                 <button
                   onClick={() => {
+                    navigate(`/join/${currentRun.joinCode}`);
+                    setMenuOpen(false);
+                  }}
+                  className="w-full rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400 text-left"
+                >
+                  🎮 Anslut som spelare
+                </button>
+
+                <button
+                  onClick={() => {
                     navigator.clipboard.writeText(currentRun.joinCode);
                     setMenuOpen(false);
                   }}
@@ -229,11 +239,34 @@ const RunAdminPage = () => {
         {/* QR-kod sektion */}
         <div className="rounded-lg border border-cyan-500/40 bg-slate-900/60 p-6 text-center">
           <h2 className="text-lg font-semibold mb-4 text-cyan-200">📱 QR-kod för anslutning</h2>
-          <QRCodeDisplay
-            value={joinLink}
-            title="Anslutningslänk"
-            description="Dela med deltagare"
-          />
+
+          {/* Klickbar anslutningskod */}
+          <div className="mb-4">
+            <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
+            <button
+              onClick={() => navigate(`/join/${currentRun.joinCode}`)}
+              className="text-2xl font-mono font-bold text-white bg-slate-800 rounded-lg py-2 px-4 hover:bg-slate-700 transition-colors cursor-pointer"
+              title="Klicka för att ansluta till rundan som spelare"
+            >
+              {currentRun.joinCode}
+            </button>
+            <p className="text-xs text-gray-400 mt-1">
+              👆 Klicka koden för att ansluta som spelare
+            </p>
+          </div>
+
+          {/* Klickbar QR-kod */}
+          <div
+            onClick={() => navigate(`/join/${currentRun.joinCode}`)}
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            title="Klicka QR-koden för att ansluta som spelare"
+          >
+            <QRCodeDisplay
+              value={joinLink}
+              title="QR-kod för anslutning"
+              description="Klicka eller skanna för att ansluta"
+            />
+          </div>
           <p className="text-xs text-gray-400 mt-3">
             Länk: {joinLink}
           </p>
