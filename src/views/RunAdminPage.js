@@ -12,7 +12,7 @@ import { buildJoinLink } from '../utils/joinLink';
 const RunAdminPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { currentRun, participants, loadRunById, refreshParticipants, closeRun } = useRun();
+  const { currentRun, participants, loadRunById, refreshParticipants, closeRun, updateRun } = useRun();
 
   useEffect(() => {
     if (!currentRun || currentRun.id !== runId) {
@@ -61,6 +61,20 @@ const RunAdminPage = () => {
             className="rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
           >
             Kopiera anslutningskod
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await updateRun({ status: currentRun.status || 'active' });
+                console.log('Runda sparad');
+              } catch (error) {
+                console.error('Kunde inte spara runda', error);
+              }
+            }}
+            className="rounded bg-green-500 px-4 py-2 font-semibold text-black hover:bg-green-400"
+          >
+            Spara runda
           </button>
           <button
             type="button"

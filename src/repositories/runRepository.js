@@ -19,6 +19,7 @@ const createLocalRepository = () => ({
   getRunByCode: wrapSync(runService.getRunByCode),
   createRun: runService.createRun, // Nu async
   generateRouteRun: wrapSync(runService.generateRouteRun),
+  updateRun: wrapSync(runService.updateRun || (() => { throw new Error('updateRun inte implementerad för lokal service'); })),
   listParticipants: wrapSync(runService.listParticipants),
   registerParticipant: wrapSync(runService.registerParticipant),
   recordAnswer: wrapSync(runService.recordAnswer),
