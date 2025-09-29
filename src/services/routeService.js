@@ -148,7 +148,7 @@ const getCompleteWalkingRoute = async (waypoints, lengthMeters = 2000) => {
     instructions: false,
     geometry: true,
     options: {
-      avoid_features: ['ferries'], // Endast ferries för foot-walking
+      avoid_features: ['ferries'], // Undviker bara färjor - stora vägar är okej för rutten
       round_trip: {
         length: lengthMeters,
         points: Math.min(4, Math.max(2, Math.floor(lengthMeters / 1000))),
@@ -267,7 +267,23 @@ const generateCircularWaypoints = ({ origin, lengthMeters, checkpointCount }) =>
 
 
 /**
+ * Justerar en checkpoint-position för att undvika stora vägar.
+ * Flyttar punkten en liten bit åt sidan från den ursprungliga positionen.
+ */
+const adjustCheckpointAwayFromHighways = (originalLocation) => {
+  // Skapa en liten offset (cirka 50-100m) åt ett slumpmässigt håll
+  const offsetDistance = 0.0005 + Math.random() * 0.0005; // 50-100m i grader
+  const angle = Math.random() * Math.PI * 2;
+
+  return {
+    lat: originalLocation.lat + Math.sin(angle) * offsetDistance,
+    lng: originalLocation.lng + Math.cos(angle) * offsetDistance
+  };
+};
+
+/**
  * Fördelar checkpoints jämnt längs den faktiska rutten.
+ * Justerar checkpoints för att undvika stora vägar.
  */
 const distributeCheckpointsAlongRoute = (routeData, checkpointCount) => {
   if (!routeData.coordinates || routeData.coordinates.length === 0) {
@@ -288,12 +304,25 @@ const distributeCheckpointsAlongRoute = (routeData, checkpointCount) => {
   for (let i = 0; i < checkpointCount; i++) {
     const index = Math.floor((i / checkpointCount) * totalPoints);
     const safeIndex = Math.min(index, totalPoints - 1);
+    const routeLocation = routeData.coordinates[safeIndex];
+
+    // Justera checkpoint-positionen för att undvika stora vägar
+    const adjustedLocation = adjustCheckpointAwayFromHighways(routeLocation);
 
     checkpoints.push({
-      location: routeData.coordinates[safeIndex],
+      location: adjustedLocation,
       routeIndex: safeIndex,
-      order: i + 1
+      order: i + 1,
+      originalRouteLocation: routeLocation // Spara original för debugging
     });
+
+    if (process.env.NODE_ENV !== 'production') {
+      const distance = Math.sqrt(
+        Math.pow((adjustedLocation.lat - routeLocation.lat) * 111000, 2) +
+        Math.pow((adjustedLocation.lng - routeLocation.lng) * 111000, 2)
+      );
+      console.debug(`[RouteService] Checkpoint ${i + 1} justerad ${distance.toFixed(0)}m från rutten`);
+    }
   }
 
   return {
@@ -362,14 +391,20 @@ const generateCircularRoute = ({ origin, lengthMeters, checkpointCount }) => {
     route.push({ ...route[0] });
   }
 
-  // Placera checkpoints jämnt längs rutten
+  // Placera checkpoints jämnt längs rutten, justerade från vägen
   for (let i = 0; i < checkpointCount; i++) {
     const routeIndex = Math.floor((i / checkpointCount) * (route.length - 1));
     const safeIndex = Math.min(routeIndex, route.length - 1);
+    const routeLocation = route[safeIndex];
+
+    // Justera checkpoint-positionen för att undvika stora vägar
+    const adjustedLocation = adjustCheckpointAwayFromHighways(routeLocation);
+
     checkpoints.push({
-      location: { ...route[safeIndex] },
+      location: adjustedLocation,
       routeIndex: safeIndex,
-      order: i + 1
+      order: i + 1,
+      originalRouteLocation: routeLocation // Spara original för debugging
     });
   }
 

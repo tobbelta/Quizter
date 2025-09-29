@@ -2,11 +2,36 @@
  * Visar rundans checkpoints på en Leaflet-karta, följer spelaren och visar ruttens riktning.
  */
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-polylinedecorator'; // Importera för att rita pilar
 import L from 'leaflet'; // Behövs för PolylineDecorator
 import { DEFAULT_CENTER } from '../../utils/constants';
+
+// Skapa en custom ikon för startpunkten
+const createStartFinishIcon = () => {
+  return L.divIcon({
+    html: `
+      <div style="
+        background: #22c55e;
+        color: white;
+        border: 3px solid white;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: bold;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      ">🏁</div>
+    `,
+    className: 'custom-start-finish-icon',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  });
+};
 
 /**
  * Håller kartvyn centrerad på den aktiva positionen utan att skapa loops.
@@ -74,7 +99,7 @@ const RouteArrowDecorator = ({ route }) => {
 /**
  * Renderar hela kartkomponenten inklusive polyline, checkpoints och spelarmarkör.
  */
-const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }) => {
+const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, startPoint }) => {
   const positions = useMemo(() => checkpoints.map((checkpoint) => [checkpoint.location.lat, checkpoint.location.lng]), [checkpoints]);
 
   // Använd faktisk rutt om tillgänglig, annars fallback till raka linjer mellan checkpoints
@@ -107,9 +132,14 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
       return { center: [userPosition.lat, userPosition.lng], zoom: 17 };
     }
 
-    // Beräkna bounding box för alla checkpoints
-    const lats = positions.map(pos => pos[0]);
-    const lngs = positions.map(pos => pos[1]);
+    // Beräkna bounding box för alla checkpoints och startpunkt
+    const allPositions = [...positions];
+    if (startPoint) {
+      allPositions.push([startPoint.lat, startPoint.lng]);
+    }
+
+    const lats = allPositions.map(pos => pos[0]);
+    const lngs = allPositions.map(pos => pos[1]);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
@@ -132,7 +162,7 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
     else calculatedZoom = 14;                      // Mycket stor runda
 
     return { center: [centerLat, centerLng], zoom: calculatedZoom };
-  }, [userPosition, positions]);
+  }, [userPosition, positions, startPoint]);
 
   return (
     <div className="h-full w-full overflow-hidden relative">
@@ -198,6 +228,13 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
             />
           );
         })}
+        {/* Startpunkt/Målpunkt - visas med flagg-ikon */}
+        {startPoint && (
+          <Marker
+            position={[startPoint.lat, startPoint.lng]}
+            icon={createStartFinishIcon()}
+          />
+        )}
         {userPosition && (
           <CircleMarker
             center={[userPosition.lat, userPosition.lng]}

@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
+import PaymentModal from '../components/payment/PaymentModal';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
@@ -17,6 +18,9 @@ const JoinRunPage = () => {
   const [contact, setContact] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPayment, setShowPayment] = useState(false);
+  const [runToJoin, setRunToJoin] = useState(null);
+  const [participantData, setParticipantData] = useState(null);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -48,19 +52,57 @@ const JoinRunPage = () => {
     }
 
     try {
+      // Först anslut till rundan för att få run-info
       const { run } = await joinRunByCode(code, {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
         isAnonymous: participantUser?.isAnonymous
       });
-      setSuccess(`Du är ansluten till ${run.name}!`);
-      setTimeout(() => {
-        navigate(`/run/${run.id}/play`);
-      }, 600);
+
+      // Spara data för betalning
+      setRunToJoin(run);
+      setParticipantData({
+        userId: participantUser?.isAnonymous ? null : participantUser?.id,
+        alias: participantUser?.name,
+        contact: participantUser?.contact,
+        isAnonymous: participantUser?.isAnonymous
+      });
+
+      // Visa betalningsmodal
+      setShowPayment(true);
     } catch (joinError) {
       setError(joinError.message);
     }
+  };
+
+  const handlePaymentSuccess = (paymentResult) => {
+    setShowPayment(false);
+
+    const successMessage = paymentResult.skipped
+      ? `Gratis tillgång beviljad! Du är nu ansluten till ${runToJoin.name}!`
+      : `Betalning genomförd! Du är nu ansluten till ${runToJoin.name}!`;
+
+    setSuccess(successMessage);
+
+    // Spara betalningsstatus i localStorage för kontroll senare
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`geoquest:payment:${runToJoin.id}`, JSON.stringify({
+        paymentIntentId: paymentResult.paymentIntentId,
+        testMode: paymentResult.testMode,
+        skipped: paymentResult.skipped || false,
+        timestamp: new Date().toISOString()
+      }));
+    }
+
+    setTimeout(() => {
+      navigate(`/run/${runToJoin.id}/play`);
+    }, 600);
+  };
+
+  const handlePaymentCancel = () => {
+    setShowPayment(false);
+    setError('Betalning avbruten. Du måste betala för att delta i rundan.');
   };
 
   return (
@@ -116,6 +158,17 @@ const JoinRunPage = () => {
           Anslut till runda
         </button>
       </form>
+
+      {/* Betalningsmodal */}
+      <PaymentModal
+        isOpen={showPayment}
+        runName={runToJoin?.name || ''}
+        amount={500} // 5 kr
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
+        runId={runToJoin?.id}
+        participantId={participantData?.userId}
+      />
     </div>
   );
 };

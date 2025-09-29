@@ -9,6 +9,7 @@ import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
+import { paymentService } from '../services/paymentService';
 
 /**
  * Karttext för att visa status kring GPS och manuellt läge.
@@ -49,8 +50,10 @@ const PlayRunPage = () => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [error, setError] = useState('');
+  const [paymentVerified, setPaymentVerified] = useState(false);
   const [questionVisible, setQuestionVisible] = useState(true);
   const [distanceToCheckpoint, setDistanceToCheckpoint] = useState(null);
+  const [distanceToStart, setDistanceToStart] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
@@ -73,6 +76,47 @@ const PlayRunPage = () => {
   useEffect(() => {
     refreshParticipants().catch((err) => console.warn('Kunde inte uppdatera deltagare', err));
   }, [refreshParticipants]);
+
+  // Verifiera betalning
+  useEffect(() => {
+    if (!currentRun) return;
+
+    const verifyPayment = () => {
+      // I test-läge: betalning alltid verifierad
+      if (paymentService.getTestMode()) {
+        setPaymentVerified(true);
+        return;
+      }
+
+      // Kontrollera localStorage för betalningsstatus
+      if (typeof window !== 'undefined') {
+        const paymentData = localStorage.getItem(`geoquest:payment:${currentRun.id}`);
+        if (paymentData) {
+          try {
+            const payment = JSON.parse(paymentData);
+            // Kontrollera att betalning inte är för gammal (24 timmar)
+            const paymentTime = new Date(payment.timestamp);
+            const now = new Date();
+            const hoursDiff = (now - paymentTime) / (1000 * 60 * 60);
+
+            // Acceptera betalning, test-läge eller överhoppad betalning inom 24 timmar
+            if (hoursDiff < 24 && (payment.paymentIntentId || payment.testMode || payment.skipped)) {
+              setPaymentVerified(true);
+              return;
+            }
+          } catch (err) {
+            console.warn('Kunde inte läsa betalningsdata:', err);
+          }
+        }
+      }
+
+      // Ingen giltig betalning hittad
+      setPaymentVerified(false);
+      setError('Du måste betala för att delta i denna runda. Gå tillbaka och anslut igen.');
+    };
+
+    verifyPayment();
+  }, [currentRun]);
 
   const manualMode = !trackingEnabled || locationStatus === 'denied' || locationStatus === 'unsupported';
 
@@ -120,7 +164,18 @@ const PlayRunPage = () => {
     setDistanceToCheckpoint(distance);
   }, [coords, nextCheckpoint]);
 
+  // Beräkna avstånd till startpunkt
+  useEffect(() => {
+    if (!coords || !currentRun?.startPoint) {
+      setDistanceToStart(null);
+      return;
+    }
+    const distance = calculateDistanceMeters(coords, currentRun.startPoint);
+    setDistanceToStart(distance);
+  }, [coords, currentRun?.startPoint]);
+
   const nearCheckpoint = trackingEnabled && distanceToCheckpoint != null && distanceToCheckpoint <= PROXIMITY_THRESHOLD_METERS;
+  const nearStartPoint = trackingEnabled && distanceToStart != null && distanceToStart <= PROXIMITY_THRESHOLD_METERS;
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
   const shouldShowQuestion =
@@ -132,7 +187,8 @@ const PlayRunPage = () => {
     : null;
 
   const answeredCount = currentParticipant?.answers?.length || 0;
-  const hasCompleted = answeredCount >= orderedQuestions.length;
+  const hasAnsweredAll = answeredCount >= orderedQuestions.length;
+  const hasCompleted = hasAnsweredAll && (manualMode || nearStartPoint);
 
   /** Skickar in valt svar och visar feedback kortvarigt. */
   const handleSubmit = async (event) => {
@@ -187,11 +243,35 @@ const PlayRunPage = () => {
     }
   };
 
-  if (error) {
+  if (error || !paymentVerified) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
-        <h1 className="text-2xl font-semibold mb-4">Något gick fel</h1>
-        <p className="text-red-300">{error}</p>
+        <h1 className="text-2xl font-semibold mb-4">
+          {!paymentVerified ? 'Betalning krävs' : 'Något gick fel'}
+        </h1>
+        <p className="text-red-300 mb-4">
+          {!paymentVerified
+            ? 'Du måste betala för att delta i denna runda.'
+            : error
+          }
+        </p>
+        {!paymentVerified && (
+          <div className="space-y-3">
+            <button
+              onClick={() => navigate('/join')}
+              className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+            >
+              Gå tillbaka för att betala
+            </button>
+            {paymentService.getTestMode() && (
+              <div className="bg-emerald-900/30 border border-emerald-500/50 rounded p-3 text-center">
+                <p className="text-emerald-200 text-sm">
+                  🧪 Test-läge är aktiverat - betalning hoppas över automatiskt
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -310,14 +390,24 @@ const PlayRunPage = () => {
               </section>
 
               {/* Position info */}
-              {nextCheckpoint && distanceToCheckpoint !== null && (
+              {(nextCheckpoint || currentRun?.startPoint) && (distanceToCheckpoint !== null || distanceToStart !== null) && (
                 <section>
                   <h2 className="text-lg font-semibold text-cyan-200 mb-3">Position</h2>
-                  <p className="text-sm text-gray-300">
-                    Avstånd till nästa checkpoint: <span className="font-semibold">{formatDistance(distanceToCheckpoint)}</span>
-                  </p>
+                  {nextCheckpoint && distanceToCheckpoint !== null && (
+                    <p className="text-sm text-gray-300">
+                      Avstånd till nästa checkpoint: <span className="font-semibold">{formatDistance(distanceToCheckpoint)}</span>
+                    </p>
+                  )}
+                  {distanceToStart !== null && (
+                    <p className="text-sm text-gray-300">
+                      Avstånd till startpunkt: <span className="font-semibold">{formatDistance(distanceToStart)}</span>
+                    </p>
+                  )}
                   {trackingEnabled && nearCheckpoint && (
                     <p className="text-sm text-emerald-300 mt-2">Du är nästan framme vid nästa checkpoint!</p>
+                  )}
+                  {trackingEnabled && hasAnsweredAll && nearStartPoint && (
+                    <p className="text-sm text-emerald-300 mt-2">Du är tillbaka vid startpunkten! Klicka för att se resultat.</p>
                   )}
                 </section>
               )}
@@ -345,6 +435,7 @@ const PlayRunPage = () => {
           activeOrder={currentOrderIndex}
           answeredCount={answeredCount}
           route={currentRun.route}
+          startPoint={currentRun.startPoint}
         />
 
         {/* Frågeoverlay över kartan */}
@@ -392,18 +483,47 @@ const PlayRunPage = () => {
         )}
 
         {/* Avsluta runda-knapp när alla frågor är besvarade */}
-        {hasCompleted && (
+        {hasAnsweredAll && (
           <div className="absolute inset-x-4 top-4 z-30">
-            <div className="bg-emerald-900/95 backdrop-blur-sm rounded-xl border border-emerald-500/40 p-4 text-center shadow-xl">
-              <h2 className="text-lg font-semibold text-emerald-200 mb-2">🎉 Alla frågor besvarade!</h2>
-              <p className="text-emerald-100 text-sm mb-3">Du har {currentParticipant?.score || 0} poäng av {orderedQuestions.length} möjliga.</p>
-              <button
-                type="button"
-                onClick={handleFinish}
-                className="w-full rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
-              >
-                Se resultat och ställning
-              </button>
+            <div className={`backdrop-blur-sm rounded-xl border p-4 text-center shadow-xl ${
+              hasCompleted
+                ? 'bg-emerald-900/95 border-emerald-500/40'
+                : 'bg-amber-900/95 border-amber-500/40'
+            }`}>
+              {hasCompleted ? (
+                <>
+                  <h2 className="text-lg font-semibold text-emerald-200 mb-2">🎉 Runda avslutad!</h2>
+                  <p className="text-emerald-100 text-sm mb-3">Du har svarat på alla frågor och är tillbaka vid startpunkten!</p>
+                  <button
+                    type="button"
+                    onClick={handleFinish}
+                    className="w-full rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
+                  >
+                    Se resultat och ställning
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-lg font-semibold text-amber-200 mb-2">🚶 Alla frågor besvarade!</h2>
+                  <p className="text-amber-100 text-sm mb-3">
+                    {manualMode
+                      ? 'Du har svarat på alla frågor. Klicka för att se resultat.'
+                      : 'Gå tillbaka till startpunkten for att avsluta rundan.'
+                    }
+                  </p>
+                  {manualMode ? (
+                    <button
+                      type="button"
+                      onClick={handleFinish}
+                      className="w-full rounded-lg bg-amber-500 px-4 py-2 font-semibold text-black hover:bg-amber-400"
+                    >
+                      Se resultat och ställning
+                    </button>
+                  ) : (
+                    <p className="text-xs text-amber-200">Avstånd till startpunkt: {distanceToStart ? formatDistance(distanceToStart) : '?'}</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
