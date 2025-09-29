@@ -4,6 +4,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
 import { questionService } from './questionService';
+import { generateWalkingRoute } from './routeService';
+import { FALLBACK_POSITION } from '../utils/constants';
 
 /**
  * Skapar en slumpad anslutningskod utan lättförväxlade tecken.
@@ -53,37 +55,82 @@ const pickQuestions = ({ audience, difficulty, questionCount }) => {
 /**
  * Skapar checkpoint-listan för en handplanerad runda. Placeringarna sprids runt startposition.
  */
-const createHostedCheckpoints = (questions) => questions.map((question, index) => ({
-  order: index + 1,
-  location: {
-    lat: 56.6616 + (Math.random() - 0.5) * 0.01,
-    lng: 16.363 + (Math.random() - 0.5) * 0.01
-  },
-  questionId: question.id,
-  title: `Fråga ${index + 1}`
-}));
+const createHostedCheckpoints = (questions, origin = FALLBACK_POSITION) => questions.map((question, index) => {
+  // Skapa en liten cirkel runt startpunkten
+  const angle = (index / questions.length) * Math.PI * 2;
+  const radius = 0.002; // Cirka 200m radie
+  const offsetLat = Math.sin(angle) * radius;
+  const offsetLng = Math.cos(angle) * radius;
+
+  return {
+    order: index + 1,
+    location: {
+      lat: origin.lat + offsetLat + (Math.random() - 0.5) * 0.001, // Lite variation
+      lng: origin.lng + offsetLng + (Math.random() - 0.5) * 0.001
+    },
+    questionId: question.id,
+    title: `Fråga ${index + 1}`
+  };
+});
 
 /**
  * Skapar en cirkulär rutt för auto-genererade rundor utifrån längd och startpunkt.
+ * Använder ruttplanering för att följa faktiska gångvägar.
  */
-const createGeneratedCheckpoints = (questions, { lengthMeters = 2500, origin }) => {
-  return questions.map((question, index) => {
-    const angle = (index / questions.length) * Math.PI * 2;
-    const spread = lengthMeters / 1000 / questions.length;
-    const latOffset = Math.sin(angle) * spread * 0.01;
-    const lngOffset = Math.cos(angle) * spread * 0.01;
-    const baseLat = origin?.lat ?? 56.6616;
-    const baseLng = origin?.lng ?? 16.363;
+const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, origin }) => {
+  const baseLat = origin?.lat ?? FALLBACK_POSITION.lat;
+  const baseLng = origin?.lng ?? FALLBACK_POSITION.lng;
+
+  try {
+    // Använd ruttplaneringen för att få riktiga gångvägar
+    const routeData = await generateWalkingRoute({
+      origin: { lat: baseLat, lng: baseLng },
+      lengthMeters,
+      checkpointCount: questions.length
+    });
+
+    // Skapa checkpoints med frågor längs den planerade rutten
+    const mappedCheckpoints = routeData.checkpoints.map((checkpoint, index) => ({
+      order: checkpoint.order,
+      location: checkpoint.location,
+      questionId: questions[index].id,
+      title: `Fråga ${index + 1}`,
+      routeIndex: checkpoint.routeIndex
+    }));
+
+    // Returnera både checkpoints och rutt-data
     return {
-      order: index + 1,
-      location: {
-        lat: baseLat + latOffset,
-        lng: baseLng + lngOffset
-      },
-      questionId: question.id,
-      title: `Fråga ${index + 1}`
+      checkpoints: mappedCheckpoints,
+      route: routeData.route,
+      totalDistance: routeData.totalDistance
     };
-  });
+
+  } catch (error) {
+    console.warn('[RunFactory] Ruttplanering misslyckades, använder cirkulär fallback:', error);
+
+    // Fallback till den gamla cirkular-metoden
+    const fallbackCheckpoints = questions.map((question, index) => {
+      const angle = (index / questions.length) * Math.PI * 2;
+      const spread = lengthMeters / 1000 / questions.length;
+      const latOffset = Math.sin(angle) * spread * 0.01;
+      const lngOffset = Math.cos(angle) * spread * 0.01;
+      return {
+        order: index + 1,
+        location: {
+          lat: baseLat + latOffset,
+          lng: baseLng + lngOffset
+        },
+        questionId: question.id,
+        title: `Fråga ${index + 1}`
+      };
+    });
+
+    return {
+      checkpoints: fallbackCheckpoints,
+      route: null, // Ingen detaljerad rutt i fallback
+      totalDistance: lengthMeters
+    };
+  }
 };
 
 /**
@@ -98,9 +145,9 @@ const stampBaseRun = (run, creator) => ({
 });
 
 /**
- * Bygger en administratörsstyrd runda med fasta checkpoints.
+ * Bygger en administratörsstyrd runda med checkpoints placerade längs rutten.
  */
-export const buildHostedRun = ({
+export const buildHostedRun = async ({
   name,
   description,
   audience = 'family',
@@ -112,7 +159,59 @@ export const buildHostedRun = ({
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount });
   const joinCode = generateJoinCode();
-  const checkpoints = createHostedCheckpoints(questions);
+
+  // Först skapa rutten, sedan placera checkpoints längs den
+  let route = null;
+  let checkpoints = [];
+
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[RunFactory] buildHostedRun: genererar route-data för hosted runda');
+    }
+
+    // Använd en standard startpunkt (kan göras konfigurerbar senare)
+    const origin = FALLBACK_POSITION;
+    const routeData = await generateWalkingRoute({
+      origin,
+      lengthMeters,
+      checkpointCount: questions.length
+    });
+
+    if (routeData.route && routeData.route.length > 0) {
+      route = routeData.route;
+
+      // Placera checkpoints längs den faktiska rutten
+      checkpoints = questions.map((question, index) => {
+        const routeIndex = Math.floor((index / questions.length) * (route.length - 1));
+        const safeIndex = Math.min(routeIndex, route.length - 1);
+
+        return {
+          order: index + 1,
+          location: { ...route[safeIndex] },
+          questionId: question.id,
+          title: `Fråga ${index + 1}`,
+          routeIndex: safeIndex
+        };
+      });
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[RunFactory] buildHostedRun: checkpoints placerade längs rutten', {
+          routePointCount: route.length,
+          checkpointCount: checkpoints.length,
+          checkpointPositions: checkpoints.map(cp => `${cp.order}: route[${cp.routeIndex}]`)
+        });
+      }
+    } else {
+      // Fallback om route-generering misslyckas
+      const origin = FALLBACK_POSITION;
+      checkpoints = createHostedCheckpoints(questions, origin);
+    }
+  } catch (error) {
+    console.warn('[RunFactory] buildHostedRun: kunde inte generera route-data:', error);
+    // Fallback till gamla metoden
+    const origin = FALLBACK_POSITION;
+    checkpoints = createHostedCheckpoints(questions, origin);
+  }
 
   const run = {
     id: uuidv4(),
@@ -127,6 +226,7 @@ export const buildHostedRun = ({
     joinCode,
     qrSlug: joinCode.toLowerCase(),
     checkpoints,
+    route,
     questionIds: questions.map((question) => question.id)
   };
 
@@ -136,7 +236,7 @@ export const buildHostedRun = ({
 /**
  * Bygger en auto-genererad runda inklusive slumpad joinCode och kartpunkter.
  */
-export const buildGeneratedRun = ({
+export const buildGeneratedRun = async ({
   alias,
   audience = 'family',
   difficulty = 'family',
@@ -147,7 +247,17 @@ export const buildGeneratedRun = ({
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount });
   const joinCode = generateJoinCode();
-  const checkpoints = createGeneratedCheckpoints(questions, { lengthMeters, origin });
+  const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin });
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[RunFactory] checkpointData från createGeneratedCheckpoints:', {
+      hasCheckpoints: !!checkpointData.checkpoints,
+      checkpointCount: checkpointData.checkpoints?.length || 0,
+      hasRoute: !!checkpointData.route,
+      routePointCount: checkpointData.route?.length || 0,
+      totalDistance: checkpointData.totalDistance
+    });
+  }
 
   const run = {
     id: uuidv4(),
@@ -161,9 +271,20 @@ export const buildGeneratedRun = ({
     allowAnonymous,
     joinCode,
     qrSlug: joinCode.toLowerCase(),
-    checkpoints,
+    checkpoints: checkpointData.checkpoints,
+    route: checkpointData.route, // Spara den faktiska rutten om tillgänglig
     questionIds: questions.map((question) => question.id)
   };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[RunFactory] Skapad run:', {
+      id: run.id,
+      hasCheckpoints: !!run.checkpoints,
+      checkpointCount: run.checkpoints?.length || 0,
+      hasRoute: !!run.route,
+      routePointCount: run.route?.length || 0
+    });
+  }
 
   return stampBaseRun(run, creator || { id: alias || 'Auto', name: alias || 'Auto-generator' });
 };

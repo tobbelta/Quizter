@@ -197,7 +197,7 @@ export const RunProvider = ({ children }) => {
     const stored = readActiveParticipant();
     if (stored?.runId && stored?.participantId) {
       attachToRun(stored.runId, stored.participantId).catch((error) => {
-        console.warn('Kunde inte återställa deltagare', error);
+        writeActiveParticipant(null);
       });
     }
     setIsRestored(true);
@@ -317,3 +317,5 @@ export const useRun = () => {
   }
   return context;
 };
+
+

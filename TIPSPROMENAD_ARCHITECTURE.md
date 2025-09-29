@@ -2,9 +2,9 @@
 
 ## Målbild
 ## Implementationsstatus
-- **Genomfört**: Ny tipspromenadstruktur med RunContext/AuthContext, lokal körpersistens i runService, realtidsuppdateringar med heartbeat och statusflaggor, QR-koder och join-länkar, UI-flöden för skapa/generera/ansluta/spela/administrera, OpenTDB-import med svensk översättning, förfinad spelkarta (autopan, visuell status) samt grundläggande jest-tester.
+- **Genomfört**: Ny tipspromenadstruktur med RunContext/AuthContext, lokal körpersistens i runService, realtidsuppdateringar med heartbeat och statusflaggor, QR-koder och join-länkar, UI-flöden för skapa/generera/ansluta/spela/administrera, OpenTDB-import med svensk översättning, förfinad spelkarta (autopan, visuell status), grundläggande jest-tester, **samt komplett ruttgenereringssystem med OpenRouteService API-integration**.
 - **Pågående**: Dokumentation av nuläget (detta arbete) och utökade manuella/GPS-flöden för specialfall.
-- **Kvar att bygga**: Riktig backend (Firestore) med säkerhetsregler, automatisk ruttgenerering mot kart-API, realtidsnotiser/push, historikvy för inloggade spelare, offline/synk-stöd, avancerad statistik/export samt end-to-end tester för båda scenarierna.
+- **Kvar att bygga**: Riktig backend (Firestore) med säkerhetsregler, realtidsnotiser/push, historikvy för inloggade spelare, offline/synk-stöd, avancerad statistik/export samt end-to-end tester för båda scenarierna.
 
 - Modern webapp för tipspromenader med två huvudsakliga scenarier: organiserad runda och on-demand genererad runda.
 - Stöd för både inloggade och anonyma deltagare (alias + valfri kontakt).
@@ -94,9 +94,41 @@ questions/{questionId}
 - Cloud Function-skelett (functions/index.js) utlagt med TODO-markeringar för respektive endpoint.
 - Kodbasen är städad från GeoQuest-rester; se docs/KODREFERENS.md för detaljerad funktionsöversikt.
 
+## Ruttgenereringssystem (Implementerat)
+
+### OpenRouteService API Integration
+- **Tjänst**: `src/services/routeService.js` - Komplett implementation av ruttplanering
+- **API**: OpenRouteService foot-walking med round_trip funktionalitet
+- **Konfiguration**: API-nyckel via `.env` med fallback till hårdkodad nyckel
+- **Global funktion**: Fungerar överallt, inte bara Kalmar
+
+### Rutt-algoritm
+```javascript
+// Skapa cirkulära gångrutter med riktiga vägar
+const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCount })
+```
+- Använder OpenRouteService round_trip API för att skapa loopar som börjar och slutar på samma punkt
+- Genererar konservativa waypoints för att undvika vatten och otillgänglig terräng
+- Polyline-dekodning för att konvertera API-geometri till koordinater
+
+### Robust Fallback-system
+- **Rektangulär gatumönster-rutt**: När API misslyckas skapas en fyrkantig rutt som efterliknar stadsgator
+- **Konservativ radie**: Maximalt 400m från centrum för att hålla sig nära gångbara områden
+- **Varierad geometri**: Naturlig variation för att efterlikna riktiga gångvägar
+
+### Checkpoint-placering längs faktiska rutter
+- **Smart placering**: Checkpoints placeras längs den faktiska rutten istället för slumpmässiga positioner
+- **Jämn fördelning**: Frågor sprids ut längs hela rutten baserat på routeIndex
+- **Implementering i runFactory.js**: `buildHostedRun` och `buildGeneratedRun` använder route-data
+
+### Debug och felhantering
+- Omfattande loggning för API-anrop, route-generering och checkpoint-placering
+- Tydlig felhantering med informativa meddelanden
+- Utvecklingsläge med detaljerad debug-output
+
 ## Backend / molnfunktioner
 - `createRun` (admin) – validerar, sparar i Firestore, genererar kod och ev. QR.
-- `generateRoute` (on-demand) – tar lat/lng, längd, difficulty -> kör kartalgoritm (ex. Google Directions API eller OpenRouteService) och returnerar checkpoints.
+- ~~`generateRoute` (on-demand)~~ **IMPLEMENTERAT** – Komplett ruttgenerering med OpenRouteService API i `routeService.js`
 - `submitAnswer` (säker uppdatering) – skriver svar och uppdaterar poäng.
 - `closeRun` / `publishResults`.
 - `createQuestion`, `updateQuestion` (admin).
@@ -130,6 +162,7 @@ questions/{questionId}
 | Område | Status | Kommentar |
 | --- | --- | --- |
 | Autentisering | Delvis | Lokal mock-inloggning för admin/registrerad/gäst, riktig backend saknas. |
+| **Ruttgenerering** | **Klar** | **Komplett OpenRouteService API-integration med fallback-system, global funktion, checkpoint-placering längs faktiska rutter.** |
 | Rundskapande | Klar (lokalt) | Skapa/generera rundor fungerar mot localStorage med QR-kod/anslutningskod. |
 | Spelvy | Pågående | Frågeflöde klart; GPS-karta med autopan/avståndskoll är på plats men kräver fler scenariotester. |
 | Resultat/admin | Klar (lokalt) | Realtidsstatus, listor och exportvy finns; redo för Firestore-koppling. |

@@ -161,8 +161,32 @@ const ensureStorageListeners = (() => {
  */
 const persistRuns = (runs) => {
   ensureCachesLoaded();
+
+  if (process.env.NODE_ENV !== 'production') {
+    const latestRun = runs[runs.length - 1];
+    if (latestRun) {
+      console.debug('[RunService] persistRuns före localStorage:', {
+        id: latestRun.id,
+        hasRoute: !!latestRun.route,
+        routePointCount: latestRun.route?.length || 0
+      });
+    }
+  }
+
   cachedRuns = [...runs];
   writeJson(RUN_STORAGE_KEY, cachedRuns);
+
+  if (process.env.NODE_ENV !== 'production') {
+    const latestRun = cachedRuns[cachedRuns.length - 1];
+    if (latestRun) {
+      console.debug('[RunService] persistRuns efter localStorage:', {
+        id: latestRun.id,
+        hasRoute: !!latestRun.route,
+        routePointCount: latestRun.route?.length || 0
+      });
+    }
+  }
+
   notifyRuns();
 };
 
@@ -213,10 +237,10 @@ export const runService = {
   /**
    * Skapar en administratörsstyrd runda och sparar den lokalt.
    */
-  createRun: (payload, creator) => {
+  createRun: async (payload, creator) => {
     ensureCachesLoaded();
     const runs = cloneRuns();
-    const run = buildHostedRun(payload, creator);
+    const run = await buildHostedRun(payload, creator);
     persistRuns([...runs, run]);
     return run;
   },
@@ -224,11 +248,31 @@ export const runService = {
   /**
    * Genererar en runda åt användaren baserat på vald svårighet och längd.
    */
-  generateRouteRun: (payload, creator) => {
+  generateRouteRun: async (payload, creator) => {
     ensureCachesLoaded();
     const runs = cloneRuns();
-    const run = buildGeneratedRun(payload, creator);
+    const run = await buildGeneratedRun(payload, creator);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[RunService] generateRouteRun får run från buildGeneratedRun:', {
+        id: run.id,
+        hasRoute: !!run.route,
+        routePointCount: run.route?.length || 0,
+        hasCheckpoints: !!run.checkpoints,
+        checkpointCount: run.checkpoints?.length || 0
+      });
+    }
+
     persistRuns([...runs, run]);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[RunService] generateRouteRun returnerar:', {
+        id: run.id,
+        hasRoute: !!run.route,
+        routePointCount: run.route?.length || 0
+      });
+    }
+
     return run;
   },
 
