@@ -1,42 +1,20 @@
 /**
- * Väljer mellan lokal runService och Firestore-gateway beroende på miljö.
+ * Firebase Firestore repository för alla run-operationer.
  */
-import { runService } from '../services/runService';
 import { hasFirebaseConfig } from '../firebaseClient';
 import firestoreRunGateway from '../gateways/firestoreRunGateway';
 
 /**
- * Gör om våra synkrona runService-metoder till async-kontrakt så att gränssnittet matchar Firestore.
+ * Kontrollerar att Firebase är konfigurerat korrekt.
  */
-const wrapSync = (fn) => async (...args) => fn(...args);
+if (!hasFirebaseConfig()) {
+  throw new Error('Firebase måste vara konfigurerat. Kontrollera att alla REACT_APP_FIREBASE_* variabler är satta i .env');
+}
 
 /**
- * Bygger ett repository som bara pratar med localStorage-varianten av runService.
+ * Använder alltid Firebase Firestore för data-operationer.
  */
-const createLocalRepository = () => ({
-  listRuns: wrapSync(runService.listRuns),
-  getRun: wrapSync(runService.getRun),
-  getRunByCode: wrapSync(runService.getRunByCode),
-  createRun: runService.createRun, // Nu async
-  generateRouteRun: wrapSync(runService.generateRouteRun),
-  updateRun: wrapSync(runService.updateRun || (() => { throw new Error('updateRun inte implementerad för lokal service'); })),
-  listParticipants: wrapSync(runService.listParticipants),
-  registerParticipant: wrapSync(runService.registerParticipant),
-  recordAnswer: wrapSync(runService.recordAnswer),
-  completeRun: wrapSync(runService.completeRun),
-  closeRun: wrapSync(runService.closeRun),
-  heartbeatParticipant: wrapSync(runService.heartbeatParticipant),
-  getParticipant: wrapSync(runService.getParticipant),
-  subscribeRuns: runService.subscribeRuns,
-  subscribeParticipants: runService.subscribeParticipants
-});
-
-/**
- * Om Firebase-variabler finns väljer vi molnbackenden, annars kör vi lokalt.
- */
-const repository = hasFirebaseConfig() ? firestoreRunGateway : createLocalRepository();
-
-export const runRepository = repository;
-export const isFirestoreEnabled = hasFirebaseConfig();
+export const runRepository = firestoreRunGateway;
+export const isFirestoreEnabled = true;
 
 export default runRepository;

@@ -12,3 +12,6 @@ export const FALLBACK_POSITION = {
 // Alias för bakåtkompatibilitet
 export const DEFAULT_ORIGIN = FALLBACK_POSITION;
 export const DEFAULT_CENTER = [FALLBACK_POSITION.lat, FALLBACK_POSITION.lng];
+
+// Timeout för att betrakta en deltagare som inaktiv (1 minut)
+export const PARTICIPANT_TIMEOUT_MS = 60000;
