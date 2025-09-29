@@ -97,15 +97,55 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
     return positions;
   }, [route, positions]);
 
-  const center = useMemo(() => {
-    if (userPosition) return [userPosition.lat, userPosition.lng];
-    if (positions.length > 0) return positions[0];
-    return DEFAULT_CENTER;
+  const { center, zoom } = useMemo(() => {
+    if (positions.length === 0) {
+      return { center: DEFAULT_CENTER, zoom: 16 };
+    }
+
+    // Om vi har användarposition, centrera på den
+    if (userPosition) {
+      return { center: [userPosition.lat, userPosition.lng], zoom: 17 };
+    }
+
+    // Beräkna bounding box för alla checkpoints
+    const lats = positions.map(pos => pos[0]);
+    const lngs = positions.map(pos => pos[1]);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+
+    // Centrera på mitten av bounding box
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+
+    // Beräkna lämplig zoom baserat på spridning
+    const latDiff = maxLat - minLat;
+    const lngDiff = maxLng - minLng;
+    const maxDiff = Math.max(latDiff, lngDiff);
+
+    let calculatedZoom = 16;
+    if (maxDiff < 0.001) calculatedZoom = 18;      // Mycket liten runda
+    else if (maxDiff < 0.005) calculatedZoom = 17; // Liten runda
+    else if (maxDiff < 0.01) calculatedZoom = 16;  // Medium runda
+    else if (maxDiff < 0.02) calculatedZoom = 15;  // Stor runda
+    else calculatedZoom = 14;                      // Mycket stor runda
+
+    return { center: [centerLat, centerLng], zoom: calculatedZoom };
   }, [userPosition, positions]);
 
   return (
-    <div className="h-80 w-full overflow-hidden rounded-lg border border-slate-700 shadow-lg">
-      <MapContainer center={center} zoom={16} className="h-full w-full" scrollWheelZoom>
+    <div className="h-full w-full overflow-hidden relative">
+      <MapContainer
+        center={center}
+        zoom={zoom}
+        className="h-full w-full relative z-0"
+        scrollWheelZoom={false}
+        zoomControl={false}
+        doubleClickZoom={false}
+        touchZoom={false}
+        dragging={true}
+      >
         <MapUpdater center={center} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
