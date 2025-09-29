@@ -1,46 +1,36 @@
-# Beroenden
+# Dependencies
 /node_modules
+/.claude
+/.pnp
+.pnp.js
 
-# Bygg-filer
+
+# Testing
+/coverage
+
+# Production
 /build
+
+# Misc
 .DS_Store
-
-# Loggar
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Miljö-variabler
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# Firebase-konfiguration (EXTREMT VIKTIGT)
-src/firebase.js
-src/firebase.js.local
-firebase-adminsdk.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Cypress-filer
-cypress/videos/
-cypress/screenshots/
+# Cache-mappar
+/.cache
+.npm
+.yarn
 
-# PS1-skript
-*.ps1
+# Firebase
+.firebase
+firebase-debug.log
 
-# Claude-relaterade filer och loggar
-.claude/
-debug-server.png
-app-startup.png
-simple-test*.txt
-test-output.txt
-test[0-9]*.txt
-remember.txt
-*TEST-RESULTS*.txt
-src/utils/fileLogger.js
-
-# Playwright test resultat
-playwright-report/
-test-results/
-
-.env
+# Editor-specifika filer
+.vscode
+.idea
