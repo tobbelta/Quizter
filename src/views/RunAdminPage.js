@@ -32,7 +32,7 @@ const RunAdminPage = () => {
   const questionMap = useMemo(() => {
     if (!currentRun) return {};
     return currentRun.questionIds.reduce((acc, questionId) => {
-      const question = questionService.getById(questionId);
+      const question = questionService.getByIdForLanguage(questionId, 'sv');
       if (question) acc[questionId] = question;
       return acc;
     }, {});
@@ -320,9 +320,9 @@ const RunAdminPage = () => {
                         <span className="bg-slate-700 px-2 py-1 rounded">{question.category || 'Okategoriserad'}</span>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-300 mb-3 line-clamp-2">{question.text}</p>
+                    <p className="text-sm text-gray-300 mb-3 line-clamp-2">{question.text || 'Fråga saknar text'}</p>
                     <div className="grid grid-cols-1 gap-1">
-                      {question.options.slice(0, 2).map((option, optionIndex) => (
+                      {(question.options || []).slice(0, 2).map((option, optionIndex) => (
                         <div
                           key={optionIndex}
                           className={`text-xs px-2 py-1 rounded ${
@@ -334,15 +334,15 @@ const RunAdminPage = () => {
                           <span className="font-mono mr-1">
                             {String.fromCharCode(65 + optionIndex)}:
                           </span>
-                          {option.length > 30 ? option.slice(0, 30) + '...' : option}
+                          {(option || '').length > 30 ? (option || '').slice(0, 30) + '...' : (option || '')}
                           {optionIndex === question.correctOption && (
                             <span className="ml-2 text-xs font-bold text-emerald-200">✓</span>
                           )}
                         </div>
                       ))}
-                      {question.options.length > 2 && (
+                      {(question.options || []).length > 2 && (
                         <div className="text-xs text-gray-500 px-2 py-1">
-                          ... och {question.options.length - 2} alternativ till
+                          ... och {(question.options || []).length - 2} alternativ till
                         </div>
                       )}
                     </div>
