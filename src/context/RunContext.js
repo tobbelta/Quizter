@@ -361,6 +361,29 @@ export const RunProvider = ({ children }) => {
     return updatedRun;
   }, [runId]);
 
+  /**
+   * Raderar en runda permanent (admin-funktion)
+   * Tar bort runda och alla dess deltagare från databasen
+   *
+   * @param {string} targetRunId - ID för runda att radera (eller currentRun om ej angiven)
+   * @returns {Promise<void>}
+   */
+  const deleteRun = useCallback(async (targetRunId = null) => {
+    const runIdToDelete = targetRunId || runId;
+    if (!runIdToDelete) return;
+
+    await runRepository.deleteRun(runIdToDelete);
+
+    // Om den raderade rundan är den aktiva, rensa state
+    if (runIdToDelete === runId) {
+      setCurrentRun(null);
+      setCurrentParticipant(null);
+      setQuestions([]);
+      setParticipants([]);
+      writeActiveParticipant(null); // Rensa localStorage
+    }
+  }, [runId]);
+
   // === SIDE EFFECTS & LIFECYCLE MANAGEMENT ===
 
   /**
@@ -522,6 +545,7 @@ export const RunProvider = ({ children }) => {
     loadRunById,
     updateRun,
     closeRun,
+    deleteRun,
 
     // Participant actions (user interactions)
     joinRunByCode,
@@ -544,6 +568,7 @@ export const RunProvider = ({ children }) => {
     loadRunById,
     updateRun,
     closeRun,
+    deleteRun,
     joinRunByCode,
     attachToRun,
     submitAnswer,

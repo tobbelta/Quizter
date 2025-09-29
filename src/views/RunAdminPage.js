@@ -13,7 +13,7 @@ import { buildJoinLink } from '../utils/joinLink';
 const RunAdminPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { currentRun, participants, loadRunById, refreshParticipants, closeRun, updateRun } = useRun();
+  const { currentRun, participants, loadRunById, refreshParticipants, closeRun, updateRun, deleteRun } = useRun();
   const [saveStatus, setSaveStatus] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -177,6 +177,24 @@ const RunAdminPage = () => {
                   className="w-full rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400 text-left"
                 >
                   🏆 Visa resultatvy
+                </button>
+
+                <button
+                  onClick={async () => {
+                    if (window.confirm('Vill du radera denna runda permanent? Detta går inte att ångra och tar bort alla deltagare.')) {
+                      try {
+                        await deleteRun();
+                        navigate('/admin'); // Navigera till admin-startsidan efter radering
+                      } catch (error) {
+                        console.error('Kunde inte radera runda:', error);
+                        alert('Något gick fel när rundan skulle raderas. Försök igen.');
+                      }
+                      setMenuOpen(false);
+                    }
+                  }}
+                  className="w-full rounded-lg bg-red-600 px-4 py-3 font-semibold text-white hover:bg-red-500 text-left"
+                >
+                  🗑️ Radera runda permanent
                 </button>
 
                 <button

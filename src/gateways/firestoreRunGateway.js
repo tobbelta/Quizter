@@ -323,6 +323,19 @@ export const firestoreRunGateway = {
     await updateDoc(doc(hämtaRundsCollection(), runId), { status: 'closed', closedAt: now });
   },
 
+  /** Raderar en runda och alla dess deltagare. */
+  async deleteRun(runId) {
+    const { deleteDoc, getDocs } = await import('firebase/firestore');
+
+    // Först radera alla deltagare i rundan
+    const participantsSnapshot = await getDocs(hämtaDeltagarCollection(runId));
+    const deletePromises = participantsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+
+    // Sedan radera själva rundan
+    await deleteDoc(doc(hämtaRundsCollection(), runId));
+  },
+
   /** Realtidslyssnare för rundor. */
   subscribeRuns(listener) {
     return onSnapshot(hämtaRundsCollection(), (snapshot) => {
