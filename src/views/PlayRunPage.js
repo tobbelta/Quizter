@@ -122,9 +122,13 @@ const PlayRunPage = () => {
 
   const nearCheckpoint = trackingEnabled && distanceToCheckpoint != null && distanceToCheckpoint <= PROXIMITY_THRESHOLD_METERS;
 
-  const effectiveQuestionIndex = manualMode ? (questionVisible ? currentOrderIndex : null) : currentOrderIndex;
-  const currentQuestion = typeof effectiveQuestionIndex === 'number' && effectiveQuestionIndex >= 0
-    ? orderedQuestions[effectiveQuestionIndex] || null
+  // Bestäm om frågan ska visas baserat på läge och närhet.
+  const shouldShowQuestion =
+    (manualMode && questionVisible) || // Manuell start
+    (!manualMode && nearCheckpoint);   // GPS-läge och nära checkpoint
+
+  const currentQuestion = shouldShowQuestion
+    ? orderedQuestions[currentOrderIndex] || null
     : null;
 
   const answeredCount = currentParticipant?.answers?.length || 0;
@@ -409,4 +413,3 @@ const PlayRunPage = () => {
 };
 
 export default PlayRunPage;
-
