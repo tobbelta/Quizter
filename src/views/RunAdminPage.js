@@ -13,6 +13,7 @@ const RunAdminPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { currentRun, participants, loadRunById, refreshParticipants, closeRun, updateRun } = useRun();
+  const [saveStatus, setSaveStatus] = React.useState('');
 
   useEffect(() => {
     if (!currentRun || currentRun.id !== runId) {
@@ -65,16 +66,36 @@ const RunAdminPage = () => {
           <button
             type="button"
             onClick={async () => {
+              setSaveStatus('saving');
               try {
                 await updateRun({ status: currentRun.status || 'active' });
-                console.log('Runda sparad');
+                setSaveStatus('saved');
+                setTimeout(() => setSaveStatus(''), 3000);
               } catch (error) {
                 console.error('Kunde inte spara runda', error);
+                setSaveStatus('error');
+                setTimeout(() => setSaveStatus(''), 3000);
               }
             }}
-            className="rounded bg-green-500 px-4 py-2 font-semibold text-black hover:bg-green-400"
+            className={`rounded px-4 py-2 font-semibold text-black ${
+              saveStatus === 'saving'
+                ? 'bg-yellow-500 hover:bg-yellow-400'
+                : saveStatus === 'saved'
+                ? 'bg-green-600 hover:bg-green-500'
+                : saveStatus === 'error'
+                ? 'bg-red-500 hover:bg-red-400'
+                : 'bg-green-500 hover:bg-green-400'
+            }`}
+            disabled={saveStatus === 'saving'}
           >
-            Spara runda
+            {saveStatus === 'saving'
+              ? 'Sparar...'
+              : saveStatus === 'saved'
+              ? '✓ Sparad'
+              : saveStatus === 'error'
+              ? '✗ Fel'
+              : 'Spara runda'
+            }
           </button>
           <button
             type="button"

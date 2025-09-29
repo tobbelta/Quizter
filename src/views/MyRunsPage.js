@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { runService } from '../services/runService';
+import { runRepository } from '../repositories/runRepository';
 
 const MyRunsPage = () => {
   const navigate = useNavigate();
@@ -18,9 +18,9 @@ const MyRunsPage = () => {
       return;
     }
 
-    const loadMyRuns = () => {
+    const loadMyRuns = async () => {
       try {
-        const allRuns = runService.listRuns();
+        const allRuns = await runRepository.listRuns();
         const filteredRuns = allRuns.filter(run =>
           run.createdBy === currentUser.id ||
           run.createdByName === currentUser.name
