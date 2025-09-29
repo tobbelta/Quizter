@@ -148,27 +148,54 @@ const shuffleArray = (array) => {
 };
 
 /**
- * Omvandlar en OpenTDB-fråga till vårt interna format.
+ * Omvandlar en OpenTDB-fråga till vårt interna format med båda språk.
  */
 const convertQuestion = (remote, overrideAudience) => {
   const baseAudience = mapAudience(remote.category, remote.difficulty);
   const audience = overrideAudience || baseAudience;
   const difficulty = mapDifficulty(remote.difficulty);
 
-  const decodedCorrect = translateToSwedish(remote.correct_answer);
-  const decodedIncorrect = remote.incorrect_answers.map((answer) => translateToSwedish(answer));
-  const shuffledOptions = shuffleArray([...decodedIncorrect, decodedCorrect]);
-  const correctOption = shuffledOptions.findIndex((option) => option === decodedCorrect);
+  // Engelska originalet (med HTML-avkodning)
+  const englishCorrect = decodeHtmlEntities(remote.correct_answer);
+  const englishIncorrect = remote.incorrect_answers.map((answer) => decodeHtmlEntities(answer));
+  const englishAllOptions = [...englishIncorrect, englishCorrect];
+
+  // Svenska översättningen
+  const swedishCorrect = translateToSwedish(remote.correct_answer);
+  const swedishIncorrect = remote.incorrect_answers.map((answer) => translateToSwedish(answer));
+  const swedishAllOptions = [...swedishIncorrect, swedishCorrect];
+
+  // Blanda i samma ordning för båda språken
+  const shuffleIndices = Array.from({ length: englishAllOptions.length }, (_, i) => i);
+  for (let i = shuffleIndices.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffleIndices[i], shuffleIndices[j]] = [shuffleIndices[j], shuffleIndices[i]];
+  }
+
+  const englishShuffled = shuffleIndices.map(i => englishAllOptions[i]);
+  const swedishShuffled = shuffleIndices.map(i => swedishAllOptions[i]);
+
+  // Hitta rätt svar-index efter shuffle
+  const correctOption = englishShuffled.findIndex((option) => option === englishCorrect);
 
   return {
     id: `opentdb-${uuidv4()}`,
     difficulty,
     audience,
     category: translateCategory(remote.category),
-    text: translateToSwedish(remote.question),
-    options: shuffledOptions,
+    languages: {
+      en: {
+        text: decodeHtmlEntities(remote.question),
+        options: englishShuffled,
+        explanation: 'Imported from OpenTDB'
+      },
+      sv: {
+        text: translateToSwedish(remote.question),
+        options: swedishShuffled,
+        explanation: 'Importerad från OpenTDB'
+      }
+    },
     correctOption,
-    explanation: 'Importerad från OpenTDB',
     source: 'OpenTDB'
   };
 };
