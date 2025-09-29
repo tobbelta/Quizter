@@ -6,7 +6,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
-import { describeParticipantStatus } from '../utils/participantStatus';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
@@ -36,8 +35,7 @@ const PlayRunPage = () => {
     loadRunById,
     submitAnswer,
     completeRunForParticipant,
-    refreshParticipants,
-    participants
+    refreshParticipants
   } = useRun();
   const { currentUser } = useAuth();
   const {
@@ -45,9 +43,7 @@ const PlayRunPage = () => {
     status: locationStatus,
     coords,
     enableTracking,
-    disableTracking,
-    error: locationError,
-    lastUpdated
+    disableTracking
   } = useRunLocation();
 
   const [selectedOption, setSelectedOption] = useState(null);
@@ -86,13 +82,6 @@ const PlayRunPage = () => {
     setQuestionVisible(!manualMode);
   }, [currentParticipant?.currentOrder, manualMode]);
 
-  const participantsSnapshot = useMemo(() => {
-    if (!participants || participants.length === 0) return [];
-    return [...participants].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return (a.completedAt || '').localeCompare(b.completedAt || '');
-    });
-  }, [participants]);
 
   const orderedQuestions = useMemo(() => {
     if (!currentRun) return [];
@@ -140,7 +129,6 @@ const PlayRunPage = () => {
 
   const answeredCount = currentParticipant?.answers?.length || 0;
   const hasCompleted = answeredCount >= orderedQuestions.length;
-  const isLastQuestion = answeredCount === orderedQuestions.length - 1;
 
   /** Skickar in valt svar och visar feedback kortvarigt. */
   const handleSubmit = async (event) => {
