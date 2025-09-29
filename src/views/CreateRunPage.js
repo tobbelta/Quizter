@@ -33,13 +33,13 @@ const difficultyOptions = [
 
 const CreateRunPage = () => {
   const { currentUser, isAdmin } = useAuth();
-  const { createHostedRun, currentRun } = useRun();
+  const { createHostedRun } = useRun();
   const navigate = useNavigate();
   const [form, setForm] = useState(defaultForm);
   const [availableQuestions, setAvailableQuestions] = useState(questionService.listAll());
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [createdRun, setCreatedRun] = useState(null);
 
   useEffect(() => {
     const unsubscribe = questionService.subscribe(setAvailableQuestions);
@@ -75,15 +75,13 @@ const CreateRunPage = () => {
   /** Hämtar fler frågor från OpenTDB med aktuell profil. */
   const handleImportQuestions = async () => {
     setError('');
-    setSuccessMessage('');
-    setIsImporting(true);
+        setIsImporting(true);
     try {
       const fetched = await questionService.fetchAndAddFromOpenTDB({
         amount: Math.max(5, Number(form.questionCount) || 5),
         difficulty: form.difficulty,
         audience: form.audience
       });
-      setSuccessMessage(`Importerade ${fetched.length} frågor från OpenTDB.`);
     } catch (importError) {
       setError(importError.message);
     } finally {
@@ -95,8 +93,7 @@ const CreateRunPage = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    setSuccessMessage('');
-    try {
+        try {
       if (!form.name.trim()) {
         setError('Ange ett namn på rundan.');
         return;
@@ -110,7 +107,7 @@ const CreateRunPage = () => {
         name: currentUser?.name || 'Admin'
       });
       if (run) {
-        setSuccessMessage(`Runda skapad! Anslutningskod: ${run.joinCode}`);
+        setCreatedRun(run);
       }
     } catch (creationError) {
       setError(creationError.message);
@@ -156,27 +153,6 @@ const CreateRunPage = () => {
         </button>
       </div>
 
-      {successMessage && currentRun && (
-        <div className="rounded border border-emerald-500 bg-emerald-900/30 px-4 py-3 text-emerald-100">
-          <p className="font-semibold">{successMessage}</p>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => navigator.clipboard.writeText(currentRun.joinCode)}
-              className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
-            >
-              Kopiera kod
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate(`/run/${currentRun.id}/admin`)}
-              className="rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
-            >
-              Öppna administratörsvy
-            </button>
-          </div>
-        </div>
-      )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
@@ -280,7 +256,7 @@ const CreateRunPage = () => {
           </button>
         </form>
 
-        {currentRun && (
+        {createdRun && (
           <div className="space-y-6">
             {/* QR-kod sektion */}
             <div className="rounded-lg border border-emerald-500/40 bg-emerald-900/20 p-6 text-center">
@@ -289,13 +265,13 @@ const CreateRunPage = () => {
                 <div>
                   <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
                   <p className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4">
-                    {currentRun.joinCode}
+                    {createdRun.joinCode}
                   </p>
                 </div>
 
                 <div className="flex justify-center">
                   <QRCodeDisplay
-                    value={buildJoinLink(currentRun.joinCode)}
+                    value={buildJoinLink(createdRun.joinCode)}
                     title="QR-kod för anslutning"
                     description="Låt deltagarna skanna denna kod"
                   />
@@ -303,16 +279,25 @@ const CreateRunPage = () => {
 
                 <div className="grid grid-cols-1 gap-3 mt-6">
                   <button
-                    onClick={() => navigator.clipboard.writeText(currentRun.joinCode)}
+                    onClick={() => navigator.clipboard.writeText(createdRun.joinCode)}
                     className="rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400"
                   >
                     📋 Kopiera anslutningskod
                   </button>
                   <button
-                    onClick={() => navigate(`/run/${currentRun.id}/admin`)}
+                    onClick={() => navigate(`/run/${createdRun.id}/admin`)}
                     className="rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
                   >
                     🎮 Öppna administratörsvy
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCreatedRun(null);
+                                            setForm(defaultForm);
+                    }}
+                    className="rounded-lg bg-slate-600 px-4 py-3 font-semibold text-white hover:bg-slate-500"
+                  >
+                    ➕ Skapa ny runda
                   </button>
                 </div>
               </div>
@@ -324,19 +309,19 @@ const CreateRunPage = () => {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Namn:</span>
-                  <span className="font-medium">{currentRun.name}</span>
+                  <span className="font-medium">{createdRun.name}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Antal frågor:</span>
-                  <span className="font-medium">{currentRun.questionCount}</span>
+                  <span className="font-medium">{createdRun.questionCount}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Längd:</span>
-                  <span className="font-medium">{currentRun.lengthMeters}m</span>
+                  <span className="font-medium">{createdRun.lengthMeters}m</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Målgrupp:</span>
-                  <span className="font-medium capitalize">{currentRun.audience}</span>
+                  <span className="font-medium capitalize">{createdRun.audience}</span>
                 </div>
               </div>
             </div>
