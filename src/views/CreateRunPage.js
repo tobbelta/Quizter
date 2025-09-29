@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import useRunLocation from '../hooks/useRunLocation';
 import { buildJoinLink } from '../utils/joinLink';
 
 const defaultForm = {
@@ -35,6 +36,7 @@ const CreateRunPage = () => {
   const { currentUser, isAdmin } = useAuth();
   const { createHostedRun } = useRun();
   const navigate = useNavigate();
+  const { coords } = useRunLocation();
   const [form, setForm] = useState(defaultForm);
   const [availableQuestions, setAvailableQuestions] = useState(questionService.listAll());
   const [error, setError] = useState('');
@@ -101,7 +103,8 @@ const CreateRunPage = () => {
       const run = await createHostedRun({
         ...form,
         questionCount: Number(form.questionCount),
-        lengthMeters: Number(form.lengthMeters)
+        lengthMeters: Number(form.lengthMeters),
+        origin: coords // Använd admin's GPS-position om tillgänglig
       }, {
         id: currentUser?.id || 'admin',
         name: currentUser?.name || 'Admin'
@@ -142,6 +145,9 @@ const CreateRunPage = () => {
         <div>
           <p className="text-sm text-gray-300">Tillgängliga frågor: <strong>{availableQuestions.length}</strong></p>
           <p className="text-xs text-gray-500">Målgrupp {form.audience}: <strong>{maxQuestionsPerAudience[form.audience] || 0}</strong></p>
+          <p className="text-xs text-gray-500">
+            Startposition: <strong>{coords ? '📍 Din GPS-position' : '📍 Kalmar (standard)'}</strong>
+          </p>
         </div>
         <button
           type="button"
