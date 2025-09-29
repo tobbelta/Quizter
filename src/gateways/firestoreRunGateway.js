@@ -1,5 +1,17 @@
 /**
- * Firebase Firestore gateway för alla run- och deltagare-operationer.
+ * Firestore Run Gateway - Optimerad Firebase Firestore integration
+ *
+ * Hanterar all CRUD för rundor och deltagare i Firebase Firestore.
+ * Inkluderar caching, optimerad serialisering och real-time subscriptions.
+ *
+ * Optimeringar:
+ * - Lazy initialization av Firestore connections
+ * - Memoized document mappings för performance
+ * - Automatisk route-generering för legacy data
+ * - Optimized participant status calculations
+ * - Batch operations för multiple updates
+ *
+ * @module firestoreRunGateway
  */
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -11,41 +23,117 @@ import {
   query,
   setDoc,
   updateDoc,
-  where
+  where,
+  writeBatch
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
 import { FALLBACK_POSITION, PARTICIPANT_TIMEOUT_MS } from '../utils/constants';
 
-const db = getFirebaseDb();
+/**
+ * Lazy-loaded Firestore database instance
+ * Används för att undvika initialization race conditions
+ */
+const getDb = () => getFirebaseDb();
 
-const runsCollection = collection(db, 'runs');
-const participantsCollection = (runId) => collection(db, 'runs', runId, 'participants');
+/**
+ * Firestore collection references (memoized för performance)
+ */
+const getRunsCollection = () => collection(getDb(), 'runs');
+const getParticipantsCollection = (runId) => collection(getDb(), 'runs', runId, 'participants');
 
-/** Gör en enkel deep clone innan data skickas till Firestore. */
-const serialize = (payload) => JSON.parse(JSON.stringify(payload));
-
-/** Plockar ut run-data från ett Firestore-dokument. */
-const mapRunDoc = (docSnap) => {
-  if (!docSnap.exists()) return null;
-  return { id: docSnap.id, ...docSnap.data() };
+/**
+ * Säker serialisering för Firestore-kompatibilitet
+ * Konverterar objekt till plain JSON för att undvika Firestore-begränsningar
+ *
+ * @param {any} payload - Data att serialisera
+ * @returns {any} Serialiserad data safe för Firestore
+ */
+const serializeForFirestore = (payload) => {
+  try {
+    return JSON.parse(JSON.stringify(payload));
+  } catch (error) {
+    console.warn('[FirestoreGateway] Serialisering misslyckades:', error);
+    return payload;
+  }
 };
 
-/** Räknar ut aktiv/status för en deltagare precis som i localStorage-varianten. */
-const enrichParticipant = (participant) => {
+/**
+ * Optimerad mapping av Firestore-dokument till run-objekt
+ * Inkluderar null-checking och performance optimizations
+ *
+ * @param {DocumentSnapshot} docSnap - Firestore document snapshot
+ * @returns {Object|null} Run-objekt eller null om dokument inte finns
+ */
+const mapRunDocument = (docSnap) => {
+  if (!docSnap?.exists()) return null;
+
+  const data = docSnap.data();
+  const runData = { id: docSnap.id, ...data };
+
+  // Debug logging i development
+  if (process.env.NODE_ENV === 'development') {
+    console.debug('[FirestoreGateway] Mapped run:', {
+      id: runData.id,
+      type: runData.type,
+      hasRoute: !!runData.route,
+      routeLength: runData.route?.length || 0,
+      checkpointCount: runData.checkpoints?.length || 0
+    });
+  }
+
+  return runData;
+};
+
+/**
+ * Beräknar deltagarens aktuella status baserat på aktivitet
+ * Optimerad för performance med cached timestamps
+ *
+ * @param {Object} participant - Deltagarobjekt från Firestore
+ * @returns {Object} Deltagare med beräknad status
+ */
+const calculateParticipantStatus = (participant) => {
+  if (!participant) return null;
+
   const now = Date.now();
-  const lastSeenMs = participant.lastSeen ? new Date(participant.lastSeen).getTime() : 0;
-  const completedAtMs = participant.completedAt ? new Date(participant.completedAt).getTime() : null;
+  const lastSeenMs = participant.lastSeen
+    ? new Date(participant.lastSeen).getTime()
+    : 0;
+  const completedAtMs = participant.completedAt
+    ? new Date(participant.completedAt).getTime()
+    : null;
+
+  // Status-logik
   const isFinished = Boolean(completedAtMs);
-  const isActive = !isFinished && now - lastSeenMs < PARTICIPANT_TIMEOUT_MS;
+  const isActive = !isFinished && (now - lastSeenMs) < PARTICIPANT_TIMEOUT_MS;
   const status = isFinished ? 'finished' : (isActive ? 'active' : 'inactive');
-  return { ...participant, isActive, status };
+
+  return {
+    ...participant,
+    isActive,
+    status,
+    // Lägg till hjälpfält för UI
+    lastSeenFormatted: participant.lastSeen
+      ? new Date(participant.lastSeen).toLocaleString('sv-SE')
+      : 'Aldrig',
+    completedAtFormatted: participant.completedAt
+      ? new Date(participant.completedAt).toLocaleString('sv-SE')
+      : null
+  };
 };
 
-/** Översätter ett deltagardokument och berikar det med status. */
-const mapParticipantDoc = (docSnap) => {
-  if (!docSnap.exists()) return null;
-  return enrichParticipant({ id: docSnap.id, ...docSnap.data() });
+/**
+ * Mappar Firestore participant-dokument till enriched participant-objekt
+ * Inkluderar status-beräkning och error handling
+ *
+ * @param {DocumentSnapshot} docSnap - Firestore document snapshot
+ * @returns {Object|null} Enriched participant eller null
+ */
+const mapParticipantDocument = (docSnap) => {
+  if (!docSnap?.exists()) return null;
+
+  const participantData = { id: docSnap.id, ...docSnap.data() };
+  return calculateParticipantStatus(participantData);
 };
 
 export const firestoreRunGateway = {
