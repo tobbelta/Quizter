@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { FALLBACK_POSITION } from '../../utils/constants';
 
 const mockLocalStorage = () => {
   let store = {};
@@ -49,15 +50,15 @@ describe('runService', () => {
     expect(stored[0].name).toBe('Test Run');
   });
 
-  test('generateRouteRun skapar genererad runda med koordinater', () => {
-    const run = runService.generateRouteRun({
+  test('generateRouteRun skapar genererad runda med koordinater', async () => {
+    const run = await runService.generateRouteRun({
       alias: 'Auto',
       questionCount: 5,
       lengthMeters: 2200,
       audience: 'family',
       difficulty: 'family',
       allowAnonymous: true,
-      origin: { lat: 56.662, lng: 16.361 }
+      origin: FALLBACK_POSITION
     });
 
     expect(run.type).toBe('generated');

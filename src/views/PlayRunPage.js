@@ -220,6 +220,7 @@ const PlayRunPage = () => {
           userPosition={coords}
           activeOrder={currentOrderIndex}
           answeredCount={answeredCount}
+          route={currentRun.route}
         />
       </section>
 

@@ -2,6 +2,7 @@
  * Hook som kapslar GPS-hantering och låter spelaren slå på/av spårning.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { FALLBACK_POSITION } from '../utils/constants';
 
 const STORAGE_KEY = 'tipspromenad:trackingEnabled';
 
@@ -105,6 +106,14 @@ const useRunLocation = () => {
     setTrackingEnabled(false);
   }, []);
 
+  /** Returnerar antingen den riktiga GPS-positionen eller fallback-positionen. */
+  const getCurrentPosition = useCallback(() => {
+    if (coords && status === 'active') {
+      return coords;
+    }
+    return FALLBACK_POSITION;
+  }, [coords, status]);
+
   return {
     trackingEnabled,
     status,
@@ -112,7 +121,8 @@ const useRunLocation = () => {
     error,
     lastUpdated,
     enableTracking,
-    disableTracking
+    disableTracking,
+    getCurrentPosition
   };
 };
 

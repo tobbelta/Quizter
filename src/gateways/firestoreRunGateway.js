@@ -16,6 +16,7 @@ import {
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
 import { PARTICIPANT_TIMEOUT_MS } from '../services/runService';
+import { FALLBACK_POSITION } from '../utils/constants';
 
 const db = getFirebaseDb();
 
@@ -58,7 +59,53 @@ export const firestoreRunGateway = {
   /** Hämtar en runda via dokument-id. */
   async getRun(runId) {
     const docSnap = await getDoc(doc(runsCollection, runId));
-    return mapRunDoc(docSnap);
+    let run = mapRunDoc(docSnap);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[FirestoreGateway] getRun hämtade från Firestore:', {
+        id: run?.id,
+        hasRoute: !!run?.route,
+        routePointCount: run?.route?.length || 0,
+        hasCheckpoints: !!run?.checkpoints,
+        checkpointCount: run?.checkpoints?.length || 0,
+        type: run?.type
+      });
+    }
+
+    // Om en genererad runda saknar route-data, generera den retroaktivt
+    if (run && run.type === 'generated' && !run.route && run.checkpoints?.length > 0) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[FirestoreGateway] Genererad runda saknar route-data, genererar retroaktivt...');
+      }
+
+      try {
+        const { generateWalkingRoute } = await import('../services/routeService');
+        const origin = run.checkpoints[0]?.location || FALLBACK_POSITION;
+
+        const routeData = await generateWalkingRoute({
+          origin,
+          lengthMeters: run.lengthMeters || 2500,
+          checkpointCount: run.checkpoints.length
+        });
+
+        if (routeData.route && routeData.route.length > 0) {
+          run = { ...run, route: routeData.route };
+
+          // Spara den uppdaterade rundan tillbaka till Firestore
+          await setDoc(doc(runsCollection, run.id), serialize(run));
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('[FirestoreGateway] Route-data genererad och sparad retroaktivt:', {
+              routePointCount: run.route.length
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('[FirestoreGateway] Kunde inte generera route-data retroaktivt:', error);
+      }
+    }
+
+    return run;
   },
 
   /** Söker upp runda via joinCode. */
@@ -71,15 +118,47 @@ export const firestoreRunGateway = {
 
   /** Sparar en ny admin-skapad runda. */
   async createRun(payload, creator) {
-    const run = buildHostedRun(payload, creator);
+    const run = await buildHostedRun(payload, creator);
     await setDoc(doc(runsCollection, run.id), serialize(run));
     return run;
   },
 
   /** Sparar en auto-genererad runda. */
   async generateRouteRun(payload, creator) {
-    const run = buildGeneratedRun(payload, creator);
-    await setDoc(doc(runsCollection, run.id), serialize(run));
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[FirestoreGateway] generateRouteRun startar med payload:', payload);
+    }
+
+    const run = await buildGeneratedRun(payload, creator);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[FirestoreGateway] buildGeneratedRun returnerade:', {
+        id: run.id,
+        hasRoute: !!run.route,
+        routePointCount: run.route?.length || 0,
+        hasCheckpoints: !!run.checkpoints,
+        checkpointCount: run.checkpoints?.length || 0
+      });
+    }
+
+    const serialized = serialize(run);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[FirestoreGateway] Efter serialisering:', {
+        id: serialized.id,
+        hasRoute: !!serialized.route,
+        routePointCount: serialized.route?.length || 0,
+        hasCheckpoints: !!serialized.checkpoints,
+        checkpointCount: serialized.checkpoints?.length || 0
+      });
+    }
+
+    await setDoc(doc(runsCollection, run.id), serialized);
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[FirestoreGateway] Returnerar run med route:', !!run.route);
+    }
+
     return run;
   },
 

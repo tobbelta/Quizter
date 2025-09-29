@@ -17,7 +17,7 @@ const createLocalRepository = () => ({
   listRuns: wrapSync(runService.listRuns),
   getRun: wrapSync(runService.getRun),
   getRunByCode: wrapSync(runService.getRunByCode),
-  createRun: wrapSync(runService.createRun),
+  createRun: runService.createRun, // Nu async
   generateRouteRun: wrapSync(runService.generateRouteRun),
   listParticipants: wrapSync(runService.listParticipants),
   registerParticipant: wrapSync(runService.registerParticipant),

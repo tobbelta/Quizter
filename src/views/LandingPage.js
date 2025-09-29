@@ -1,9 +1,8 @@
-
 /**
  * Startsida där användaren väljer inloggningssätt för tipspromenaden.
  */
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const initialGuestState = { alias: '', contact: '' };
@@ -33,11 +32,11 @@ const LandingPage = () => {
     navigate('/join');
   };
 
-  /** Loggar in registrerad spelare med namn, e-post och eventuellt lösenord. */
+  /** Loggar in registrerad spelare. */
   const handlePlayerSubmit = async (event) => {
     event.preventDefault();
-    if (!playerForm.name.trim() || !playerForm.email.trim()) {
-      setFieldError('player', 'Fyll i både namn och e-post.');
+    if (!playerForm.email.trim() || !playerForm.password) {
+      setFieldError('player', 'Fyll i e-post och lösenord.');
       return;
     }
     try {
@@ -53,8 +52,8 @@ const LandingPage = () => {
   /** Loggar in administratör och skickar till skapaflödet. */
   const handleAdminSubmit = async (event) => {
     event.preventDefault();
-    if (!adminForm.email.trim()) {
-      setFieldError('admin', 'Ange e-post för administratörsinloggning.');
+    if (!adminForm.email.trim() || !adminForm.password) {
+      setFieldError('admin', 'Ange e-post och lösenord för administratörsinloggning.');
       return;
     }
     try {
@@ -67,7 +66,7 @@ const LandingPage = () => {
     }
   };
 
-  /** Loggar ut aktuell användare och rensar formulär. */
+  /** Loggar ut den aktuella användaren. */
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -77,7 +76,9 @@ const LandingPage = () => {
     <div className="mx-auto max-w-5xl px-4 py-8">
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-bold mb-2">Tipspromenad 2.0</h1>
-        <p className="text-gray-300">Välj hur du vill delta: som gäst, registrerad spelare eller administratör.</p>
+        <p className="text-gray-300">
+          Välj hur du vill delta: som gäst, registrerad spelare eller administratör.
+        </p>
       </header>
 
       <section className="grid gap-6 md:grid-cols-3">
@@ -89,6 +90,7 @@ const LandingPage = () => {
               <label className="block text-sm font-semibold text-cyan-200">Alias</label>
               <input
                 type="text"
+                autoComplete="nickname"
                 value={guestForm.alias}
                 onChange={(event) => setGuestForm((prev) => ({ ...prev, alias: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
@@ -99,6 +101,7 @@ const LandingPage = () => {
               <label className="block text-sm font-semibold text-cyan-200">Kontakt (valfritt)</label>
               <input
                 type="text"
+                autoComplete="email"
                 value={guestForm.contact}
                 onChange={(event) => setGuestForm((prev) => ({ ...prev, contact: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
@@ -117,12 +120,13 @@ const LandingPage = () => {
 
         <div className="rounded-lg border border-emerald-400/40 bg-slate-900/60 p-6">
           <h2 className="text-xl font-semibold mb-4">Logga in som spelare</h2>
-          <p className="text-sm text-gray-300 mb-4">Din identitet sparas och du kan följa historik i framtiden.</p>
+          <p className="text-sm text-gray-300 mb-4">Har du ett konto? Ange uppgifterna och fortsätt direkt.</p>
           <form onSubmit={handlePlayerSubmit} className="space-y-3">
             <div>
-              <label className="block text-sm font-semibold text-emerald-200">Namn</label>
+              <label className="block text-sm font-semibold text-emerald-200">Namn (visas i spelet)</label>
               <input
                 type="text"
+                autoComplete="name"
                 value={playerForm.name}
                 onChange={(event) => setPlayerForm((prev) => ({ ...prev, name: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
@@ -133,6 +137,7 @@ const LandingPage = () => {
               <label className="block text-sm font-semibold text-emerald-200">E-post</label>
               <input
                 type="email"
+                autoComplete="username"
                 value={playerForm.email}
                 onChange={(event) => setPlayerForm((prev) => ({ ...prev, email: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
@@ -140,9 +145,10 @@ const LandingPage = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-emerald-200">Lösenord (krävs vid Firebase-login)</label>
+              <label className="block text-sm font-semibold text-emerald-200">Lösenord</label>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={playerForm.password}
                 onChange={(event) => setPlayerForm((prev) => ({ ...prev, password: event.target.value }))}
                 className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
@@ -157,6 +163,10 @@ const LandingPage = () => {
               Logga in och anslut
             </button>
           </form>
+          <p className="mt-4 text-sm text-gray-300">
+            Saknar du konto?{' '}
+            <Link to="/register/player" className="text-emerald-300 hover:text-emerald-200">Registrera dig som spelare</Link>
+          </p>
         </div>
 
         <div className="rounded-lg border border-indigo-400/40 bg-slate-900/70 p-6">
@@ -165,6 +175,13 @@ const LandingPage = () => {
             <div className="space-y-3">
               <p className="text-gray-200">Inloggad som <strong>{currentUser.name}</strong></p>
               <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/my-runs')}
+                  className="rounded bg-blue-500 px-4 py-2 font-semibold text-black hover:bg-blue-400"
+                >
+                  Mina rundor
+                </button>
                 <button
                   type="button"
                   onClick={() => navigate('/admin/create')}
@@ -189,45 +206,54 @@ const LandingPage = () => {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleAdminSubmit} className="space-y-3">
-              <div>
-                <label className="block text-sm font-semibold text-indigo-200">Namn</label>
-                <input
-                  type="text"
-                  value={adminForm.name}
-                  onChange={(event) => setAdminForm((prev) => ({ ...prev, name: event.target.value }))}
-                  className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                  placeholder="Admin"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-indigo-200">E-post</label>
-                <input
-                  type="email"
-                  value={adminForm.email}
-                  onChange={(event) => setAdminForm((prev) => ({ ...prev, email: event.target.value }))}
-                  className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                  placeholder="admin@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-indigo-200">Lösenord (krävs vid Firebase-login)</label>
-                <input
-                  type="password"
-                  value={adminForm.password}
-                  onChange={(event) => setAdminForm((prev) => ({ ...prev, password: event.target.value }))}
-                  className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                  placeholder="********"
-                />
-              </div>
-              {errors.admin && <p className="text-sm text-red-300">{errors.admin}</p>}
-              <button
-                type="submit"
-                className="w-full rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
-              >
-                Logga in som administratör
-              </button>
-            </form>
+            <>
+              <form onSubmit={handleAdminSubmit} className="space-y-3">
+                <div>
+                  <label className="block text-sm font-semibold text-indigo-200">Namn</label>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={adminForm.name}
+                    onChange={(event) => setAdminForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                    placeholder="Admin"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-indigo-200">E-post</label>
+                  <input
+                    type="email"
+                    autoComplete="username"
+                    value={adminForm.email}
+                    onChange={(event) => setAdminForm((prev) => ({ ...prev, email: event.target.value }))}
+                    className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                    placeholder="admin@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-indigo-200">Lösenord</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={adminForm.password}
+                    onChange={(event) => setAdminForm((prev) => ({ ...prev, password: event.target.value }))}
+                    className="mt-1 w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                    placeholder="********"
+                  />
+                </div>
+                {errors.admin && <p className="text-sm text-red-300">{errors.admin}</p>}
+                <button
+                  type="submit"
+                  className="w-full rounded bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
+                >
+                  Logga in som administratör
+                </button>
+              </form>
+              <p className="mt-4 text-sm text-gray-300">
+                Ny administratör?{' '}
+                <Link to="/register/admin" className="text-indigo-300 hover:text-indigo-200">Registrera konto här</Link>
+              </p>
+            </>
           )}
         </div>
       </section>
@@ -236,3 +262,5 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
+
+

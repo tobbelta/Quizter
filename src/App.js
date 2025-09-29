@@ -13,13 +13,37 @@ import JoinRunPage from './views/JoinRunPage';
 import PlayRunPage from './views/PlayRunPage';
 import RunAdminPage from './views/RunAdminPage';
 import RunResultsPage from './views/RunResultsPage';
+import RegisterPlayerPage from './views/RegisterPlayerPage';
+import RegisterAdminPage from './views/RegisterAdminPage';
+import MyRunsPage from './views/MyRunsPage';
 
 /**
  * Skyddar admin-rutter så att gäster hamnar på startsidan.
  */
 const RequireAdmin = ({ children }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAuthInitialized, currentUser } = useAuth();
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[Auth] RequireAdmin kontroll', {
+      isAuthInitialized,
+      isAdmin,
+      userId: currentUser?.id || null,
+      roles: currentUser?.roles || null
+    });
+  }
+  if (!isAuthInitialized) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[Auth] RequireAdmin väntar på auth-initialisering');
+    }
+    return (
+      <div className="p-8 text-center text-gray-300">
+        Kontrollerar behörighet ...
+      </div>
+    );
+  }
   if (!isAdmin) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug('[Auth] RequireAdmin saknar admin-roll, omdirigerar');
+    }
     return <Navigate to="/" replace />;
   }
   return children;
@@ -31,11 +55,21 @@ const RequireAdmin = ({ children }) => {
 const AppRoutes = () => (
   <Routes>
     <Route path="/" element={<LandingPage />} />
+    <Route path="/register/player" element={<RegisterPlayerPage />} />
+    <Route path="/register/admin" element={<RegisterAdminPage />} />
     <Route
       path="/admin/create"
       element={(
         <RequireAdmin>
           <CreateRunPage />
+        </RequireAdmin>
+      )}
+    />
+    <Route
+      path="/admin/my-runs"
+      element={(
+        <RequireAdmin>
+          <MyRunsPage />
         </RequireAdmin>
       )}
     />

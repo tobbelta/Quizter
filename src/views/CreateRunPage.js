@@ -7,8 +7,10 @@ import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import RunMap from '../components/run/RunMap';
 import { buildJoinLink } from '../utils/joinLink';
 import { describeParticipantStatus } from '../utils/participantStatus';
+import { FALLBACK_POSITION } from '../utils/constants';
 
 const defaultForm = {
   name: 'Fredagsquiz',
@@ -280,6 +282,62 @@ const CreateRunPage = () => {
               <dd className="capitalize">{currentRun.status}</dd>
             </div>
           </dl>
+          <div className="space-y-3">
+            <h3 className="text-lg font-medium">Rutt på karta</h3>
+            <RunMap
+              checkpoints={currentRun.checkpoints || []}
+              userPosition={null}
+              activeOrder={0}
+              answeredCount={0}
+              route={currentRun.route}
+            />
+            {!currentRun.route && (
+              <button
+                type="button"
+                onClick={async () => {
+                  console.log('Lägger till rutt-data för befintlig runda...');
+                  try {
+                    // Importera route service för att generera rutt
+                    const { generateWalkingRoute } = await import('../services/routeService');
+                    const origin = currentRun.checkpoints?.[0]?.location || FALLBACK_POSITION;
+
+                    // Generera route-data
+                    const routeData = await generateWalkingRoute({
+                      origin,
+                      lengthMeters: currentRun.lengthMeters || 2000,
+                      checkpointCount: currentRun.checkpoints?.length || 6
+                    });
+
+                    if (routeData.route && routeData.route.length > 0) {
+                      // Uppdatera den befintliga rundan med route-data
+                      const { runRepository } = await import('../repositories/runRepository');
+
+                      // Hämta och uppdatera från Firestore
+                      const updatedRun = { ...currentRun, route: routeData.route };
+
+                      // Uppdatera i Firestore genom att använda samma serialize-metod
+                      const { getFirebaseDb } = await import('../firebaseClient');
+                      const { doc, setDoc } = await import('firebase/firestore');
+                      const db = getFirebaseDb();
+                      const serialize = (payload) => JSON.parse(JSON.stringify(payload));
+
+                      await setDoc(doc(db, 'runs', currentRun.id), serialize(updatedRun));
+
+                      console.log('Route-data tillagd! Ladda om sidan för att se ändringen.');
+                      window.location.reload();
+                    }
+                  } catch (error) {
+                    console.error('Kunde inte lägga till route-data:', error);
+                    alert('Kunde inte lägga till route-data: ' + error.message);
+                  }
+                }}
+                className="rounded bg-yellow-500 px-4 py-2 font-semibold text-black hover:bg-yellow-400"
+              >
+                🗺️ Lägg till rutt-data
+              </button>
+            )}
+          </div>
+
           <QRCodeDisplay
             value={buildJoinLink(currentRun.joinCode)}
             title="QR för anslutning"
