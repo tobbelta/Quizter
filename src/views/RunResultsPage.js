@@ -45,8 +45,26 @@ const RunResultsPage = () => {
     if (!currentParticipant || !currentRun?.questionIds) return [];
 
     return currentRun.questionIds.map((questionId, index) => {
-      const question = questionService.getByIdForLanguage(questionId, selectedLanguage);
-      if (!question) return null;
+      let question = questionService.getByIdForLanguage(questionId, selectedLanguage);
+
+      // Fallback-logik om frågan inte hittas för valt språk
+      if (!question) {
+        question = questionService.getByIdForLanguage(questionId, 'sv'); // Försök svenska
+      }
+      if (!question) {
+        question = questionService.getById(questionId); // Försök utan språk
+      }
+      if (!question) {
+        console.warn(`[RunResultsPage] Fråga med ID ${questionId} hittades inte`);
+        // Skapa fallback-fråga så inget försvinner
+        question = {
+          id: questionId,
+          text: `Fråga ${questionId} kunde inte laddas`,
+          options: ['Kunde inte ladda alternativ'],
+          correctOption: 0,
+          explanation: 'Denna fråga kunde inte laddas från databasen.'
+        };
+      }
 
       const userAnswer = currentParticipant.answers?.find(a => a.questionId === questionId);
       const isCorrect = userAnswer?.correct || false;
@@ -61,7 +79,7 @@ const RunResultsPage = () => {
         isCorrect,
         explanation: question.explanation
       };
-    }).filter(Boolean);
+    }); // Ta bort .filter(Boolean) så alla frågor visas
   }, [currentParticipant, currentRun, selectedLanguage]);
 
   if (!currentRun) {

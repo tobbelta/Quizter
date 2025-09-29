@@ -131,13 +131,46 @@ const PlayRunPage = () => {
     if (!currentRun) return [];
     return currentRun.questionIds.map((id) => {
       const question = questionService.getById(id);
-      if (!question) return null;
+      if (!question) {
+        console.warn(`[PlayRunPage] Fråga med ID ${id} hittades inte i questionService`);
+        return {
+          id: id,
+          text: `Fråga ${id} kunde inte laddas`,
+          options: ['Ladda om sidan', 'Försök igen', 'Kontakta admin', 'Hoppa över'],
+          explanation: 'Denna fråga kunde inte laddas från databasen.',
+          correctOption: 0
+        };
+      }
 
-      // Hämta rätt språkversion
-      const langData = question.languages?.[selectedLanguage] ||
-                      question.languages?.sv ||
-                      question.languages?.[Object.keys(question.languages || {})[0]] ||
-                      { text: question.text, options: question.options, explanation: question.explanation };
+      // Säkrare språkhantering - försök olika fallbacks
+      let langData = null;
+
+      if (question.languages) {
+        // Försök önskat språk först
+        langData = question.languages[selectedLanguage];
+
+        // Fallback till svenska
+        if (!langData) {
+          langData = question.languages.sv;
+        }
+
+        // Fallback till första tillgängliga språk
+        if (!langData) {
+          const availableLanguages = Object.keys(question.languages);
+          if (availableLanguages.length > 0) {
+            langData = question.languages[availableLanguages[0]];
+          }
+        }
+      }
+
+      // Fallback till gamla formatet om inget språk finns
+      if (!langData) {
+        langData = {
+          text: question.text || `Fråga ${id}`,
+          options: question.options || ['Alternativ 1', 'Alternativ 2', 'Alternativ 3', 'Alternativ 4'],
+          explanation: question.explanation || 'Ingen förklaring tillgänglig'
+        };
+      }
 
       return {
         ...question,
@@ -145,7 +178,7 @@ const PlayRunPage = () => {
         options: langData.options,
         explanation: langData.explanation
       };
-    }).filter(Boolean);
+    }); // Ta bort .filter(Boolean) så inga frågor försvinner
   }, [currentRun, selectedLanguage]);
 
   const currentOrderIndex = useMemo(() => {
