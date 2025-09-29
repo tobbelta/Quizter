@@ -31,6 +31,8 @@ jobs:
           echo "REACT_APP_FIREBASE_APP_ID=${{ secrets.REACT_APP_FIREBASE_APP_ID }}" >> .env.production
           echo "REACT_APP_FIREBASE_MEASUREMENT_ID=${{ secrets.REACT_APP_FIREBASE_MEASUREMENT_ID }}" >> .env.production
           echo "REACT_APP_OPENROUTE_API_KEY=${{ secrets.REACT_APP_OPENROUTE_API_KEY }}" >> .env.production
+          echo "REACT_APP_STRIPE_PUBLISHABLE_KEY=${{ secrets.REACT_APP_STRIPE_PUBLISHABLE_KEY }}" >> .env.production
+          echo "REACT_APP_PAYMENT_TEST_MODE=${{ secrets.REACT_APP_PAYMENT_TEST_MODE }}" >> .env.production
 
       - name: Print environment variables for debugging
         run: cat .env.production
