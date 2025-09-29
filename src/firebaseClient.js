@@ -1,10 +1,15 @@
 /**
- * Firebase Client - Centraliserad Firebase-initialisering och konfiguration
+ * Firebase Klient - Centraliserad Firebase-initialisering och konfiguration
  *
- * Hanterar Firebase app-instans som singleton och säkerställer korrekt konfiguration
- * från miljövariabler. Alla Firebase-tjänster (Firestore, Auth) skapas via denna modul.
+ * Hanterar Firebase app-instans som en enda delad instans och säkerställer korrekt
+ * konfiguration från miljövariabler. Alla Firebase-tjänster (Firestore, Auth)
+ * skapas via denna modul.
  *
- * @module firebaseClient
+ * Den här filen ansvarar för att:
+ * - Läsa Firebase-inställningar från .env-filen
+ * - Skapa en enda Firebase-instans som delas av hela appen
+ * - Ansluta till utvecklings-emulatorer när det behövs
+ * - Ge tydliga felmeddelanden om konfiguration saknas
  */
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
@@ -26,26 +31,26 @@ const firebaseConfig = {
 
 /**
  * Minimala krav för Firebase-konfiguration
- * Dessa fyra fält krävs för att Firebase ska fungera korrekt
+ * Dessa fyra fält måste finnas för att Firebase ska fungera
  */
-const REQUIRED_CONFIG_KEYS = ['apiKey', 'authDomain', 'projectId', 'appId'];
+const OBLIGATORISKA_KONFIG_NYCKLAR = ['apiKey', 'authDomain', 'projectId', 'appId'];
 
 /**
- * Kontrollerar om alla nödvändiga Firebase-konfigurationer är satta
- * @returns {boolean} True om alla obligatoriska fält finns och är icke-tomma strängar
+ * Kontrollerar om alla nödvändiga Firebase-inställningar är ifyllda
+ * Returnerar sant om alla obligatoriska fält finns och innehåller text
  */
-const isFirebaseConfigured = REQUIRED_CONFIG_KEYS.every((key) => {
-  const value = firebaseConfig[key];
-  return typeof value === 'string' && value.trim().length > 0;
+const arFirebaseInställningarKompletta = OBLIGATORISKA_KONFIG_NYCKLAR.every((nyckel) => {
+  const värde = firebaseConfig[nyckel];
+  return typeof värde === 'string' && värde.trim().length > 0;
 });
 
 /**
- * Singleton Firebase app-instans
- * Cachar app-instansen för att undvika multiple initializations
+ * Enda delade Firebase app-instans
+ * Sparar app-instansen för att undvika att skapa flera kopior
  */
-let appInstance = null;
-let firestoreInstance = null;
-let authInstance = null;
+let appInstans = null;
+let firestoreInstans = null;
+let authInstans = null;
 
 /**
  * Säkerställer att Firebase app är initialiserad och konfigurerad korrekt
@@ -54,30 +59,30 @@ let authInstance = null;
  * @returns {FirebaseApp} Konfigurerad Firebase app-instans
  * @throws {Error} Om Firebase-konfiguration saknas eller är felaktig
  */
-const ensureFirebaseApp = () => {
+const säkerställFirebaseApp = () => {
   // Kontrollera konfiguration först
-  if (!isFirebaseConfigured) {
+  if (!arFirebaseInställningarKompletta) {
     throw new Error(
       'Firebase är inte konfigurerat. Kontrollera att följande miljövariabler är satta i .env:\n' +
-      REQUIRED_CONFIG_KEYS.map(key => `REACT_APP_FIREBASE_${key.toUpperCase()}`).join('\n')
+      OBLIGATORISKA_KONFIG_NYCKLAR.map(nyckel => `REACT_APP_FIREBASE_${nyckel.toUpperCase()}`).join('\n')
     );
   }
 
   // Återanvänd befintlig instans om den finns
-  if (appInstance) {
-    return appInstance;
+  if (appInstans) {
+    return appInstans;
   }
 
   // Kontrollera om Firebase redan är initialiserat (t.ex. av annan del av appen)
-  const existingApps = getApps();
-  if (existingApps.length > 0) {
-    appInstance = existingApps[0];
-    return appInstance;
+  const befintligaAppar = getApps();
+  if (befintligaAppar.length > 0) {
+    appInstans = befintligaAppar[0];
+    return appInstans;
   }
 
   // Initialisera ny Firebase app
   try {
-    appInstance = initializeApp(firebaseConfig);
+    appInstans = initializeApp(firebaseConfig);
 
     // Development-mode: Anslut till emulatorer om de körs
     if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true') {
@@ -85,7 +90,7 @@ const ensureFirebaseApp = () => {
       // Emulator-anslutning kan läggas till här vid behov
     }
 
-    return appInstance;
+    return appInstans;
   } catch (error) {
     throw new Error(`Kunde inte initialisera Firebase: ${error.message}`);
   }
@@ -97,22 +102,22 @@ const ensureFirebaseApp = () => {
  *
  * @returns {Firestore} Konfigurerad Firestore-instans
  */
-const getFirebaseDb = () => {
-  if (!firestoreInstance) {
-    const app = ensureFirebaseApp();
-    firestoreInstance = getFirestore(app);
+const hämtaFirebaseDb = () => {
+  if (!firestoreInstans) {
+    const app = säkerställFirebaseApp();
+    firestoreInstans = getFirestore(app);
 
     // Development-mode: Anslut till Firestore emulator om konfigurerat
     if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIRESTORE_EMULATOR === 'true') {
       try {
-        connectFirestoreEmulator(firestoreInstance, 'localhost', 8080);
+        connectFirestoreEmulator(firestoreInstans, 'localhost', 8080);
         console.log('🔧 Ansluten till Firestore emulator');
       } catch (error) {
         console.warn('Kunde inte ansluta till Firestore emulator:', error.message);
       }
     }
   }
-  return firestoreInstance;
+  return firestoreInstans;
 };
 
 /**
@@ -121,31 +126,31 @@ const getFirebaseDb = () => {
  *
  * @returns {Auth} Konfigurerad Firebase Auth-instans
  */
-const getFirebaseAuth = () => {
-  if (!authInstance) {
-    const app = ensureFirebaseApp();
-    authInstance = getAuth(app);
+const hämtaFirebaseAuth = () => {
+  if (!authInstans) {
+    const app = säkerställFirebaseApp();
+    authInstans = getAuth(app);
 
     // Development-mode: Anslut till Auth emulator om konfigurerat
     if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_AUTH_EMULATOR === 'true') {
       try {
-        connectAuthEmulator(authInstance, 'http://localhost:9099');
+        connectAuthEmulator(authInstans, 'http://localhost:9099');
         console.log('🔧 Ansluten till Auth emulator');
       } catch (error) {
         console.warn('Kunde inte ansluta till Auth emulator:', error.message);
       }
     }
   }
-  return authInstance;
+  return authInstans;
 };
 
 /**
  * Hämtar Firebase app-instans direkt
- * Använd denna bara om du behöver app-instansen själv, annars använd getFirebaseDb/getFirebaseAuth
+ * Använd denna bara om du behöver app-instansen själv, annars använd hämtaFirebaseDb/hämtaFirebaseAuth
  *
  * @returns {FirebaseApp} Firebase app-instans
  */
-const getFirebaseApp = () => ensureFirebaseApp();
+const hämtaFirebaseApp = () => säkerställFirebaseApp();
 
 /**
  * Kontrollerar om Firebase är korrekt konfigurerat
@@ -153,20 +158,26 @@ const getFirebaseApp = () => ensureFirebaseApp();
  *
  * @returns {boolean} True om Firebase är konfigurerat och redo att användas
  */
-const hasFirebaseConfig = () => isFirebaseConfigured;
+const harFirebaseKonfiguration = () => arFirebaseInställningarKompletta;
 
 /**
  * Exporterar alla Firebase-funktioner som named exports för optimal tree-shaking
+ * Använder engelska namn för extern kompatibilitet
  */
-export { getFirebaseApp, getFirebaseDb, getFirebaseAuth, hasFirebaseConfig };
+export {
+  hämtaFirebaseApp as getFirebaseApp,
+  hämtaFirebaseDb as getFirebaseDb,
+  hämtaFirebaseAuth as getFirebaseAuth,
+  harFirebaseKonfiguration as hasFirebaseConfig
+};
 
 /**
  * Default export med alla funktioner samlade (för bakåtkompatibilitet)
  */
 export default {
-  getFirebaseApp,
-  getFirebaseDb,
-  getFirebaseAuth,
-  hasFirebaseConfig
+  getFirebaseApp: hämtaFirebaseApp,
+  getFirebaseDb: hämtaFirebaseDb,
+  getFirebaseAuth: hämtaFirebaseAuth,
+  hasFirebaseConfig: harFirebaseKonfiguration
 };
 

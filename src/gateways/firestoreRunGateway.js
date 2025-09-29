@@ -31,41 +31,41 @@ import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
 import { FALLBACK_POSITION, PARTICIPANT_TIMEOUT_MS } from '../utils/constants';
 
 /**
- * Lazy-loaded Firestore database instance
- * Används för att undvika initialization race conditions
+ * Lat-laddad Firestore databas-instans
+ * Används för att undvika initialiseringskonkurrens
  */
-const getDb = () => getFirebaseDb();
+const hämtaDb = () => getFirebaseDb();
 
 /**
- * Firestore collection references (memoized för performance)
+ * Firestore collection-referenser (memoized för prestanda)
  */
-const getRunsCollection = () => collection(getDb(), 'runs');
-const getParticipantsCollection = (runId) => collection(getDb(), 'runs', runId, 'participants');
+const hämtaRundsCollection = () => collection(hämtaDb(), 'runs');
+const hämtaDeltagarCollection = (runId) => collection(hämtaDb(), 'runs', runId, 'participants');
 
 /**
  * Säker serialisering för Firestore-kompatibilitet
- * Konverterar objekt till plain JSON för att undvika Firestore-begränsningar
+ * Konverterar objekt till ren JSON för att undvika Firestore-begränsningar
  *
- * @param {any} payload - Data att serialisera
- * @returns {any} Serialiserad data safe för Firestore
+ * @param {any} data - Data att serialisera
+ * @returns {any} Serialiserad data säker för Firestore
  */
-const serializeForFirestore = (payload) => {
+const serialiseraFörFirestore = (data) => {
   try {
-    return JSON.parse(JSON.stringify(payload));
+    return JSON.parse(JSON.stringify(data));
   } catch (error) {
     console.warn('[FirestoreGateway] Serialisering misslyckades:', error);
-    return payload;
+    return data;
   }
 };
 
 /**
- * Optimerad mapping av Firestore-dokument till run-objekt
- * Inkluderar null-checking och performance optimizations
+ * Optimerad mapping av Firestore-dokument till rundeobjekt
+ * Inkluderar null-kontroll och prestanda-optimeringar
  *
- * @param {DocumentSnapshot} docSnap - Firestore document snapshot
- * @returns {Object|null} Run-objekt eller null om dokument inte finns
+ * @param {DocumentSnapshot} docSnap - Firestore dokumentögonblick
+ * @returns {Object|null} Rundeobjekt eller null om dokument inte finns
  */
-const mapRunDocument = (docSnap) => {
+const mapperaRundeDokument = (docSnap) => {
   if (!docSnap?.exists()) return null;
 
   const data = docSnap.data();
@@ -87,66 +87,66 @@ const mapRunDocument = (docSnap) => {
 
 /**
  * Beräknar deltagarens aktuella status baserat på aktivitet
- * Optimerad för performance med cached timestamps
+ * Optimerad för prestanda med cachade tidsstämplar
  *
- * @param {Object} participant - Deltagarobjekt från Firestore
+ * @param {Object} deltagare - Deltagarobjekt från Firestore
  * @returns {Object} Deltagare med beräknad status
  */
-const calculateParticipantStatus = (participant) => {
-  if (!participant) return null;
+const beräknaDeltagarStatus = (deltagare) => {
+  if (!deltagare) return null;
 
-  const now = Date.now();
-  const lastSeenMs = participant.lastSeen
-    ? new Date(participant.lastSeen).getTime()
+  const nu = Date.now();
+  const sistSeenMs = deltagare.lastSeen
+    ? new Date(deltagare.lastSeen).getTime()
     : 0;
-  const completedAtMs = participant.completedAt
-    ? new Date(participant.completedAt).getTime()
+  const färdigMs = deltagare.completedAt
+    ? new Date(deltagare.completedAt).getTime()
     : null;
 
   // Status-logik
-  const isFinished = Boolean(completedAtMs);
-  const isActive = !isFinished && (now - lastSeenMs) < PARTICIPANT_TIMEOUT_MS;
-  const status = isFinished ? 'finished' : (isActive ? 'active' : 'inactive');
+  const ärFärdig = Boolean(färdigMs);
+  const ärAktiv = !ärFärdig && (nu - sistSeenMs) < PARTICIPANT_TIMEOUT_MS;
+  const status = ärFärdig ? 'finished' : (ärAktiv ? 'active' : 'inactive');
 
   return {
-    ...participant,
-    isActive,
+    ...deltagare,
+    isActive: ärAktiv,
     status,
     // Lägg till hjälpfält för UI
-    lastSeenFormatted: participant.lastSeen
-      ? new Date(participant.lastSeen).toLocaleString('sv-SE')
+    lastSeenFormatted: deltagare.lastSeen
+      ? new Date(deltagare.lastSeen).toLocaleString('sv-SE')
       : 'Aldrig',
-    completedAtFormatted: participant.completedAt
-      ? new Date(participant.completedAt).toLocaleString('sv-SE')
+    completedAtFormatted: deltagare.completedAt
+      ? new Date(deltagare.completedAt).toLocaleString('sv-SE')
       : null
   };
 };
 
 /**
- * Mappar Firestore participant-dokument till enriched participant-objekt
- * Inkluderar status-beräkning och error handling
+ * Mappar Firestore deltagardokument till berikade deltagarobjekt
+ * Inkluderar statusberäkning och felhantering
  *
- * @param {DocumentSnapshot} docSnap - Firestore document snapshot
- * @returns {Object|null} Enriched participant eller null
+ * @param {DocumentSnapshot} docSnap - Firestore dokumentögonblick
+ * @returns {Object|null} Berikad deltagare eller null
  */
-const mapParticipantDocument = (docSnap) => {
+const mapperaDeltagarDokument = (docSnap) => {
   if (!docSnap?.exists()) return null;
 
-  const participantData = { id: docSnap.id, ...docSnap.data() };
-  return calculateParticipantStatus(participantData);
+  const deltagarData = { id: docSnap.id, ...docSnap.data() };
+  return beräknaDeltagarStatus(deltagarData);
 };
 
 export const firestoreRunGateway = {
   /** Hämtar alla rundor från Firestore. */
   async listRuns() {
-    const snapshot = await getDocs(runsCollection);
-    return snapshot.docs.map(mapRunDoc).filter(Boolean);
+    const snapshot = await getDocs(hämtaRundsCollection());
+    return snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
   },
 
   /** Hämtar en runda via dokument-id. */
   async getRun(runId) {
-    const docSnap = await getDoc(doc(runsCollection, runId));
-    let run = mapRunDoc(docSnap);
+    const docSnap = await getDoc(doc(hämtaRundsCollection(), runId));
+    let run = mapperaRundeDokument(docSnap);
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] getRun hämtade från Firestore:', {
@@ -179,7 +179,7 @@ export const firestoreRunGateway = {
           run = { ...run, route: routeData.route };
 
           // Spara den uppdaterade rundan tillbaka till Firestore
-          await setDoc(doc(runsCollection, run.id), serialize(run));
+          await setDoc(doc(hämtaRundsCollection(), run.id), serialiseraFörFirestore(run));
 
           if (process.env.NODE_ENV !== 'production') {
             console.debug('[FirestoreGateway] Route-data genererad och sparad retroaktivt:', {
@@ -197,16 +197,16 @@ export const firestoreRunGateway = {
 
   /** Söker upp runda via joinCode. */
   async getRunByCode(joinCode) {
-    const runQuery = query(runsCollection, where('joinCode', '==', joinCode.toUpperCase()));
+    const runQuery = query(hämtaRundsCollection(), where('joinCode', '==', joinCode.toUpperCase()));
     const snapshot = await getDocs(runQuery);
     const [first] = snapshot.docs;
-    return first ? mapRunDoc(first) : null;
+    return first ? mapperaRundeDokument(first) : null;
   },
 
   /** Sparar en ny admin-skapad runda. */
   async createRun(payload, creator) {
     const run = await buildHostedRun(payload, creator);
-    await setDoc(doc(runsCollection, run.id), serialize(run));
+    await setDoc(doc(hämtaRundsCollection(), run.id), serialiseraFörFirestore(run));
     return run;
   },
 
@@ -228,7 +228,7 @@ export const firestoreRunGateway = {
       });
     }
 
-    const serialized = serialize(run);
+    const serialized = serialiseraFörFirestore(run);
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] Efter serialisering:', {
@@ -240,7 +240,7 @@ export const firestoreRunGateway = {
       });
     }
 
-    await setDoc(doc(runsCollection, run.id), serialized);
+    await setDoc(doc(hämtaRundsCollection(), run.id), serialized);
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] Returnerar run med route:', !!run.route);
@@ -251,8 +251,8 @@ export const firestoreRunGateway = {
 
   /** Hämtar deltagarlistan för en runda. */
   async listParticipants(runId) {
-    const snapshot = await getDocs(participantsCollection(runId));
-    return snapshot.docs.map(mapParticipantDoc).filter(Boolean);
+    const snapshot = await getDocs(hämtaDeltagarCollection(runId));
+    return snapshot.docs.map(mapperaDeltagarDokument).filter(Boolean);
   },
 
   /** Registrerar en ny deltagare i Firestore. */
@@ -272,13 +272,13 @@ export const firestoreRunGateway = {
       answers: [],
       lastSeen: now
     };
-    await setDoc(doc(participantsCollection(runId), participant.id), serialize(participant));
-    return enrichParticipant(participant);
+    await setDoc(doc(hämtaDeltagarCollection(runId), participant.id), serialiseraFörFirestore(participant));
+    return beräknaDeltagarStatus(participant);
   },
 
   /** Sparar ett svar och håller ordning på poäng i Firestore. */
   async recordAnswer(runId, participantId, { questionId, answerIndex, correct }) {
-    const participantRef = doc(participantsCollection(runId), participantId);
+    const participantRef = doc(hämtaDeltagarCollection(runId), participantId);
     const snap = await getDoc(participantRef);
     if (!snap.exists()) {
       throw new Error('Deltagare hittades inte.');
@@ -295,7 +295,7 @@ export const firestoreRunGateway = {
     }
     const score = answers.filter((entry) => entry.correct).length;
 
-    const runSnap = await getDoc(doc(runsCollection, runId));
+    const runSnap = await getDoc(doc(hämtaRundsCollection(), runId));
     const questionCount = runSnap.exists() ? (runSnap.data().questionIds?.length || 0) : 0;
 
     const updated = {
@@ -307,13 +307,13 @@ export const firestoreRunGateway = {
       lastSeen: now
     };
 
-    await setDoc(participantRef, serialize(updated), { merge: true });
-    return enrichParticipant(updated);
+    await setDoc(participantRef, serialiseraFörFirestore(updated), { merge: true });
+    return beräknaDeltagarStatus(updated);
   },
 
   /** Markerar deltagaren som klar. */
   async completeRun(runId, participantId) {
-    const participantRef = doc(participantsCollection(runId), participantId);
+    const participantRef = doc(hämtaDeltagarCollection(runId), participantId);
     const now = new Date().toISOString();
     await updateDoc(participantRef, { completedAt: now, lastSeen: now });
   },
@@ -321,46 +321,46 @@ export const firestoreRunGateway = {
   /** Stänger rundan för fler svar. */
   async closeRun(runId) {
     const now = new Date().toISOString();
-    await updateDoc(doc(runsCollection, runId), { status: 'closed', closedAt: now });
+    await updateDoc(doc(hämtaRundsCollection(), runId), { status: 'closed', closedAt: now });
   },
 
   /** Realtidslyssnare för rundor. */
   subscribeRuns(listener) {
-    return onSnapshot(runsCollection, (snapshot) => {
-      const runs = snapshot.docs.map(mapRunDoc).filter(Boolean);
+    return onSnapshot(hämtaRundsCollection(), (snapshot) => {
+      const runs = snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
       listener(runs);
     });
   },
 
   /** Realtidslyssnare för deltagare i en runda. */
   subscribeParticipants(runId, listener) {
-    return onSnapshot(participantsCollection(runId), (snapshot) => {
-      const participants = snapshot.docs.map(mapParticipantDoc).filter(Boolean);
+    return onSnapshot(hämtaDeltagarCollection(runId), (snapshot) => {
+      const participants = snapshot.docs.map(mapperaDeltagarDokument).filter(Boolean);
       listener(participants);
     });
   },
 
   /** Uppdaterar deltagarens senaste aktivitetstid. */
   async heartbeatParticipant(runId, participantId) {
-    const participantRef = doc(participantsCollection(runId), participantId);
+    const participantRef = doc(hämtaDeltagarCollection(runId), participantId);
     const now = new Date().toISOString();
     await updateDoc(participantRef, { lastSeen: now });
     const snap = await getDoc(participantRef);
-    return mapParticipantDoc(snap);
+    return mapperaDeltagarDokument(snap);
   },
 
   /** Hämtar en deltagare via id. */
   async getParticipant(runId, participantId) {
-    const snap = await getDoc(doc(participantsCollection(runId), participantId));
-    return mapParticipantDoc(snap);
+    const snap = await getDoc(doc(hämtaDeltagarCollection(runId), participantId));
+    return mapperaDeltagarDokument(snap);
   },
 
   /** Uppdaterar en befintlig runda. */
   async updateRun(runId, updates) {
-    const runRef = doc(runsCollection, runId);
-    await updateDoc(runRef, serialize(updates));
+    const runRef = doc(hämtaRundsCollection(), runId);
+    await updateDoc(runRef, serialiseraFörFirestore(updates));
     const snap = await getDoc(runRef);
-    return mapRunDoc(snap);
+    return mapperaRundeDokument(snap);
   }
 };
 
