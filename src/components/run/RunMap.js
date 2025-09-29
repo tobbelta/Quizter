@@ -1,9 +1,11 @@
 /**
- * Visar rundans checkpoints på en Leaflet-karta och följer spelaren.
+ * Visar rundans checkpoints på en Leaflet-karta, följer spelaren och visar ruttens riktning.
  */
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, CircleMarker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-polylinedecorator'; // Importera för att rita pilar
+import L from 'leaflet'; // Behövs för PolylineDecorator
 import { DEFAULT_CENTER } from '../../utils/constants';
 
 /**
@@ -27,43 +29,58 @@ const MapUpdater = ({ center }) => {
 };
 
 /**
+ * Ritar pilar längs med en rutt för att visa riktning.
+ */
+const RouteArrowDecorator = ({ route }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !route || route.length === 0) return;
+
+    // Skapa ett lager med pilar
+    const decorator = L.polylineDecorator(route, {
+      patterns: [
+        {
+          offset: 25, // Starta första pilen 25px in på linjen
+          repeat: 120, // Upprepa pilarna var 120:e pixel
+          symbol: L.Symbol.arrowHead({
+            pixelSize: 12,
+            pathOptions: {
+              color: '#FFFFFF', // Vit färg på pilarna för kontrast
+              fillOpacity: 0.9,
+              weight: 1,
+              stroke: true,
+              fill: true
+            }
+          })
+        }
+      ]
+    });
+
+    decorator.addTo(map);
+
+    // Städa upp lagret när komponenten tas bort eller rutten ändras
+    return () => {
+      if (map.hasLayer(decorator)) {
+        map.removeLayer(decorator);
+      }
+    };
+  }, [map, route]); // Kör om effekten om kartan eller rutten ändras
+
+  return null;
+};
+
+
+/**
  * Renderar hela kartkomponenten inklusive polyline, checkpoints och spelarmarkör.
  */
 const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }) => {
   const positions = useMemo(() => checkpoints.map((checkpoint) => [checkpoint.location.lat, checkpoint.location.lng]), [checkpoints]);
 
-  // EXTRA DEBUG LOGGING
-  console.log('=== RunMap DEBUG ===');
-  console.log('Props mottagna:', {
-    checkpoints: checkpoints?.length || 0,
-    userPosition,
-    activeOrder,
-    answeredCount,
-    route: route,
-    routeType: typeof route,
-    routeIsArray: Array.isArray(route),
-    routeLength: route?.length
-  });
-  console.log('Route innehåll (första 3 punkter):', route?.slice(0, 3));
-  console.log('==================');
-
   // Använd faktisk rutt om tillgänglig, annars fallback till raka linjer mellan checkpoints
   const routePositions = useMemo(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[RunMap] Route data:', {
-        route: route,
-        routeLength: route?.length || 0,
-        routeType: typeof route,
-        isArray: Array.isArray(route),
-        checkpointCount: positions.length,
-        routeFirstPoint: route?.[0],
-        routeLastPoint: route?.[route?.length - 1]
-      });
-    }
-
     // Kontrollera om vi har en giltig rutt med faktiska koordinater
     if (route && Array.isArray(route) && route.length > 1) {
-      // Validera att rutdatan har korrekt format
       const isValidRoute = route.every(point =>
         point &&
         typeof point.lat === 'number' &&
@@ -73,23 +90,10 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
       );
 
       if (isValidRoute) {
-        const mapped = route.map(point => [point.lat, point.lng]);
-        if (process.env.NODE_ENV !== 'production') {
-          console.debug('[RunMap] Använder detaljerad rutt med', mapped.length, 'punkter');
-          console.debug('[RunMap] Första punkten:', mapped[0]);
-          console.debug('[RunMap] Sista punkten:', mapped[mapped.length - 1]);
-        }
-        return mapped;
-      } else {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('[RunMap] Rutt har ogiltigt format, faller tillbaka till checkpoints');
-        }
+        return route.map(point => [point.lat, point.lng]);
       }
     }
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[RunMap] Fallback till checkpoint-linjer med', positions.length, 'punkter');
-    }
+    // Fallback
     return positions;
   }, [route, positions]);
 
@@ -129,6 +133,8 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route }
                 lineJoin: 'round'
               }}
             />
+            {/* Lägg till riktningspilarna ovanpå rutten */}
+            <RouteArrowDecorator route={routePositions} />
           </>
         )}
         {positions.map((position, index) => {
