@@ -16,6 +16,7 @@ import RunResultsPage from './views/RunResultsPage';
 import RegisterPlayerPage from './views/RegisterPlayerPage';
 import RegisterAdminPage from './views/RegisterAdminPage';
 import MyRunsPage from './views/MyRunsPage';
+import AdminQuestionsPage from './views/AdminQuestionsPage';
 
 /**
  * Skyddar admin-rutter så att gäster hamnar på startsidan.
@@ -70,6 +71,14 @@ const AppRoutes = () => (
       element={(
         <RequireAdmin>
           <MyRunsPage />
+        </RequireAdmin>
+      )}
+    />
+    <Route
+      path="/admin/questions"
+      element={(
+        <RequireAdmin>
+          <AdminQuestionsPage />
         </RequireAdmin>
       )}
     />

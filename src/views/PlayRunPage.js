@@ -56,6 +56,13 @@ const PlayRunPage = () => {
   const [questionVisible, setQuestionVisible] = useState(true);
   const [distanceToCheckpoint, setDistanceToCheckpoint] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    // Läs från localStorage eller använd svenska som default
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('geoquest:language') || 'sv';
+    }
+    return 'sv';
+  });
 
   useEffect(() => {
     try {
@@ -89,8 +96,24 @@ const PlayRunPage = () => {
 
   const orderedQuestions = useMemo(() => {
     if (!currentRun) return [];
-    return currentRun.questionIds.map((id) => questionService.getById(id)).filter(Boolean);
-  }, [currentRun]);
+    return currentRun.questionIds.map((id) => {
+      const question = questionService.getById(id);
+      if (!question) return null;
+
+      // Hämta rätt språkversion
+      const langData = question.languages?.[selectedLanguage] ||
+                      question.languages?.sv ||
+                      question.languages?.[Object.keys(question.languages || {})[0]] ||
+                      { text: question.text, options: question.options, explanation: question.explanation };
+
+      return {
+        ...question,
+        text: langData.text,
+        options: langData.options,
+        explanation: langData.explanation
+      };
+    }).filter(Boolean);
+  }, [currentRun, selectedLanguage]);
 
   const currentOrderIndex = useMemo(() => {
     if (!currentParticipant) return 0;
@@ -161,6 +184,14 @@ const PlayRunPage = () => {
       disableTracking();
     } else {
       enableTracking();
+    }
+  };
+
+  /** Ändrar språk och sparar valet. */
+  const handleLanguageChange = (language) => {
+    setSelectedLanguage(language);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('geoquest:language', language);
     }
   };
 
@@ -254,6 +285,38 @@ const PlayRunPage = () => {
                 </div>
               </section>
 
+              {/* Språkinställningar */}
+              <section>
+                <h2 className="text-lg font-semibold text-cyan-200 mb-3">Språk</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLanguageChange('sv')}
+                    className={`rounded-lg px-3 py-2 font-semibold text-sm ${
+                      selectedLanguage === 'sv'
+                        ? 'bg-cyan-500 text-black'
+                        : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
+                    }`}
+                  >
+                    🇸🇪 Svenska
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLanguageChange('en')}
+                    className={`rounded-lg px-3 py-2 font-semibold text-sm ${
+                      selectedLanguage === 'en'
+                        ? 'bg-cyan-500 text-black'
+                        : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
+                    }`}
+                  >
+                    🇬🇧 English
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  Frågor visas på valt språk (om tillgängligt)
+                </p>
+              </section>
+
               {/* Position info */}
               {nextCheckpoint && distanceToCheckpoint !== null && (
                 <section>
@@ -296,7 +359,12 @@ const PlayRunPage = () => {
         {currentQuestion && (
           <div className="absolute inset-x-4 bottom-4 z-30">
             <form onSubmit={handleSubmit} className="bg-slate-900/95 backdrop-blur-sm rounded-xl border border-cyan-400/40 p-4 shadow-xl">
-              <h2 className="text-lg font-semibold mb-3 text-white">{currentQuestion.text}</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-white flex-1">{currentQuestion.text}</h2>
+                <span className="ml-3 inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                  {selectedLanguage.toUpperCase()}
+                </span>
+              </div>
               <div className="space-y-2 mb-4">
                 {currentQuestion.options.map((option, index) => (
                   <label

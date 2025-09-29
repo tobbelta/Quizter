@@ -70,21 +70,85 @@ const addQuestions = (questions) => {
   return cachedQuestions;
 };
 
+/**
+ * Konverterar gamla frågeformat till nya språkbaserade format.
+ */
+const normalizeQuestion = (question) => {
+  // Om frågan redan har det nya formatet
+  if (question.languages) {
+    return question;
+  }
+
+  // Konvertera gammalt format till nytt
+  return {
+    ...question,
+    languages: {
+      sv: {
+        text: question.text,
+        options: question.options,
+        explanation: question.explanation || 'Ingen förklaring tillgänglig'
+      }
+    }
+  };
+};
+
+/**
+ * Hämtar frågetext och alternativ för specifikt språk.
+ */
+const getQuestionForLanguage = (question, language = 'sv') => {
+  const normalized = normalizeQuestion(question);
+  const langData = normalized.languages[language] || normalized.languages.sv || normalized.languages[Object.keys(normalized.languages)[0]];
+
+  return {
+    ...normalized,
+    text: langData.text,
+    options: langData.options,
+    explanation: langData.explanation
+  };
+};
+
 export const questionService = {
   /**
    * Returnerar hela frågebanken som används av runFactory.
    */
-  listAll: () => cachedQuestions,
+  listAll: () => cachedQuestions.map(normalizeQuestion),
+
+  /**
+   * Returnerar hela frågebanken för ett specifikt språk.
+   */
+  listAllForLanguage: (language = 'sv') => cachedQuestions.map(q => getQuestionForLanguage(q, language)),
 
   /**
    * Hittar en fråga via id eller returnerar null om den saknas.
    */
-  getById: (id) => cachedQuestions.find((question) => question.id === id) || null,
+  getById: (id) => {
+    const question = cachedQuestions.find((q) => q.id === id);
+    return question ? normalizeQuestion(question) : null;
+  },
+
+  /**
+   * Hittar en fråga via id för specifikt språk.
+   */
+  getByIdForLanguage: (id, language = 'sv') => {
+    const question = cachedQuestions.find((q) => q.id === id);
+    return question ? getQuestionForLanguage(question, language) : null;
+  },
 
   /**
    * Returnerar flera frågor i samma ordning som id-listan.
    */
-  getManyByIds: (ids) => ids.map((id) => cachedQuestions.find((question) => question.id === id)).filter(Boolean),
+  getManyByIds: (ids) => ids.map((id) => {
+    const question = cachedQuestions.find((q) => q.id === id);
+    return question ? normalizeQuestion(question) : null;
+  }).filter(Boolean),
+
+  /**
+   * Returnerar flera frågor för specifikt språk.
+   */
+  getManyByIdsForLanguage: (ids, language = 'sv') => ids.map((id) => {
+    const question = cachedQuestions.find((q) => q.id === id);
+    return question ? getQuestionForLanguage(question, language) : null;
+  }).filter(Boolean),
 
   /**
    * Hämtar nya frågor från OpenTDB baserat på målgrupp och lägger till dem i banken.
@@ -93,6 +157,34 @@ export const questionService = {
     const fetched = await opentdbService.fetchQuestions({ amount, difficulty, audience });
     addQuestions(fetched);
     return fetched;
+  },
+
+  /**
+   * Tar bort en fråga från banken (endast extra frågor, inte från QUESTION_BANK).
+   */
+  delete: (questionId) => {
+    const questionIndex = cachedQuestions.findIndex(q => q.id === questionId);
+    if (questionIndex === -1) {
+      throw new Error('Fråga hittades inte');
+    }
+
+    const question = cachedQuestions[questionIndex];
+
+    // Kontrollera om det är en bas-fråga från QUESTION_BANK
+    const isBaseQuestion = QUESTION_BANK.some(q => q.id === questionId);
+    if (isBaseQuestion) {
+      throw new Error('Kan inte ta bort inbyggda frågor');
+    }
+
+    // Ta bort från cachedQuestions
+    cachedQuestions = cachedQuestions.filter(q => q.id !== questionId);
+
+    // Ta bort från extraQuestions och uppdatera localStorage
+    extraQuestions = extraQuestions.filter(q => q.id !== questionId);
+    writeExtras(extraQuestions);
+
+    notify();
+    return true;
   },
 
   /**

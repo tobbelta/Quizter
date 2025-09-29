@@ -180,7 +180,14 @@ const LandingPage = () => {
                   onClick={() => navigate('/admin/my-runs')}
                   className="rounded bg-blue-500 px-4 py-2 font-semibold text-black hover:bg-blue-400"
                 >
-                  Mina rundor
+                  Skapade rundor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/questions')}
+                  className="rounded bg-green-500 px-4 py-2 font-semibold text-black hover:bg-green-400"
+                >
+                  Tillgängliga frågor
                 </button>
                 <button
                   type="button"
