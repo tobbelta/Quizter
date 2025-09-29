@@ -110,7 +110,7 @@ const RunAdminPage = () => {
               <div className="space-y-3">
                 <button
                   onClick={() => {
-                    navigate(`/join/${currentRun.joinCode}`);
+                    navigate(`/join?code=${currentRun.joinCode}`);
                     setMenuOpen(false);
                   }}
                   className="w-full rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400 text-left"
@@ -244,7 +244,7 @@ const RunAdminPage = () => {
           <div className="mb-4">
             <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
             <button
-              onClick={() => navigate(`/join/${currentRun.joinCode}`)}
+              onClick={() => navigate(`/join?code=${currentRun.joinCode}`)}
               className="text-2xl font-mono font-bold text-white bg-slate-800 rounded-lg py-2 px-4 hover:bg-slate-700 transition-colors cursor-pointer"
               title="Klicka för att ansluta till rundan som spelare"
             >
@@ -257,7 +257,7 @@ const RunAdminPage = () => {
 
           {/* Klickbar QR-kod */}
           <div
-            onClick={() => navigate(`/join/${currentRun.joinCode}`)}
+            onClick={() => navigate(`/join?code=${currentRun.joinCode}`)}
             className="cursor-pointer hover:opacity-80 transition-opacity"
             title="Klicka QR-koden för att ansluta som spelare"
           >

@@ -265,7 +265,7 @@ const CreateRunPage = () => {
                 <div>
                   <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
                   <button
-                    onClick={() => navigate(`/join/${createdRun.joinCode}`)}
+                    onClick={() => navigate(`/join?code=${createdRun.joinCode}`)}
                     className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4 hover:bg-slate-700 transition-colors w-full cursor-pointer"
                     title="Klicka för att ansluta till rundan som spelare"
                   >
@@ -278,7 +278,7 @@ const CreateRunPage = () => {
 
                 <div className="flex justify-center">
                   <div
-                    onClick={() => navigate(`/join/${createdRun.joinCode}`)}
+                    onClick={() => navigate(`/join?code=${createdRun.joinCode}`)}
                     className="cursor-pointer hover:opacity-80 transition-opacity"
                     title="Klicka QR-koden för att ansluta som spelare"
                   >
