@@ -266,6 +266,14 @@ export const firestoreRunGateway = {
   async getParticipant(runId, participantId) {
     const snap = await getDoc(doc(participantsCollection(runId), participantId));
     return mapParticipantDoc(snap);
+  },
+
+  /** Uppdaterar en befintlig runda. */
+  async updateRun(runId, updates) {
+    const runRef = doc(runsCollection, runId);
+    await updateDoc(runRef, serialize(updates));
+    const snap = await getDoc(runRef);
+    return mapRunDoc(snap);
   }
 };
 

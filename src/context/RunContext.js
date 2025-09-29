@@ -184,6 +184,17 @@ export const RunProvider = ({ children }) => {
     }
   }, [runId]);
 
+  /** Uppdaterar den aktuella rundan. */
+  const updateRun = useCallback(async (updates) => {
+    if (!runId) return;
+    const updated = await runRepository.updateRun(runId, updates);
+    if (updated) {
+      setCurrentRun(updated);
+      setQuestions(mapRunQuestions(updated));
+    }
+    return updated;
+  }, [runId]);
+
   useEffect(() => {
     if (currentRun && currentParticipant) {
       writeActiveParticipant({ runId: currentRun.id, participantId: currentParticipant.id });
@@ -286,7 +297,8 @@ export const RunProvider = ({ children }) => {
     refreshParticipants,
     submitAnswer,
     completeRunForParticipant,
-    closeRun
+    closeRun,
+    updateRun
   }), [
     currentRun,
     questions,
@@ -300,7 +312,8 @@ export const RunProvider = ({ children }) => {
     refreshParticipants,
     submitAnswer,
     completeRunForParticipant,
-    closeRun
+    closeRun,
+    updateRun
   ]);
 
   return (

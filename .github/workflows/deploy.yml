@@ -43,8 +43,10 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST2 }}'
           channelId: live
           projectId: 'geoquest-1c461'
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
 
 
