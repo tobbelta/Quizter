@@ -1,20 +1,29 @@
 /**
  * Cloud Functions-skelett för tipspromenadens backend-endpoints.
  */
-const functions = require("firebase-functions");
+const {onRequest} = require("firebase-functions/v2/https");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {defineString} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const cors = require("cors")({ origin: true });
+
+// Define Stripe secret key parameter
+const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const REGION = "europe-west1";
-const runtimeDefaults = { memory: "512MB", timeoutSeconds: 60 };
+const runtimeDefaults = {
+  region: REGION,
+  memory: "512MB",
+  timeoutSeconds: 60
+};
 
 const createHttpsHandler = (handler) =>
-  functions.region(REGION).runWith(runtimeDefaults).https.onRequest(handler);
+  onRequest(runtimeDefaults, handler);
 
 const ensurePost = (req, res) => {
   if (req.method !== "POST") {
@@ -76,13 +85,16 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
 });
 
 // Schemalagd funktion som ska hämta fler frågor löpande.
-exports.questionImport = functions
-  .region(REGION)
-  .pubsub.schedule("every 6 hours")
-  .onRun(async (context) => {
-    logger.info("questionImport trigger executed", { timestamp: context.timestamp });
+exports.questionImport = onSchedule(
+  {
+    schedule: "every 6 hours",
+    region: REGION
+  },
+  async (event) => {
+    logger.info("questionImport trigger executed", { timestamp: event.scheduleTime });
     logger.warn("TODO: implement automatic question import");
-  });
+  }
+);
 
 /**
  * Stripe Payment Intent Creation
@@ -111,9 +123,9 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
         return;
       }
 
-      // Hämta Stripe secret key från Firebase config
-      const stripeSecretKey = functions.config().stripe?.secret_key;
-      if (!stripeSecretKey) {
+      // Hämta Stripe secret key från environment
+      const secretKey = stripeSecretKey.value();
+      if (!secretKey) {
         logger.error("Stripe secret key not configured");
         res.status(500).json({
           error: "Payment system not configured",
@@ -122,7 +134,7 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
       }
 
       // Initiera Stripe
-      const stripe = require("stripe")(stripeSecretKey);
+      const stripe = require("stripe")(secretKey);
 
       // Skapa PaymentIntent
       const paymentIntent = await stripe.paymentIntents.create({
