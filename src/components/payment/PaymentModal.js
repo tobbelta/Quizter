@@ -57,10 +57,13 @@ const TestModePaymentForm = ({ runName, amount, onSuccess, onCancel, allowSkip =
       <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">
-            Betala för runddeltagande
+            Stöd projektet (valfritt)
           </h2>
-          <p className="text-gray-300 text-sm">
+          <p className="text-gray-300 text-sm mb-2">
             {runName}
+          </p>
+          <p className="text-gray-400 text-sm">
+            Vill du stödja utvecklingen av GeoQuest med en frivillig donation?
           </p>
           <div className="mt-2 bg-emerald-900/30 border border-emerald-500/50 rounded p-2">
             <p className="text-emerald-200 text-xs">
@@ -104,9 +107,9 @@ const TestModePaymentForm = ({ runName, amount, onSuccess, onCancel, allowSkip =
                 type="button"
                 onClick={handleSkipPayment}
                 disabled={isProcessing}
-                className="w-full rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 disabled:opacity-50 text-sm"
+                className="w-full rounded-lg bg-slate-700 px-4 py-2 font-semibold text-gray-300 hover:bg-slate-600 disabled:opacity-50 text-sm"
               >
-                🚫 Hoppa över betalning (gratis tillgång)
+                Fortsätt utan donation
               </button>
             )}
           </div>
@@ -205,10 +208,13 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
       <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">
-            Betala för runddeltagande
+            Stöd projektet (valfritt)
           </h2>
-          <p className="text-gray-300 text-sm">
+          <p className="text-gray-300 text-sm mb-2">
             {runName}
+          </p>
+          <p className="text-gray-400 text-sm">
+            Vill du stödja utvecklingen av GeoQuest med en frivillig donation?
           </p>
         </div>
 
@@ -253,7 +259,7 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
                 disabled={isProcessing || !stripe}
                 className="flex-1 rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
               >
-                {isProcessing ? 'Bearbetar...' : `Betala ${(amount / 100).toFixed(2)} kr`}
+                {isProcessing ? 'Bearbetar...' : `Donera ${(amount / 100).toFixed(2)} kr`}
               </button>
             </div>
 
@@ -263,9 +269,9 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
                 type="button"
                 onClick={handleSkipPayment}
                 disabled={isProcessing}
-                className="w-full rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 disabled:opacity-50 text-sm"
+                className="w-full rounded-lg bg-slate-700 px-4 py-2 font-semibold text-gray-300 hover:bg-slate-600 disabled:opacity-50 text-sm"
               >
-                🚫 Hoppa över betalning (gratis tillgång)
+                Fortsätt utan donation
               </button>
             )}
           </div>

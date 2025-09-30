@@ -1,131 +1,92 @@
-// Version info för GeoQuest
-// Uppdatera detta manuellt när du gör ändringar
-export const VERSION = {
-  major: 2,
-  minor: 17,
-  patch: 6,
-  build: Date.now(),
-  description: "Fix anti-loop blocking legitima state changes + bättre fallback namn"
+/**
+ * Versionshantering för GeoQuest
+ *
+ * Använd Semantic Versioning (SemVer): MAJOR.MINOR.PATCH
+ * - MAJOR: Inkompatibla API-ändringar
+ * - MINOR: Nya funktioner, bakåtkompatibelt
+ * - PATCH: Buggfixar, bakåtkompatibelt
+ */
+
+export const VERSION = '2.0.0';
+export const BUILD_DATE = '2025-09-30';
+export const FEATURES = {
+  localStorage: true,
+  migration: true,
+  donations: true,
+  superuser: true,
+  simplifiedUI: true
 };
 
-export const getVersionString = () => {
-  return `v${VERSION.major}.${VERSION.minor}.${VERSION.patch}`;
-};
-
-export const getFullVersionString = () => {
-  const buildDate = new Date(VERSION.build).toLocaleString('sv-SE', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-  return `${getVersionString()} (${buildDate})`;
-};
-
-export const getBuildInfo = () => {
-  return {
-    version: getVersionString(),
-    fullVersion: getFullVersionString(),
-    description: VERSION.description,
-    buildTimestamp: VERSION.build
-  };
-};
-
-// Förbättrad uppdateringskontroll som fungerar överallt
-export const checkForUpdates = async () => {
-  try {
-    console.log('🔄 checkForUpdates körs, NODE_ENV:', process.env.NODE_ENV);
-
-    // Använd både version och build för att detektera ändringar
-    const currentVersionString = `${VERSION.major}.${VERSION.minor}.${VERSION.patch}`;
-    const currentBuildTime = VERSION.build;
-
-    let lastKnownVersion, lastKnownBuild;
-
-    try {
-      lastKnownVersion = localStorage.getItem('geoquest-last-version');
-      lastKnownBuild = localStorage.getItem('geoquest-last-build');
-    } catch (e) {
-      console.warn('localStorage inte tillgängligt:', e);
-      lastKnownVersion = null;
-      lastKnownBuild = null;
-    }
-
-    console.log('📊 Version check:', {
-      currentVersion: currentVersionString,
-      lastKnownVersion,
-      currentBuild: currentBuildTime,
-      lastKnownBuild: lastKnownBuild ? parseInt(lastKnownBuild) : null,
-      versionChanged: lastKnownVersion && lastKnownVersion !== currentVersionString,
-      buildChanged: lastKnownBuild && parseInt(lastKnownBuild) !== currentBuildTime
-    });
-
-    // Kontrollera om version eller build har ändrats
-    const versionChanged = lastKnownVersion && lastKnownVersion !== currentVersionString;
-    const buildChanged = lastKnownBuild && parseInt(lastKnownBuild) !== currentBuildTime;
-
-    if (versionChanged || buildChanged) {
-      // Uppdatera sparade värden
-      try {
-        localStorage.setItem('geoquest-last-version', currentVersionString);
-        localStorage.setItem('geoquest-last-build', currentBuildTime.toString());
-      } catch (e) {
-        console.warn('Kunde inte spara till localStorage:', e);
-      }
-
-      const changeType = versionChanged ? 'version' : 'build';
-      console.log(`✅ Uppdatering upptäckt! (${changeType} ändring)`);
-
-      return {
-        hasUpdate: true,
-        currentVersion: lastKnownVersion || 'okänd',
-        serverVersion: `v${currentVersionString}`,
-        message: `Ny ${versionChanged ? 'version' : 'build'} tillgänglig!`,
-        changeType: changeType
-      };
-    }
-
-    // Rensa gamla localStorage-nycklar från tidigare versioner
-    try {
-      const oldKeys = ['lastKnownBuild', 'lastUpdateCheck', 'lastEtag'];
-      oldKeys.forEach(key => {
-        if (localStorage.getItem(key) !== null) {
-          localStorage.removeItem(key);
-          console.log(`🧹 Rensade gammal localStorage-nyckel: ${key}`);
-        }
-      });
-
-      // Engångsrensning för version 2.9.2 - forcera uppdateringsdetektering
-      const forceUpdateFlag = localStorage.getItem('geoquest-force-update-292');
-      if (!forceUpdateFlag) {
-        localStorage.removeItem('geoquest-last-version');
-        localStorage.removeItem('geoquest-last-build');
-        localStorage.setItem('geoquest-force-update-292', 'done');
-        console.log('🔄 Forcerar uppdateringsdetektering för version 2.9.2');
-      }
-    } catch (e) {
-      // Ignorera fel vid rensning
-    }
-
-    // Om det inte finns några sparade värden, spara nuvarande (första gången)
-    if (!lastKnownVersion || !lastKnownBuild) {
-      try {
-        localStorage.setItem('geoquest-last-version', currentVersionString);
-        localStorage.setItem('geoquest-last-build', currentBuildTime.toString());
-      } catch (e) {
-        console.warn('Kunde inte spara initial version/build till localStorage:', e);
-      }
-      console.log('💾 Sparade initial version och build');
-    }
-
-    return {
-      hasUpdate: false,
-      message: `Du har den senaste versionen (v${currentVersionString})`
-    };
-
-  } catch (error) {
-    console.error('❌ Uppdateringskontroll misslyckades:', error);
-    return { hasUpdate: false, error: `Uppdateringskontroll misslyckades: ${error.message}` };
+export const CHANGELOG = [
+  {
+    version: '2.0.0',
+    date: '2025-09-30',
+    changes: [
+      'Förenklad användarupplevelse med 2 huvudknappar',
+      'Ta bort rollsystem - alla kan skapa/ansluta',
+      'Ny SuperUser-roll för administration',
+      'Hamburger-meny med Mina rundor',
+      'LocalStorage för oinloggade användare',
+      'Automatisk migrering till Firebase vid login',
+      'Frivilliga donationer istället för obligatorisk betalning',
+      'Endast ID:n sparas i localStorage',
+      'Versionshantering implementerad'
+    ]
+  },
+  {
+    version: '1.0.0',
+    date: '2025-01-01',
+    changes: [
+      'Initial release',
+      'Firebase-integration',
+      'Ruttgenerering med OpenRouteService',
+      'QR-koder och join-länkar',
+      'Grundläggande spelvy med karta',
+      'Frågebank med OpenTDB-import'
+    ]
   }
+];
+
+/**
+ * Kontrollerar om localStorage behöver migreras baserat på version
+ */
+export const checkLocalStorageVersion = () => {
+  if (typeof window === 'undefined') return { needsMigration: false, oldVersion: null };
+
+  const storedVersion = localStorage.getItem('geoquest:version');
+
+  if (!storedVersion) {
+    // Första gången applikationen körs, sätt version
+    localStorage.setItem('geoquest:version', VERSION);
+    localStorage.setItem('geoquest:build_date', BUILD_DATE);
+    return { needsMigration: false, oldVersion: null };
+  }
+
+  if (storedVersion !== VERSION) {
+    console.info(`[Version] Uppdatering från ${storedVersion} till ${VERSION}`);
+    localStorage.setItem('geoquest:version', VERSION);
+    localStorage.setItem('geoquest:build_date', BUILD_DATE);
+    return { needsMigration: true, oldVersion: storedVersion };
+  }
+
+  return { needsMigration: false, oldVersion: storedVersion };
+};
+
+/**
+ * Hämtar versionsinfo
+ */
+export const getVersionInfo = () => ({
+  version: VERSION,
+  buildDate: BUILD_DATE,
+  features: FEATURES,
+  changelog: CHANGELOG
+});
+
+export default {
+  VERSION,
+  BUILD_DATE,
+  FEATURES,
+  CHANGELOG,
+  checkLocalStorageVersion,
+  getVersionInfo
 };

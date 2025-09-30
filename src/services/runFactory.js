@@ -156,6 +156,7 @@ export const buildHostedRun = async ({
   type = 'hosted',
   lengthMeters = 2000,
   allowAnonymous = true,
+  language = 'sv',
   origin = null
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount });
@@ -224,6 +225,7 @@ export const buildHostedRun = async ({
     type,
     lengthMeters,
     allowAnonymous,
+    language: language || 'sv',
     joinCode,
     qrSlug: joinCode.toLowerCase(),
     checkpoints,
@@ -239,12 +241,13 @@ export const buildHostedRun = async ({
  * Bygger en auto-genererad runda inklusive slumpad joinCode och kartpunkter.
  */
 export const buildGeneratedRun = async ({
-  alias,
+  name,
   audience = 'family',
   difficulty = 'family',
   lengthMeters = 2500,
   questionCount = 8,
   allowAnonymous = true,
+  language = 'sv',
   origin
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount });
@@ -263,7 +266,7 @@ export const buildGeneratedRun = async ({
 
   const run = {
     id: uuidv4(),
-    name: `Auto-runda av ${alias || 'okänd skapare'}`,
+    name: name || 'Ny runda',
     description: 'Genererad utifrån önskemål',
     audience,
     difficulty,
@@ -271,6 +274,7 @@ export const buildGeneratedRun = async ({
     type: 'generated',
     lengthMeters,
     allowAnonymous,
+    language: language || 'sv',
     joinCode,
     qrSlug: joinCode.toLowerCase(),
     checkpoints: checkpointData.checkpoints,
@@ -289,5 +293,5 @@ export const buildGeneratedRun = async ({
     });
   }
 
-  return stampBaseRun(run, creator || { id: alias || 'Auto', name: alias || 'Auto-generator' });
+  return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
 };

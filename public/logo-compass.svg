@@ -1,0 +1,79 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Blå gradient för bakgrund -->
+    <radialGradient id="blueGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="40%" stop-color="#1e40af" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </radialGradient>
+
+    <!-- Glowing cyan gradient -->
+    <radialGradient id="glowingCyan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#0891b2" />
+    </radialGradient>
+
+    <!-- Glowing red gradient för nord -->
+    <radialGradient id="glowingRed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff6b6b" />
+      <stop offset="50%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#dc2626" />
+    </radialGradient>
+
+    <!-- Glowing blue gradient -->
+    <radialGradient id="glowingBlue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </radialGradient>
+
+    <!-- Red glow filter -->
+    <filter id="redGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Cyan glow filter -->
+    <filter id="cyanGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Main compass body -->
+  <circle cx="50" cy="50" r="47" fill="url(#blueGradient)" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Inner decorative rings -->
+  <circle cx="50" cy="50" r="42" fill="none" stroke="#06b6d4" stroke-width="1.5" opacity="0.8" />
+  <circle cx="50" cy="50" r="38" fill="none" stroke="#ef4444" stroke-width="1" opacity="0.5" />
+
+  <!-- Nord-nål (RÖD) -->
+  <g filter="url(#redGlow)">
+    <path d="M50 12 L58 46 L50 43 L42 46 Z" fill="url(#glowingRed)" stroke="#ff6b6b" stroke-width="1.5" />
+  </g>
+
+  <!-- Syd-nål (CYAN) -->
+  <g filter="url(#cyanGlow)">
+    <path d="M50 88 L42 54 L50 57 L58 54 Z" fill="url(#glowingCyan)" stroke="#06b6d4" stroke-width="1.5" />
+  </g>
+
+  <!-- Öst-nål (BLÅ) -->
+  <path d="M88 50 L54 42 L57 50 L54 58 Z" fill="url(#glowingBlue)" stroke="#60a5fa" stroke-width="1" opacity="0.8" />
+
+  <!-- Väst-nål (BLÅ) -->
+  <path d="M12 50 L46 58 L43 50 L46 42 Z" fill="url(#glowingBlue)" stroke="#60a5fa" stroke-width="1" opacity="0.8" />
+
+  <!-- Center circle för frågetecken - mycket ljusare -->
+  <circle cx="50" cy="50" r="16" fill="#ffffff" stroke="#06b6d4" stroke-width="3" />
+  <circle cx="50" cy="50" r="14" fill="#f0fdfa" />
+
+  <!-- Frågetecken -->
+  <text x="50" y="62" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#0891b2" text-anchor="middle">?</text>
+</svg>

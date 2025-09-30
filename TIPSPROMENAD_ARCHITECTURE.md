@@ -1,22 +1,52 @@
 # Tipspromenad 2.0 – Arkitektur och Implementationsplan
 
 ## Målbild
-## Implementationsstatus
-- **Genomfört**: Ny tipspromenadstruktur med RunContext/AuthContext, lokal körpersistens i runService, realtidsuppdateringar med heartbeat och statusflaggor, QR-koder och join-länkar, UI-flöden för skapa/generera/ansluta/spela/administrera, OpenTDB-import med svensk översättning, förfinad spelkarta (autopan, visuell status), grundläggande jest-tester, **samt komplett ruttgenereringssystem med OpenRouteService API-integration**.
-- **Pågående**: Dokumentation av nuläget (detta arbete) och utökade manuella/GPS-flöden för specialfall.
-- **Kvar att bygga**: Riktig backend (Firestore) med säkerhetsregler, realtidsnotiser/push, historikvy för inloggade spelare, offline/synk-stöd, avancerad statistik/export samt end-to-end tester för båda scenarierna.
+En modern, användarvänlig webapp för tipspromenader med fokus på enkelhet och tillgänglighet för både inloggade och oinloggade användare.
+
+## Implementationsstatus (Uppdaterad 2025-09-30)
+- **Genomfört**:
+  - ✅ Förenklad startsida med två huvudval (Starta runda / Skapa runda)
+  - ✅ Ny header med logotyp (frågetecken) och hamburger-meny
+  - ✅ LocalStorage-hantering för oinloggade användare (endast ID:n sparas lokalt)
+  - ✅ Automatisk migreringslogik vid login (lokala rundor förs över till Firebase)
+  - ✅ Frivilliga donationer istället för obligatoriska betalningar (5 kr join, 10 kr skapa)
+  - ✅ "Mina rundor"-sida som visar både lokala och Firebase-rundor
+  - ✅ Komplett ruttgenereringssystem med OpenRouteService API-integration
+  - ✅ RunContext/AuthContext med lokal persistens
+  - ✅ Realtidsuppdateringar med heartbeat och statusflaggor
+  - ✅ QR-koder och join-länkar
+  - ✅ UI-flöden för skapa/generera/ansluta/spela/administrera
+  - ✅ OpenTDB-import med svensk översättning
+  - ✅ Förfinad spelkarta (autopan, visuell status)
+  - ✅ Grundläggande jest-tester
+  - ✅ Rollsystem borttaget - alla användare kan skapa/ansluta
+  - ✅ SuperUser-roll för administration (sätts manuellt i Firebase)
+  - ✅ Versionshantering implementerad (SemVer 2.0.0)
+  - ✅ LocalStorage optimerad - endast ID:n sparas, data hämtas från Firebase
+
+- **Pågående**:
+  - 🔄 Dokumentation av alla ändringar
+  - 🔄 Utökade manuella/GPS-flöden för specialfall
+
+- **Kvar att bygga**:
+  - ⏳ Riktig backend (Firestore) med säkerhetsregler
+  - ⏳ Realtidsnotiser/push
+  - ⏳ Offline/synk-stöd för komplex data
+  - ⏳ Avancerad statistik/export
+  - ⏳ End-to-end tester för båda scenarierna
 
 - Modern webapp för tipspromenader med två huvudsakliga scenarier: organiserad runda och on-demand genererad runda.
 - Stöd för både inloggade och anonyma deltagare (alias + valfri kontakt).
 - Administrationsgränssnitt för att skapa rundor, generera QR-koder, följa resultat och exportera statistik.
 - Mobil-först upplevelse med offline-tolerans (cache) och responsiv design.
 
-## Roll & aktörer
+## Roll & aktörer (Uppdaterad 2025-09-30)
 | Roll | Beskrivning |
 | --- | --- |
-| Administratör/Skapare | Skapar rundor, väljer upplägg, frågebank, målgrupp och ser resultat. |
-| Deltagare (inloggad) | Loggar in med konto, kan se historik över slutförda rundor och sina poäng. |
-| Deltagare (anonym) | Ansluter via QR-kod, fyller alias + valfri kontakt, deltager i enstaka runda. |
+| **Alla användare** | Kan både skapa och ansluta till rundor. Ingen rollbaserad begränsning. |
+| **SuperUser** | Särskild administrativ roll som sätts manuellt i Firebase (`isSuperUser: true`). Har tillgång till admin-funktioner: alla rundor, alla användare, fråghantering. |
+| **Inloggad användare** | Loggar in med konto, kan se historik över slutförda rundor och sina poäng. Data sparas i Firebase och synkas mellan enheter. |
+| **Oinloggad användare** | Ansluter via QR-kod eller join-kod utan konto. Endast run-ID:n sparas i localStorage. Full rundata hämtas från Firebase. Kan migrera data till konto senare. |
 
 ## Huvudflöden
 1. **Organiserad runda (kod/QR)**
@@ -69,23 +99,133 @@ questions/{questionId}
   text, options[], correctOption, difficulty, audience (barn|vuxen|familj), categories[]
 ```
 
-## Komponentstruktur (React)
+## Förenklad användarupplevelse (2025)
+
+### Ny startsida
+- **Design**: Två stora rutor istället för tre kolumner med formulär
+  - 🎯 **Starta runda**: För att ansluta till befintlig runda
+  - ✨ **Skapa runda**: För att skapa ny runda
+- **Header**: Fast header med logotyp (?) och hamburger-meny
+- **Dynamisk info**: Visar olika text beroende på om användaren är inloggad eller ej
+
+### Hamburger-meny
+- **Placering**: Uppe till höger i headern
+- **Badge**: Visar antal lokala rundor för oinloggade användare
+- **Innehåll**:
+  - Användarinfo (om inloggad)
+  - Mina rundor (både lokala och Firebase-rundor)
+  - Admin-funktioner (om admin)
+  - Login/Logout
+- **Animation**: Smooth övergång vid öppning/stängning
+
+### LocalStorage-system (Optimerad 2025-09-30)
+- **Syfte**: Låta oinloggade användare spåra sina rundor lokalt
+- **Designprincip**: Endast ID:n sparas i localStorage - Firebase är single source of truth
+- **Data som sparas**:
+  - `geoquest:local:createdRuns` - Array med `{ runId, createdAt, updatedAt }`
+  - `geoquest:local:joinedRuns` - Array med `{ runId, participantId, joinedAt, updatedAt }`
+  - `geoquest:local:migrated` - Boolean flagga för om data migrerats
+  - `geoquest:version` - Applikationsversion för migrering
+  - `geoquest:build_date` - Byggdatum
+- **Fördelar**:
+  - Minimal datalagring lokalt (endast ID:n)
+  - Full rundata alltid uppdaterad från Firebase
+  - Ingen risk för synkproblem eller föråldrad data
+  - Mindre diskutrymme används
+- **Funktioner**:
+  - Automatisk tracking när användare skapar eller ansluter till rundor
+  - MyLocalRunsPage hämtar full data från Firebase baserat på ID:n
+  - Visas i "Mina rundor"-sidan med loading states
+  - Uppmaning att skapa konto för att spara mellan enheter
+
+### Migreringslogik
+- **Trigger**: Aktiveras automatiskt när användare loggar in
+- **Process**:
+  1. Detekterar lokal data i localStorage
+  2. Visar dialog med information om vad som kan migreras
+  3. Användaren väljer att migrera eller hoppa över
+  4. Vid migrering: data kopieras till Firebase under användarens ID
+  5. Markerar data som migrerad för att förhindra dubbelmigrering
+- **Engångsmigrering**: Data kan endast migreras till ett konto
+- **Bevarande**: Lokal data finns kvar även efter migrering
+
+### Frivilliga donationer
+- **Tidigare**: Obligatorisk betalning för att ansluta/skapa
+- **Nu**: Frivilliga donationer med tydlig "Fortsätt utan donation"-knapp
+- **Belopp**:
+  - 5 kr för att ansluta till runda
+  - 10 kr för att skapa runda (ej implementerat i CreateRunPage än)
+- **Språk**: "Stöd projektet" istället för "Betala"
+- **Test-läge**: Fungerar utan riktig betalning
+
+### Rollsystem borttaget (2025-09-30)
+- **Tidigare**: Komplicerat rollsystem med admin/player/guest distinktioner
+- **Nu**: Förenklat system där alla kan allt
+- **Ändringar**:
+  - Alla användare kan skapa och ansluta till rundor
+  - Inga separata registrerings/login-sidor för olika roller
+  - En enda `login()` och `register()` funktion i AuthContext
+  - Borttagna: `loginAsAdmin()`, `loginAsRegistered()`, `registerPlayer()`, `registerAdmin()`
+  - Borttagna: `isAdmin`, `roles` objekt i användardata
+- **SuperUser-roll**:
+  - Sätts manuellt i Firebase: `users/{uid}/profile/isSuperUser: true`
+  - Ger tillgång till admin-funktioner via `RequireSuperUser` guard
+  - Separerade routes: `/superuser/all-runs`, `/superuser/users`, `/admin/questions`
+- **Implementation**:
+  - `AuthContext.js`: Refaktorerad med ny `isSuperUser` boolean
+  - `App.js`: `RequireSuperUser` komponent ersätter `RequireAdmin`
+  - `RegisterPage.js`: En enda registreringssida för alla
+  - `LoginPage.js`: Förenklad utan admin/player toggle
+
+### Versionshantering (2025-09-30)
+- **Fil**: `src/version.js`
+- **Format**: Semantic Versioning (SemVer) - MAJOR.MINOR.PATCH
+- **Nuvarande version**: 2.0.0
+- **Features**:
+  - `VERSION` - Versionsnummer
+  - `BUILD_DATE` - Senaste byggdatum
+  - `FEATURES` - Feature flags (localStorage, migration, donations, superuser, simplifiedUI)
+  - `CHANGELOG` - Strukturerad ändringslogg per version
+  - `checkLocalStorageVersion()` - Detekterar versionsändringar och triggar migrations
+  - `getVersionInfo()` - Returnerar all versionsinformation
+- **Användning**:
+  - Automatisk versionskontroll vid app-start
+  - LocalStorage sparar nuvarande version för att detektera uppdateringar
+  - Möjliggör framtida datamigreringar mellan versioner
+
+## Komponentstruktur (React) - Uppdaterad 2025-09-30
 - `views/`
-  - `CreateRunWizard` (flöde för admin)
+  - **`LandingPage`** - Förenklad startsida med två huvudval
+  - **`LoginPage`** - En enda login-sida för alla användare
+  - **`RegisterPage`** - En enda registreringssida för alla användare
+  - **`MyLocalRunsPage`** - Visar alla rundor (hämtar data från Firebase baserat på localStorage-ID:n)
+  - `CreateRunWizard` (flöde för alla användare)
   - `GenerateRunPage` (on-demand)
-  - `JoinRunPage` (kod/QR-inmatning)
+  - `JoinRunPage` (kod/QR-inmatning, integrerad med localStorage)
   - `RunLobby` (väntläge)
   - `RunPlay` (frågor + karta + progress)
   - `RunResults`
+  - `MyRunsPage` (SuperUser - alla rundor i systemet)
+  - `AdminQuestionsPage` (SuperUser - fråghantering)
 - `components/`
-  - Återanvändbara UI (QuestionCard, Timer, MapCourse, QRDisplay).
+  - **`layout/Header`** - Header med logotyp, hamburger-meny och badge för lokala rundor
+  - **`migration/MigrationPrompt`** - Dialog för datamigrering
+  - **`migration/MigrationHandler`** - Trigger för migrering vid login
+  - **`payment/PaymentModal`** - Uppdaterad för donations-språk
+  - Återanvändbara UI (QuestionCard, Timer, MapCourse, QRDisplay)
 - `contexts/`
   - `RunContext` (live data för aktuell runda)
-  - `AuthContext`
+  - **`AuthContext`** - Refaktorerad utan rollsystem, med `isSuperUser` boolean
+- `services/`
+  - **`localStorageService`** - Hanterar lokal ID-lagring (endast runId/participantId)
+  - **`migrationService`** - Migrerar ID:n till Firebase
+  - **`paymentService`** - Hanterar Stripe-donationer
+  - `routeService` - Ruttgenerering med OpenRouteService
 - `hooks/`
   - `useRunSubscription`
   - `useQuestionNavigator`
-  - `useRouteGenerator` (för on-demand scenario; pratar med backend).
+  - `useRouteGenerator` (för on-demand scenario; pratar med backend)
+- **`version.js`** - Versionshantering med SemVer och changelog
 
 ## Backendplan – Firestore/Cloud Functions
 - Detaljerad design finns i docs/BACKEND_STRATEGI.md (arkitektur, datamodell, API, migrationssteg).
@@ -161,12 +301,14 @@ const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCount })
 ## Nuläge & roadmap
 | Område | Status | Kommentar |
 | --- | --- | --- |
-| Autentisering | Delvis | Lokal mock-inloggning för admin/registrerad/gäst, riktig backend saknas. |
+| **Användarupplevelse** | **Klar** | **Förenklad startsida, hamburger-meny, localStorage för oinloggade, migreringslogik, frivilliga donationer.** |
+| Autentisering | Klar | Firebase-inloggning + localStorage för oinloggade med automatisk migrering. |
 | **Ruttgenerering** | **Klar** | **Komplett OpenRouteService API-integration med fallback-system, global funktion, checkpoint-placering längs faktiska rutter.** |
 | Rundskapande | Klar (lokalt) | Skapa/generera rundor fungerar mot localStorage med QR-kod/anslutningskod. |
 | Spelvy | Pågående | Frågeflöde klart; GPS-karta med autopan/avståndskoll är på plats men kräver fler scenariotester. |
 | Resultat/admin | Klar (lokalt) | Realtidsstatus, listor och exportvy finns; redo för Firestore-koppling. |
 | Frågebank | Klar (lokalt) | Grundbank + OpenTDB-import med svenska texter. |
+| **Betalningar** | **Klar** | **Stripe-integration med frivilliga donationer (5 kr join), test-läge stöd.** |
 | Tester | Basnivå | runService-tester finns; UI-/hook- och e2e-tester återstår. |
 | Infrastruktur | Pågående | Backendstrategi definierad; Cloud Functions-skelett + release-checklista på plats, Firestore-koppling och CI-deploy återstår. |
 

@@ -23,7 +23,8 @@ import {
   query,
   setDoc,
   updateDoc,
-  where
+  where,
+  documentId
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
@@ -142,6 +143,16 @@ export const firestoreRunGateway = {
     return snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
   },
 
+  /** Hämtar specifika rundor från Firestore via en lista med ID:n. */
+  async listRunsByIds(runIds) {
+    if (!runIds || runIds.length === 0) {
+      return [];
+    }
+    const runQuery = query(hämtaRundsCollection(), where(documentId(), 'in', runIds));
+    const snapshot = await getDocs(runQuery);
+    return snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
+  },
+
   /** Hämtar en runda via dokument-id. */
   async getRun(runId) {
     const docSnap = await getDoc(doc(hämtaRundsCollection(), runId));
@@ -196,8 +207,10 @@ export const firestoreRunGateway = {
 
   /** Söker upp runda via joinCode. */
   async getRunByCode(joinCode) {
+    console.log(`getRunByCode: searching for joinCode=${joinCode}`);
     const runQuery = query(hämtaRundsCollection(), where('joinCode', '==', joinCode.toUpperCase()));
     const snapshot = await getDocs(runQuery);
+    console.log(`getRunByCode: snapshot size=${snapshot.size}`);
     const [first] = snapshot.docs;
     return first ? mapperaRundeDokument(first) : null;
   },
@@ -222,7 +235,7 @@ export const firestoreRunGateway = {
         id: run.id,
         hasRoute: !!run.route,
         routePointCount: run.route?.length || 0,
-        hasCheckpoints: !!run.checkpoints,
+        hasCheckpoints: !!run?.checkpoints,
         checkpointCount: run.checkpoints?.length || 0
       });
     }
@@ -261,7 +274,7 @@ export const firestoreRunGateway = {
       id: uuidv4(),
       runId,
       userId: userId || null,
-      alias: alias || 'G\u00E4st',
+      alias: alias || 'Gäst',
       contact: contact || null,
       isAnonymous: Boolean(isAnonymous),
       joinedAt: now,
