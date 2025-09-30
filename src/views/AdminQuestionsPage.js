@@ -17,8 +17,6 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
   const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
   const enLang = question.languages?.en;
 
-  // Visa tillgängliga språk
-  const availableLanguages = question.languages ? Object.keys(question.languages).sort() : ['sv'];
   const isExpanded = expandedQuestion === question.id;
 
   const displayLang = currentLang === 'sv' ? svLang : enLang;

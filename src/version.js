@@ -82,7 +82,7 @@ export const getVersionInfo = () => ({
   changelog: CHANGELOG
 });
 
-export default {
+const versionModule = {
   VERSION,
   BUILD_DATE,
   FEATURES,
@@ -90,3 +90,5 @@ export default {
   checkLocalStorageVersion,
   getVersionInfo
 };
+
+export default versionModule;

@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, deleteDoc, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 
 const QUESTIONS_COLLECTION = 'questions';
