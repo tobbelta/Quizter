@@ -1,52 +1,47 @@
 /**
  * Router-konfiguration för tipspromenaden samt auth-/run-provider.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
+import { localStorageService } from './services/localStorageService';
 
 import LandingPage from './views/LandingPage';
+import LoginPage from './views/LoginPage';
+import RegisterPage from './views/RegisterPage';
 import CreateRunPage from './views/CreateRunPage';
 import GenerateRunPage from './views/GenerateRunPage';
 import JoinRunPage from './views/JoinRunPage';
 import PlayRunPage from './views/PlayRunPage';
 import RunAdminPage from './views/RunAdminPage';
 import RunResultsPage from './views/RunResultsPage';
-import RegisterPlayerPage from './views/RegisterPlayerPage';
-import RegisterAdminPage from './views/RegisterAdminPage';
 import MyRunsPage from './views/MyRunsPage';
+import MyLocalRunsPage from './views/MyLocalRunsPage';
 import AdminQuestionsPage from './views/AdminQuestionsPage';
+import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
+import SuperUserUsersPage from './views/SuperUserUsersPage';
+import MigrationHandler from './components/migration/MigrationHandler';
+import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 
 /**
- * Skyddar admin-rutter så att gäster hamnar på startsidan.
+ * Skyddar SuperUser-rutter
  */
-const RequireAdmin = ({ children }) => {
-  const { isAdmin, isAuthInitialized, currentUser } = useAuth();
-  if (process.env.NODE_ENV !== 'production') {
-    console.debug('[Auth] RequireAdmin kontroll', {
-      isAuthInitialized,
-      isAdmin,
-      userId: currentUser?.id || null,
-      roles: currentUser?.roles || null
-    });
-  }
+const RequireSuperUser = ({ children }) => {
+  const { isSuperUser, isAuthInitialized } = useAuth();
+
   if (!isAuthInitialized) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[Auth] RequireAdmin väntar på auth-initialisering');
-    }
     return (
       <div className="p-8 text-center text-gray-300">
         Kontrollerar behörighet ...
       </div>
     );
   }
-  if (!isAdmin) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[Auth] RequireAdmin saknar admin-roll, omdirigerar');
-    }
+
+  if (!isSuperUser) {
     return <Navigate to="/" replace />;
   }
+
   return children;
 };
 
@@ -56,53 +51,106 @@ const RequireAdmin = ({ children }) => {
 const AppRoutes = () => (
   <Routes>
     <Route path="/" element={<LandingPage />} />
-    <Route path="/register/player" element={<RegisterPlayerPage />} />
-    <Route path="/register/admin" element={<RegisterAdminPage />} />
+    <Route path="/login" element={<LoginPage />} />
+    <Route path="/register" element={<RegisterPage />} />
+    <Route path="/my-runs" element={<MyRunsPage />} />
+
+    {/* Alla användare kan skapa och ansluta */}
+    <Route path="/generate" element={<GenerateRunPage />} />
+    <Route path="/join" element={<JoinRunPage />} />
+    <Route path="/run/:runId/play" element={<PlayRunPage />} />
+    <Route path="/run/:runId/results" element={<RunResultsPage />} />
+    <Route path="/run/:runId/admin" element={<RunAdminPage />} />
+
+    {/* SuperUser-routes */}
     <Route
-      path="/admin/create"
+      path="/superuser/all-runs"
       element={(
-        <RequireAdmin>
-          <CreateRunPage />
-        </RequireAdmin>
+        <RequireSuperUser>
+          <SuperUserAllRunsPage />
+        </RequireSuperUser>
       )}
     />
     <Route
-      path="/admin/my-runs"
+      path="/superuser/users"
       element={(
-        <RequireAdmin>
-          <MyRunsPage />
-        </RequireAdmin>
+        <RequireSuperUser>
+          <SuperUserUsersPage />
+        </RequireSuperUser>
       )}
     />
     <Route
       path="/admin/questions"
       element={(
-        <RequireAdmin>
+        <RequireSuperUser>
           <AdminQuestionsPage />
-        </RequireAdmin>
+        </RequireSuperUser>
       )}
     />
-    <Route path="/generate" element={<GenerateRunPage />} />
-    <Route path="/join" element={<JoinRunPage />} />
-    <Route path="/run/:runId/play" element={<PlayRunPage />} />
-    <Route
-      path="/run/:runId/admin"
-      element={(
-        <RequireAdmin>
-          <RunAdminPage />
-        </RequireAdmin>
-      )}
-    />
-    <Route path="/run/:runId/results" element={<RunResultsPage />} />
+
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
 );
+
+/**
+ * Komponent som hanterar import av localStorage-rundor vid inloggning
+ */
+const LocalRunsImportHandler = () => {
+  const { currentUser, isAuthInitialized } = useAuth();
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [localRunCount, setLocalRunCount] = useState(0);
+  const [hasCheckedImport, setHasCheckedImport] = useState(false);
+
+  useEffect(() => {
+    // Kontrollera om användaren precis loggat in och har lokala rundor
+    if (isAuthInitialized && currentUser && !currentUser.isAnonymous && !hasCheckedImport) {
+      const localRuns = localStorageService.getCreatedRuns();
+      const count = localRuns?.length || 0;
+
+      console.log('[LocalRunsImportHandler] Användare inloggad, kontrollerar lokala rundor:', count);
+
+      if (count > 0) {
+        setLocalRunCount(count);
+        setShowImportDialog(true);
+      }
+
+      setHasCheckedImport(true);
+    }
+  }, [currentUser, isAuthInitialized, hasCheckedImport]);
+
+  // Återställ när användaren loggar ut
+  useEffect(() => {
+    if (isAuthInitialized && !currentUser) {
+      setHasCheckedImport(false);
+      setShowImportDialog(false);
+    }
+  }, [currentUser, isAuthInitialized]);
+
+  const handleImportComplete = (success) => {
+    console.log('[LocalRunsImportHandler] Import slutförd:', success);
+    setShowImportDialog(false);
+  };
+
+  if (!showImportDialog) {
+    return null;
+  }
+
+  return (
+    <LocalRunsImportDialog
+      localRunCount={localRunCount}
+      currentUser={currentUser}
+      onComplete={handleImportComplete}
+    />
+  );
+};
 
 function App() {
   return (
     <AuthProvider>
       <RunProvider>
         <div className="min-h-screen bg-slate-950 text-gray-100">
+          <MigrationHandler />
+          <LocalRunsImportHandler />
           <AppRoutes />
         </div>
       </RunProvider>

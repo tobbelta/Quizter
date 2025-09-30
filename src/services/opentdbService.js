@@ -1,6 +1,7 @@
 /**
  * Hämtar och översätter frågor från OpenTDB så att de passar tipspromenaden.
  */
+import { translationService } from './translationService';
 import { v4 as uuidv4 } from 'uuid';
 
 const API_BASE = 'https://opentdb.com/api.php';
@@ -24,59 +25,10 @@ const decodeHtmlEntities = (value) => {
   return decoded;
 };
 
-const translationPairs = [
-  ['Who', 'Vem'],
-  ['What', 'Vad'],
-  ['Which', 'Vilket'],
-  ['Where', 'Var'],
-  ['When', 'När'],
-  ['How many', 'Hur många'],
-  ['How much', 'Hur mycket'],
-  ['How', 'Hur'],
-  ['In what', 'I vilket'],
-  ['True', 'Sant'],
-  ['False', 'Falskt'],
-  ['movie', 'film'],
-  ['Movie', 'Film'],
-  ['television', 'tv'],
-  ['Television', 'TV'],
-  ['video game', 'tv-spel'],
-  ['Video Game', 'TV-spel'],
-  ['England', 'England'],
-  ['United States', 'USA'],
-  ['United Kingdom', 'Storbritannien'],
-  ['Germany', 'Tyskland'],
-  ['France', 'Frankrike'],
-  ['Sweden', 'Sverige'],
-  ['Which of the following', 'Vilken av följande'],
-  ['What is the name', 'Vad heter'],
-  ['What is the', 'Vad är'],
-  ['According to', 'Enligt'],
-  ['How many times', 'Hur många gånger']
-];
-
-/**
- * Gör enklare översättningar från engelska till svenska med hjälp av ordbank.
- */
-const translateToSwedish = (text) => {
-  let result = decodeHtmlEntities(text);
-  translationPairs.forEach(([en, sv]) => {
-    result = result.replace(new RegExp(`\b${en}\b`, 'gi'), (match) => {
-      if (match[0].toUpperCase() === match[0]) {
-        // Preserve capitalization on first letter
-        const capitalized = sv.charAt(0).toUpperCase() + sv.slice(1);
-        return capitalized;
-      }
-      return sv;
-    });
-  });
-  return result;
-};
-
 /**
  * Konverterar OpenTDB-kategorier till svenska namn.
  */
-const translateCategory = (category) => {
+const translateCategory = async (category) => {
   const map = {
     'General Knowledge': 'Allmänbildning',
     'Entertainment: Books': 'Underhållning: Böcker',
@@ -101,7 +53,10 @@ const translateCategory = (category) => {
     'Science: Gadgets': 'Vetenskap: Prylar',
     'Entertainment: Cartoon & Animations': 'Underhållning: Tecknat'
   };
-  return map[category] || translateToSwedish(category);
+  if (map[category]) {
+    return map[category];
+  }
+  return await translationService.translateText(category, 'en', 'sv');
 };
 
 /**
@@ -139,20 +94,26 @@ const mapDifficulty = (difficulty) => {
 /**
  * Omvandlar en OpenTDB-fråga till vårt interna format med båda språk.
  */
-const convertQuestion = (remote, overrideAudience) => {
+const convertQuestion = async (remote, overrideAudience) => { // Made async
   const baseAudience = mapAudience(remote.category, remote.difficulty);
   const audience = overrideAudience || baseAudience;
   const difficulty = mapDifficulty(remote.difficulty);
 
   // Engelska originalet (med HTML-avkodning)
+  const englishQuestionText = decodeHtmlEntities(remote.question);
   const englishCorrect = decodeHtmlEntities(remote.correct_answer);
   const englishIncorrect = remote.incorrect_answers.map((answer) => decodeHtmlEntities(answer));
   const englishAllOptions = [...englishIncorrect, englishCorrect];
 
-  // Svenska översättningen
-  const swedishCorrect = translateToSwedish(remote.correct_answer);
-  const swedishIncorrect = remote.incorrect_answers.map((answer) => translateToSwedish(answer));
-  const swedishAllOptions = [...swedishIncorrect, swedishCorrect];
+  // Översätt till svenska med translationService
+  const swedishQuestionText = await translationService.translateText(englishQuestionText, 'en', 'sv');
+  const swedishAllOptions = await translationService.translateTexts(englishAllOptions, 'en', 'sv');
+
+  // Om översättningen misslyckades (texten är oförändrad), hoppa över frågan.
+  if (swedishQuestionText === englishQuestionText && englishQuestionText.length > 0) {
+    console.warn(`Översättning misslyckades för frågan: "${englishQuestionText}". Frågan importeras inte.`);
+    return null;
+  }
 
   // Blanda i samma ordning för båda språken
   const shuffleIndices = Array.from({ length: englishAllOptions.length }, (_, i) => i);
@@ -171,15 +132,15 @@ const convertQuestion = (remote, overrideAudience) => {
     id: `opentdb-${uuidv4()}`,
     difficulty,
     audience,
-    category: translateCategory(remote.category),
+    category: await translateCategory(remote.category),
     languages: {
       en: {
-        text: decodeHtmlEntities(remote.question),
+        text: englishQuestionText,
         options: englishShuffled,
         explanation: 'Imported from OpenTDB'
       },
       sv: {
-        text: translateToSwedish(remote.question),
+        text: swedishQuestionText,
         options: swedishShuffled,
         explanation: 'Importerad från OpenTDB'
       }
@@ -190,6 +151,26 @@ const convertQuestion = (remote, overrideAudience) => {
 };
 
 export const opentdbService = {
+  /**
+   * Kontrollerar om OpenTDB-API:et är tillgängligt.
+   */
+  async healthCheck() {
+    try {
+      const response = await fetch(`${API_BASE}?amount=1`);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      const payload = await response.json();
+      if (payload.response_code !== 0) {
+        throw new Error(`API returned response code ${payload.response_code}`);
+      }
+      return true;
+    } catch (error) {
+      console.error('OpenTDB health check failed:', error);
+      return false;
+    }
+  },
+
   /**
    * Hämtar frågor från OpenTDB-API:et och konverterar dem till vårt format.
    */
@@ -211,6 +192,10 @@ export const opentdbService = {
       throw new Error('OpenTDB returnerade inga frågor');
     }
 
-    return payload.results.map((question) => convertQuestion(question, audience));
+    // Convert questions one by one to allow for async translation
+    const conversionPromises = payload.results.map(question => convertQuestion(question, audience));
+    const convertedQuestions = await Promise.all(conversionPromises);
+    // Filtrera bort frågor där översättningen misslyckades (returnerade null)
+    return convertedQuestions.filter(Boolean);
   }
 };

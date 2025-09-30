@@ -1,11 +1,13 @@
 /**
  * Vy där spelare ansluter med en join-kod eller QR-länk.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import PaymentModal from '../components/payment/PaymentModal';
+import { localStorageService } from '../services/localStorageService';
+import Header from '../components/layout/Header';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
@@ -22,22 +24,13 @@ const JoinRunPage = () => {
   const [runToJoin, setRunToJoin] = useState(null);
   const [participantData, setParticipantData] = useState(null);
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const codeParam = params.get('code');
-    if (codeParam) {
-      setJoinCode(codeParam.toUpperCase());
-    }
-  }, [location.search]);
-
-
-  const handleJoin = async (event) => {
-    event.preventDefault();
+  const handleJoin = useCallback(async (code) => {
+    console.log('handleJoin called with code:', code);
     setError('');
     setSuccess('');
 
-    const code = joinCode.trim().toUpperCase();
-    if (code.length < 4) {
+    const upperCode = code.trim().toUpperCase();
+    if (upperCode.length < 4) {
       setError('Ange en giltig anslutningskod.');
       return;
     }
@@ -48,19 +41,21 @@ const JoinRunPage = () => {
         setError('Ange ett alias för att delta.');
         return;
       }
-      participantUser = loginAsGuest({ alias, contact });
+      console.log('Calling loginAsGuest');
+      participantUser = await loginAsGuest({ alias, contact });
+      console.log('loginAsGuest returned:', participantUser);
     }
 
     try {
-      // Först anslut till rundan för att få run-info
-      const { run } = await joinRunByCode(code, {
+      console.log('Calling joinRunByCode with code:', upperCode);
+      const { run } = await joinRunByCode(upperCode, {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
         isAnonymous: participantUser?.isAnonymous
       });
+      console.log('joinRunByCode returned run:', run);
 
-      // Spara data för betalning
       setRunToJoin(run);
       setParticipantData({
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
@@ -69,23 +64,43 @@ const JoinRunPage = () => {
         isAnonymous: participantUser?.isAnonymous
       });
 
-      // Visa betalningsmodal
       setShowPayment(true);
     } catch (joinError) {
+      console.error('Error in handleJoin:', joinError);
       setError(joinError.message);
     }
-  };
+  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const codeParam = params.get('code');
+    if (codeParam) {
+      const upperCode = codeParam.toUpperCase();
+      setJoinCode(upperCode);
+      if (currentUser) {
+        handleJoin(upperCode);
+      }
+    }
+  }, [location.search, currentUser, handleJoin]);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    handleJoin(joinCode);
+  }
 
   const handlePaymentSuccess = (paymentResult) => {
     setShowPayment(false);
 
     const successMessage = paymentResult.skipped
-      ? `Gratis tillgång beviljad! Du är nu ansluten till ${runToJoin.name}!`
-      : `Betalning genomförd! Du är nu ansluten till ${runToJoin.name}!`;
+      ? `Du är nu ansluten till ${runToJoin.name}!`
+      : `Tack för ditt stöd! Du är nu ansluten till ${runToJoin.name}!`;
 
     setSuccess(successMessage);
 
-    // Spara betalningsstatus i localStorage för kontroll senare
+    if (!currentUser || currentUser.isAnonymous) {
+      localStorageService.addJoinedRun(runToJoin, participantData);
+    }
+
     if (typeof window !== 'undefined') {
       localStorage.setItem(`geoquest:payment:${runToJoin.id}`, JSON.stringify({
         paymentIntentId: paymentResult.paymentIntentId,
@@ -102,11 +117,13 @@ const JoinRunPage = () => {
 
   const handlePaymentCancel = () => {
     setShowPayment(false);
-    setError('Betalning avbruten. Du måste betala för att delta i rundan.');
+    setError('Du kan fortfarande ansluta utan att donera.');
   };
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8 space-y-6">
+    <div className="min-h-screen bg-slate-950">
+      <Header />
+      <div className="mx-auto max-w-xl px-4 py-8 space-y-6">
       <header>
         <h1 className="text-3xl font-bold mb-2">Anslut till runda</h1>
         <p className="text-gray-300">Ange anslutningskod från QR eller inbjudan.</p>
@@ -115,7 +132,7 @@ const JoinRunPage = () => {
       {error && <div className="rounded border border-red-500 bg-red-900/40 px-4 py-3 text-red-200">{error}</div>}
       {success && <div className="rounded border border-emerald-500 bg-emerald-900/40 px-4 py-3 text-emerald-100">{success}</div>}
 
-      <form onSubmit={handleJoin} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="mb-1 block text-sm font-semibold text-cyan-200">Anslutningskod</label>
           <input
@@ -163,15 +180,16 @@ const JoinRunPage = () => {
       <PaymentModal
         isOpen={showPayment}
         runName={runToJoin?.name || ''}
-        amount={500} // 5 kr
+        amount={500} // 5 kr donation för att ansluta
         onSuccess={handlePaymentSuccess}
         onCancel={handlePaymentCancel}
         runId={runToJoin?.id}
         participantId={participantData?.userId}
+        allowSkip={true}
       />
+      </div>
     </div>
   );
 };
 
 export default JoinRunPage;
-

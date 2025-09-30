@@ -34,21 +34,16 @@ const createStartFinishIcon = () => {
 };
 
 /**
- * Håller kartvyn centrerad på den aktiva positionen utan att skapa loops.
+ * Justerar kartans gränser för att passa alla checkpoints.
  */
-const MapUpdater = ({ center }) => {
+const FitBounds = ({ positions }) => {
   const map = useMap();
 
   useEffect(() => {
-    if (!center) return;
-    const current = map.getCenter();
-    const deltaLat = Math.abs(current.lat - center[0]);
-    const deltaLng = Math.abs(current.lng - center[1]);
-    if (deltaLat < 0.0001 && deltaLng < 0.0001) {
-      return;
+    if (positions && positions.length > 0) {
+      map.fitBounds(positions, { padding: [50, 50] });
     }
-    map.setView(center, map.getZoom(), { animate: true });
-  }, [center, map]);
+  }, [positions, map]);
 
   return null;
 };
@@ -99,7 +94,7 @@ const RouteArrowDecorator = ({ route }) => {
 /**
  * Renderar hela kartkomponenten inklusive polyline, checkpoints och spelarmarkör.
  */
-const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, startPoint }) => {
+const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, startPoint, className = 'h-full' }) => {
   const positions = useMemo(() => checkpoints.map((checkpoint) => [checkpoint.location.lat, checkpoint.location.lng]), [checkpoints]);
 
   // Använd faktisk rutt om tillgänglig, annars fallback till raka linjer mellan checkpoints
@@ -122,61 +117,32 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, 
     return positions;
   }, [route, positions]);
 
-  const { center, zoom } = useMemo(() => {
-    if (positions.length === 0) {
-      return { center: DEFAULT_CENTER, zoom: 16 };
-    }
-
-    // Om vi har användarposition, centrera på den
+  const center = useMemo(() => {
     if (userPosition) {
-      return { center: [userPosition.lat, userPosition.lng], zoom: 17 };
+      return [userPosition.lat, userPosition.lng];
     }
-
-    // Beräkna bounding box för alla checkpoints och startpunkt
-    const allPositions = [...positions];
-    if (startPoint) {
-      allPositions.push([startPoint.lat, startPoint.lng]);
+    if (positions.length > 0) {
+      const lats = positions.map(p => p[0]);
+      const lngs = positions.map(p => p[1]);
+      return [lats.reduce((a, b) => a + b, 0) / lats.length, lngs.reduce((a, b) => a + b, 0) / lngs.length];
     }
-
-    const lats = allPositions.map(pos => pos[0]);
-    const lngs = allPositions.map(pos => pos[1]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-
-    // Centrera på mitten av bounding box
-    const centerLat = (minLat + maxLat) / 2;
-    const centerLng = (minLng + maxLng) / 2;
-
-    // Beräkna lämplig zoom baserat på spridning
-    const latDiff = maxLat - minLat;
-    const lngDiff = maxLng - minLng;
-    const maxDiff = Math.max(latDiff, lngDiff);
-
-    let calculatedZoom = 16;
-    if (maxDiff < 0.001) calculatedZoom = 18;      // Mycket liten runda
-    else if (maxDiff < 0.005) calculatedZoom = 17; // Liten runda
-    else if (maxDiff < 0.01) calculatedZoom = 16;  // Medium runda
-    else if (maxDiff < 0.02) calculatedZoom = 15;  // Stor runda
-    else calculatedZoom = 14;                      // Mycket stor runda
-
-    return { center: [centerLat, centerLng], zoom: calculatedZoom };
-  }, [userPosition, positions, startPoint]);
+    return DEFAULT_CENTER;
+  }, [userPosition, positions]);
 
   return (
-    <div className="h-full w-full overflow-hidden relative">
+    <div className={`w-full overflow-hidden relative ${className}`}>
       <MapContainer
         center={center}
-        zoom={zoom}
+        zoom={13}
+        style={{ height: '100%', width: '100%' }} // Tvinga full höjd och bredd
         className="h-full w-full relative z-0"
-        scrollWheelZoom={false}
-        zoomControl={false}
-        doubleClickZoom={false}
-        touchZoom={false}
+        scrollWheelZoom={true}
+        zoomControl={true}
+        doubleClickZoom={true}
+        touchZoom={true}
         dragging={true}
       >
-        <MapUpdater center={center} />
+        <FitBounds positions={positions} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

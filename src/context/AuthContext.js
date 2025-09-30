@@ -54,43 +54,32 @@ const mapFirebaseUser = async (firebaseUser) => {
   const docRef = doc(firebaseDb, 'users', firebaseUser.uid);
   const docSnap = await getDoc(docRef);
   const data = docSnap.exists() ? docSnap.data() : {};
+  console.log('mapFirebaseUser: raw data from firestore:', data);
   const profile = data.profile || {};
-  const roles = data.roles || {};
+  const isSuperUser = data.isSuperUser === true;
+
   if (process.env.NODE_ENV !== 'production') {
     console.debug('[Auth] mapFirebaseUser', {
       uid: firebaseUser.uid,
       email: firebaseUser.email || null,
-      roles,
-      profile,
-      calculatedRole: roles.admin ? 'admin' : roles.player ? 'player' : 'guest'
+      isSuperUser,
+      profile
     });
   }
-  const calculatedRole = roles.admin ? 'admin' : roles.player ? 'player' : 'guest';
-  if (process.env.NODE_ENV !== 'production') {
-    console.debug('[Auth] mapFirebaseUser role calculation', {
-      roles,
-      'roles.admin': roles.admin,
-      'roles.player': roles.player,
-      'typeof roles': typeof roles,
-      'Object.keys(roles)': Object.keys(roles),
-      'JSON.stringify(roles)': JSON.stringify(roles),
-      calculatedRole
-    });
-  }
+
   return {
     id: firebaseUser.uid,
     name: profile.displayName || firebaseUser.displayName || firebaseUser.email || 'Användare',
     email: firebaseUser.email || null,
     contact: profile.contact || firebaseUser.email || null,
     isAnonymous: firebaseUser.isAnonymous,
-    role: calculatedRole,
-    roles,
+    isSuperUser,
     profile
   };
 };
 
 /** Skapar eller kompletterar användardokumentet i Firestore. */
-const ensureUserDoc = async (firebaseUser, { profileOverride, roleFlags } = {}) => {
+const ensureUserDoc = async (firebaseUser, { profileOverride } = {}) => {
   if (!firebaseDb || !firebaseUser) return;
   const docRef = doc(firebaseDb, 'users', firebaseUser.uid);
   const profilePayload = {
@@ -98,12 +87,7 @@ const ensureUserDoc = async (firebaseUser, { profileOverride, roleFlags } = {}) 
     contact: profileOverride?.contact ?? firebaseUser.email ?? null
   };
   const payload = { profile: profilePayload };
-  if (roleFlags) {
-    payload.roles = {};
-    Object.entries(roleFlags).forEach(([roleKey, enabled]) => {
-      payload.roles[roleKey] = Boolean(enabled);
-    });
-  }
+  // isSuperUser sätts ENDAST manuellt i Firebase, aldrig via kod
   await setDoc(docRef, payload, { merge: true });
 };
 
@@ -171,57 +155,20 @@ export const AuthProvider = ({ children }) => {
     return unsubscribe;
   }, [syncFromFirebaseUser]);
 
-  /** Loggar in administratör antingen lokalt eller via Firebase. */
-  const loginAsAdmin = useCallback(async ({ email, password, name }) => {
+  /** Loggar in användare (alla kan skapa/ansluta rundor) */
+  const login = useCallback(async ({ email, password, name }) => {
     if (!usesFirebaseAuth) {
       const user = {
         id: uuidv4(),
-        name: name || 'Admin',
+        name: name || 'Användare',
         email,
         contact: email,
         isAnonymous: false,
-        role: 'admin'
+        isSuperUser: false
       };
       if (process.env.NODE_ENV !== 'production') {
-        console.info('[Auth] loginAsAdmin (lokalt) lyckades', { email });
+        console.info('[Auth] login (lokalt) lyckades', { email });
       }
-      setCurrentUser(user);
-      setAuthInitialized(true);
-      return user;
-    }
-    if (!email || !password) {
-      throw new Error('Ange e-post och lösenord för administratörsinloggning.');
-    }
-    const credential = await signInWithEmailAndPassword(firebaseAuth, email, password);
-    if (name && credential.user.displayName !== name) {
-      await updateProfile(credential.user, { displayName: name });
-    }
-    await ensureUserDoc(credential.user, {
-      roleFlags: { admin: true, player: true }
-    });
-    if (process.env.NODE_ENV !== 'production') {
-      console.info('[Auth] loginAsAdmin lyckades - updating roles', {
-        uid: credential.user.uid,
-        email: credential.user.email || null
-      });
-    }
-    // Ge Firestore lite tid att uppdatera och läs sedan om användardata
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await syncFromFirebaseUser(credential.user);
-    return credential.user;
-  }, [syncFromFirebaseUser]);
-
-  /** Loggar in registrerad spelare. */
-  const loginAsRegistered = useCallback(async ({ email, password, name }) => {
-    if (!usesFirebaseAuth) {
-      const user = {
-        id: uuidv4(),
-        name: name || 'Spelare',
-        email,
-        contact: email,
-        isAnonymous: false,
-        role: 'player'
-      };
       setCurrentUser(user);
       setAuthInitialized(true);
       return user;
@@ -234,10 +181,10 @@ export const AuthProvider = ({ children }) => {
       await updateProfile(credential.user, { displayName: name });
     }
     await ensureUserDoc(credential.user, {
-      roleFlags: { player: true }
+      profileOverride: { displayName: name || credential.user.displayName }
     });
     if (process.env.NODE_ENV !== 'production') {
-      console.info('[Auth] loginAsRegistered lyckades', {
+      console.info('[Auth] login lyckades', {
         uid: credential.user.uid,
         email: credential.user.email || null
       });
@@ -246,41 +193,9 @@ export const AuthProvider = ({ children }) => {
     return credential.user;
   }, [syncFromFirebaseUser]);
 
-  /** Registrerar spelare och loggar in kontot direkt. */
-  const registerPlayer = useCallback(async ({ name, email, password, contact }) => {
-    if (!usesFirebaseAuth) {
-      if (!name?.trim()) {
-        throw new Error('Ange ett namn.');
-      }
-      const user = {
-        id: uuidv4(),
-        name: name.trim(),
-        email: email || null,
-        contact: contact || email || null,
-        isAnonymous: false,
-        role: 'player'
-      };
-      setCurrentUser(user);
-      setAuthInitialized(true);
-      return user;
-    }
-    if (!name?.trim() || !email?.trim() || !password) {
-      throw new Error('Fyll i namn, e-post och lösenord för att registrera spelare.');
-    }
-    const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
-    if (credential.user.displayName !== name.trim()) {
-      await updateProfile(credential.user, { displayName: name.trim() });
-    }
-    await ensureUserDoc(credential.user, {
-      profileOverride: { displayName: name.trim(), contact: contact || email.trim() },
-      roleFlags: { player: true }
-    });
-    await syncFromFirebaseUser(credential.user);
-    return credential.user;
-  }, [syncFromFirebaseUser]);
 
-  /** Registrerar administratör och sätter både admin- och spelarroller. */
-  const registerAdmin = useCallback(async ({ name, email, password, contact }) => {
+  /** Registrerar användare och loggar in kontot direkt. */
+  const register = useCallback(async ({ name, email, password, contact }) => {
     if (!usesFirebaseAuth) {
       if (!name?.trim()) {
         throw new Error('Ange ett namn.');
@@ -291,22 +206,21 @@ export const AuthProvider = ({ children }) => {
         email: email || null,
         contact: contact || email || null,
         isAnonymous: false,
-        role: 'admin'
+        isSuperUser: false
       };
       setCurrentUser(user);
       setAuthInitialized(true);
       return user;
     }
     if (!name?.trim() || !email?.trim() || !password) {
-      throw new Error('Fyll i namn, e-post och lösenord för att registrera administratör.');
+      throw new Error('Fyll i namn, e-post och lösenord för att registrera.');
     }
     const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
     if (credential.user.displayName !== name.trim()) {
       await updateProfile(credential.user, { displayName: name.trim() });
     }
     await ensureUserDoc(credential.user, {
-      profileOverride: { displayName: name.trim(), contact: contact || email.trim() },
-      roleFlags: { admin: true, player: true }
+      profileOverride: { displayName: name.trim(), contact: contact || email.trim() }
     });
     await syncFromFirebaseUser(credential.user);
     return credential.user;
@@ -320,7 +234,7 @@ export const AuthProvider = ({ children }) => {
         name: alias || 'Gäst',
         contact: contact || null,
         isAnonymous: true,
-        role: 'guest'
+        isSuperUser: false
       };
       setCurrentUser(user);
       setAuthInitialized(true);
@@ -329,8 +243,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const credential = await signInAnonymously(firebaseAuth);
       await ensureUserDoc(credential.user, {
-        profileOverride: { displayName: alias || credential.user.displayName || 'Gäst', contact: contact || null },
-        roleFlags: { guest: true }
+        profileOverride: { displayName: alias || credential.user.displayName || 'Gäst', contact: contact || null }
       });
       await syncFromFirebaseUser(credential.user);
       return credential.user;
@@ -343,7 +256,7 @@ export const AuthProvider = ({ children }) => {
           name: alias || 'Gäst',
           contact: contact || null,
           isAnonymous: true,
-          role: 'guest'
+          isSuperUser: false
         };
         setCurrentUser(user);
         setAuthInitialized(true);
@@ -366,23 +279,19 @@ export const AuthProvider = ({ children }) => {
   const value = useMemo(() => ({
     currentUser,
     isAuthenticated: Boolean(currentUser),
-    isAdmin: currentUser?.role === 'admin',
+    isSuperUser: currentUser?.isSuperUser === true,
     isAuthInitialized,
-    loginAsAdmin,
-    loginAsRegistered,
+    login,
+    register,
     loginAsGuest,
-    registerPlayer,
-    registerAdmin,
     logout,
     usesFirebaseAuth
   }), [
     currentUser,
     isAuthInitialized,
-    loginAsAdmin,
-    loginAsRegistered,
+    login,
+    register,
     loginAsGuest,
-    registerPlayer,
-    registerAdmin,
     logout
   ]);
 

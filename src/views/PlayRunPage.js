@@ -10,6 +10,7 @@ import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import { paymentService } from '../services/paymentService';
+import Footer from '../components/layout/Footer';
 
 /**
  * Karttext för att visa status kring GPS och manuellt läge.
@@ -56,12 +57,19 @@ const PlayRunPage = () => {
   const [distanceToStart, setDistanceToStart] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
-    // Läs från localStorage eller använd svenska som default
+    // Använd rundans språk som default, sedan localStorage, sedan svenska
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('geoquest:language') || 'sv';
+      return localStorage.getItem('geoquest:language') || currentRun?.language || 'sv';
     }
-    return 'sv';
+    return currentRun?.language || 'sv';
   });
+
+  // Uppdatera språk när rundan laddas
+  useEffect(() => {
+    if (currentRun && currentRun.language && !localStorage.getItem('geoquest:language')) {
+      setSelectedLanguage(currentRun.language);
+    }
+  }, [currentRun]);
 
   useEffect(() => {
     try {
@@ -320,7 +328,17 @@ const PlayRunPage = () => {
   const statusMessage = locationStatusLabels[locationStatus] || locationStatusLabels.idle;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-dvh grid grid-rows-[auto_1fr_auto]">
+      {/*
+        Aggressiv CSS-override för att tvinga kartan till full höjd på mobila enheter.
+        Detta är nödvändigt för att vinna över en !important-regel i den globala CSS:en.
+      */}
+      <style>
+        {`
+          @media (max-width: 768px) { .leaflet-container { height: 100% !important; } }
+        `}
+      </style>
+
       {/* Header med hamburgermeny - ultracompakt */}
       <header className="bg-slate-900 border-b border-slate-700 px-2 py-1.5 flex items-center relative z-50">
         <h1 className="text-sm font-semibold text-white truncate flex-1 mr-2">{currentRun.name}</h1>
@@ -461,7 +479,7 @@ const PlayRunPage = () => {
       )}
 
       {/* Huvudinnehåll - karta */}
-      <main className="flex-1 relative">
+      <main className="relative overflow-hidden min-h-0">
         <RunMap
           checkpoints={currentRun.checkpoints || []}
           userPosition={coords}
@@ -561,6 +579,8 @@ const PlayRunPage = () => {
           </div>
         )}
       </main>
+
+      <Footer />
     </div>
   );
 };

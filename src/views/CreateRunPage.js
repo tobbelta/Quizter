@@ -9,6 +9,8 @@ import { questionService } from '../services/questionService';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import useRunLocation from '../hooks/useRunLocation';
 import { buildJoinLink } from '../utils/joinLink';
+import useQRCode from '../hooks/useQRCode';
+import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 
 const defaultForm = {
   name: 'Fredagsquiz',
@@ -33,7 +35,7 @@ const difficultyOptions = [
 ];
 
 const CreateRunPage = () => {
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isSuperUser } = useAuth();
   const { createHostedRun } = useRun();
   const navigate = useNavigate();
   const { coords } = useRunLocation();
@@ -42,6 +44,10 @@ const CreateRunPage = () => {
   const [error, setError] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [createdRun, setCreatedRun] = useState(null);
+  const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
+
+  const joinLink = createdRun ? buildJoinLink(createdRun.joinCode) : '';
+  const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
 
   useEffect(() => {
     const unsubscribe = questionService.subscribe(setAvailableQuestions);
@@ -56,11 +62,11 @@ const CreateRunPage = () => {
     return counts;
   }, [availableQuestions]);
 
-  if (!isAdmin) {
+  if (!isSuperUser) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
         <h1 className="text-2xl font-semibold mb-4">Behörighet krävs</h1>
-        <p className="text-gray-300">Du behöver logga in som administratör för att skapa en runda.</p>
+        <p className="text-gray-300">Du behöver logga in som superuser för att skapa en runda.</p>
       </div>
     );
   }
@@ -117,8 +123,18 @@ const CreateRunPage = () => {
     }
   };
 
+  const handleDownload = () => {
+    if (!dataUrl || typeof document === 'undefined') return;
+    const anchor = document.createElement('a');
+    anchor.href = dataUrl;
+    anchor.download = 'tipspromenad-qr.png';
+    anchor.click();
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
+      {isQRCodeFullscreen && <FullscreenQRCode dataUrl={dataUrl} onClose={() => setIsQRCodeFullscreen(false)} />}
+
       {/* Mobiloptimerad header */}
       <header className="bg-slate-900 border-b border-slate-800 px-4 py-3">
         <div className="flex items-center justify-between">
@@ -264,61 +280,53 @@ const CreateRunPage = () => {
 
         {createdRun && (
           <div className="space-y-6">
-            {/* QR-kod sektion */}
             <div className="rounded-lg border border-emerald-500/40 bg-emerald-900/20 p-6 text-center">
-              <h2 className="text-xl font-bold mb-4 text-emerald-200">🎉 Runda skapad!</h2>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm text-gray-300 mb-2">Anslutningskod:</p>
-                  <button
-                    onClick={() => navigate(`/join?code=${createdRun.joinCode}`)}
-                    className="text-3xl font-mono font-bold text-white bg-slate-800 rounded-lg py-3 px-4 hover:bg-slate-700 transition-colors w-full cursor-pointer"
-                    title="Klicka för att ansluta till rundan som spelare"
-                  >
-                    {createdRun.joinCode}
-                  </button>
-                  <p className="text-xs text-gray-400 mt-2 text-center">
-                    👆 Klicka koden för att ansluta som spelare
-                  </p>
-                </div>
+              <h2 className="text-xl font-bold mb-4 text-emerald-200">🎉 {createdRun.name}</h2>
+              
+              <div className="flex justify-center cursor-pointer" onClick={() => setIsQRCodeFullscreen(true)}>
+                <QRCodeDisplay dataUrl={dataUrl} isLoading={isLoading} error={qrError} />
+              </div>
 
-                <div className="flex justify-center">
-                  <div
-                    onClick={() => navigate(`/join?code=${createdRun.joinCode}`)}
-                    className="cursor-pointer hover:opacity-80 transition-opacity"
-                    title="Klicka QR-koden för att ansluta som spelare"
-                  >
-                    <QRCodeDisplay
-                      value={buildJoinLink(createdRun.joinCode)}
-                      title="QR-kod för anslutning"
-                      description="Klicka eller skanna för att ansluta"
-                    />
-                  </div>
-                </div>
+              <div className="flex flex-wrap gap-3 justify-center">
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(joinLink)}
+                  className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400"
+                >
+                  Kopiera länk
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(createdRun.joinCode)}
+                  className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400"
+                >
+                  Kopiera kod
+                </button>
+              </div>
 
-                <div className="grid grid-cols-1 gap-3 mt-6">
-                  <button
-                    onClick={() => navigator.clipboard.writeText(createdRun.joinCode)}
-                    className="rounded-lg bg-emerald-500 px-4 py-3 font-semibold text-black hover:bg-emerald-400"
-                  >
-                    📋 Kopiera anslutningskod
-                  </button>
-                  <button
-                    onClick={() => navigate(`/run/${createdRun.id}/admin`)}
-                    className="rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
-                  >
-                    🎮 Öppna administratörsvy
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCreatedRun(null);
-                                            setForm(defaultForm);
-                    }}
-                    className="rounded-lg bg-slate-600 px-4 py-3 font-semibold text-white hover:bg-slate-500"
-                  >
-                    ➕ Skapa ny runda
-                  </button>
-                </div>
+              <div className="text-center">
+                <a href={joinLink} target="_blank" rel="noopener noreferrer" className="text-purple-300 hover:underline break-all">
+                  {joinLink}
+                </a>
+              </div>
+
+              <div className="text-center mt-4">
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  className="rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+                >
+                  Ladda ner QR-kod
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 mt-6">
+                <button
+                  onClick={() => navigate(`/run/${createdRun.id}/admin`)}
+                  className="rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
+                >
+                  🎮 Öppna administratörsvy
+                </button>
               </div>
             </div>
 
@@ -352,4 +360,3 @@ const CreateRunPage = () => {
 };
 
 export default CreateRunPage;
-

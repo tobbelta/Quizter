@@ -4,17 +4,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
-// import { useAuth } from '../context/AuthContext'; // Inte använd än
+import { useAuth } from '../context/AuthContext';
 import { describeParticipantStatus } from '../utils/participantStatus';
 import { questionService } from '../services/questionService';
+import Header from '../components/layout/Header';
 
 const RunResultsPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { currentRun, participants, currentParticipant, loadRunById, refreshParticipants } = useRun();
-  // const { currentUser } = useAuth(); // Inte använd än
+  const { currentUser, isAuthenticated } = useAuth();
   const [showDetailedResults, setShowDetailedResults] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+  const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
       return localStorage.getItem('geoquest:language') || 'sv';
@@ -82,48 +83,32 @@ const RunResultsPage = () => {
     }); // Ta bort .filter(Boolean) så alla frågor visas
   }, [currentParticipant, currentRun, selectedLanguage]);
 
+  // Kontrollera om användaren är skapare av rundan
+  const isCreator = currentRun && currentUser && (
+    currentRun.createdBy === currentUser.id ||
+    currentRun.createdByName === currentUser.name
+  );
+
   if (!currentRun) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-8 text-center">
-        <p className="text-gray-300">Hämtar resultat...</p>
+      <div className="min-h-screen bg-slate-950">
+        <Header title="Resultat" />
+        <div className="mx-auto max-w-2xl px-4 pt-24 text-center">
+          <p className="text-gray-300">Hämtar resultat...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 space-y-6">
-      <header className="border-b border-slate-700 pb-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="min-h-screen bg-slate-950">
+      <Header title={`Resultat - ${currentRun.name}`} />
+      <div className="mx-auto max-w-4xl px-4 pt-24 pb-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Resultat – {currentRun.name}</h1>
             <p className="text-gray-400">Status: {currentRun.status}</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            {/* Språkväljare */}
-            <div className="flex gap-1 rounded-lg bg-slate-800 p-1">
-              <button
-                type="button"
-                onClick={() => setSelectedLanguage('sv')}
-                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  selectedLanguage === 'sv'
-                    ? 'bg-cyan-500 text-black'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                🇸🇪 SV
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedLanguage('en')}
-                className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
-                  selectedLanguage === 'en'
-                    ? 'bg-cyan-500 text-black'
-                    : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                🇬🇧 EN
-              </button>
-            </div>
             {/* Detaljerade resultat knapp */}
             {currentParticipant && (
               <button
@@ -136,7 +121,6 @@ const RunResultsPage = () => {
             )}
           </div>
         </div>
-      </header>
 
       <section className="rounded border border-emerald-500/40 bg-emerald-900/20 p-6">
         <h2 className="text-xl font-semibold mb-3 text-emerald-200">Ledartavla</h2>
@@ -248,20 +232,41 @@ const RunResultsPage = () => {
       </section>
 
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={() => navigate(`/run/${currentRun.id}/play`)}
-          className="rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
-        >
-          Tillbaka till frågorna
-        </button>
+        {currentParticipant && (
+          <button
+            type="button"
+            onClick={() => navigate(`/run/${currentRun.id}/play`)}
+            className="rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+          >
+            Tillbaka till rundan
+          </button>
+        )}
+        {isCreator && (
+          <button
+            type="button"
+            onClick={() => navigate(`/run/${currentRun.id}/admin`)}
+            className="rounded bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700"
+          >
+            Administrera
+          </button>
+        )}
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={() => navigate('/my-runs')}
+            className="rounded bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-700"
+          >
+            Mina rundor
+          </button>
+        )}
         <button
           type="button"
           onClick={() => navigate('/')}
           className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
         >
-          Gå till startsidan
+          Startsidan
         </button>
+      </div>
       </div>
     </div>
   );
