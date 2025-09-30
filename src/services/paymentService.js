@@ -113,13 +113,14 @@ export const confirmPayment = async ({ clientSecret, stripe, elements }) => {
   }
 
   try {
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
+    const { error, paymentIntent } = await stripe.confirmCardPayment(
       clientSecret,
-      confirmParams: {
-        return_url: `${window.location.origin}/payment-result`,
-      },
-    });
+      {
+        payment_method: {
+          card: elements.getElement('card'),
+        }
+      }
+    );
 
     if (error) {
       return {
