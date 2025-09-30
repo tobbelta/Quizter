@@ -1,11 +1,13 @@
 /**
- * Översättningstjänst som använder MyMemory Translation API med caching.
+ * Översättningstjänst som använder flera gratis API:er med caching.
+ * Fallback-kedja för maximal tillförlitlighet.
  */
 
-const LINGVA_API = 'https://lingva.ml/api/v1'; // Ny primär tjänst
+// Lista med stabila gratis översättningstjänster
+const GOOGLE_TRANSLATE_API = 'https://translate.googleapis.com/translate_a/single';
 const MYMEMORY_API = 'https://api.mymemory.translated.net/get';
-const LIBRETRANSLATE_API_1 = 'https://translate.argosopentech.com/translate';
-const LIBRETRANSLATE_API_2 = 'https://trans.zillyhuhn.com/translate'; // Extra fallback
+const LIBRETRANSLATE_API_1 = 'https://translate.terraprint.co/translate'; // Stabil LibreTranslate instance
+const LIBRETRANSLATE_API_2 = 'https://translate.fedilab.app/translate'; // Backup LibreTranslate
 const CACHE_KEY = 'translationCache';
 let translationCache = {};
 
@@ -32,20 +34,93 @@ const saveCache = () => {
 };
 
 /**
- * Försöker översätta text med Lingva API (ny primär tjänst).
+ * Försöker översätta med Google Translate (mest pålitlig tjänst).
  * @private
  */
-const translateWithLingva = async (text, sourceLang, targetLang) => {
-  const url = `${LINGVA_API}/${sourceLang}/${targetLang}/${encodeURIComponent(text)}`;
-  const response = await fetch(url);
+const translateWithGoogle = async (text, sourceLang, targetLang) => {
+  const url = `${GOOGLE_TRANSLATE_API}?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0'
+    }
+  });
+
   if (!response.ok) {
-    throw new Error(`Lingva API error: ${response.status}`);
+    throw new Error(`Google Translate API error: ${response.status}`);
   }
+
   const data = await response.json();
-  if (data.translation) {
-    return data.translation;
+
+  // Google returnerar format: [[[översättning, original, null, null, score]]]
+  if (data && Array.isArray(data) && data[0] && Array.isArray(data[0])) {
+    const translations = data[0]
+      .filter(item => item && item[0])
+      .map(item => item[0]);
+
+    if (translations.length > 0) {
+      return translations.join(' ');
+    }
   }
-  throw new Error('Lingva returned no valid translation.');
+
+  throw new Error('Google Translate returned no valid translation.');
+};
+
+/**
+ * Enkel regelbaserad översättning som alltid fungerar för vanliga ord.
+ * Används som absolut sista fallback.
+ * @private
+ */
+const translateWithDictionary = (text, sourceLang, targetLang) => {
+  // Om källspråk = målspråk, returnera som det är
+  if (sourceLang === targetLang) {
+    return text;
+  }
+
+  // Enkel ordbok för vanliga ord
+  const dictionary = {
+    'en-sv': {
+      'What': 'Vad',
+      'Who': 'Vem',
+      'Where': 'Var',
+      'When': 'När',
+      'Why': 'Varför',
+      'How': 'Hur',
+      'True': 'Sant',
+      'False': 'Falskt',
+      'Yes': 'Ja',
+      'No': 'Nej',
+      'is': 'är',
+      'the': 'den',
+      'a': 'en',
+      'an': 'ett',
+      'of': 'av',
+      'in': 'i',
+      'to': 'till',
+      'and': 'och',
+      'or': 'eller',
+      'but': 'men',
+      'not': 'inte'
+    }
+  };
+
+  const dictKey = `${sourceLang}-${targetLang}`;
+  const dict = dictionary[dictKey];
+
+  if (!dict) {
+    // Om vi inte har en ordbok för detta språkpar, returnera originalet
+    return text;
+  }
+
+  // Enkel ordersättning
+  let translated = text;
+  Object.entries(dict).forEach(([eng, swe]) => {
+    const regex = new RegExp(`\\b${eng}\\b`, 'gi');
+    translated = translated.replace(regex, swe);
+  });
+
+  return translated;
 };
 
 
@@ -76,22 +151,38 @@ const translateWithMyMemory = async (text, sourceLang, targetLang) => {
  * @private
  */
 const translateWithLibreTranslate = async (text, sourceLang, targetLang, apiUrl) => {
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    body: JSON.stringify({
-      q: text,
-      source: sourceLang,
-      target: targetLang,
-      format: 'text'
-    }),
-    headers: { 'Content-Type': 'application/json' }
-  });
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      body: JSON.stringify({
+        q: text,
+        source: sourceLang,
+        target: targetLang,
+        format: 'text',
+        api_key: '' // Tomma nycklar accepteras av de flesta publika instanser
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
 
-  if (!response.ok) {
-    throw new Error(`LibreTranslate API error at ${apiUrl}: ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`LibreTranslate API error at ${apiUrl}: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.translatedText && data.translatedText.trim() !== '') {
+      return data.translatedText;
+    }
+
+    throw new Error('LibreTranslate returned empty translation');
+  } catch (error) {
+    console.error(`[LibreTranslate] Error with ${apiUrl}:`, error.message);
+    throw error;
   }
-  const data = await response.json();
-  return data.translatedText;
 };
 
 export const translateText = async (text, sourceLang, targetLang) => {
@@ -104,43 +195,40 @@ export const translateText = async (text, sourceLang, targetLang) => {
     return translationCache[cacheKey];
   }
 
-  try {
-    // Försök först med Lingva
-    const translated = await translateWithLingva(text, sourceLang, targetLang);
-    translationCache[cacheKey] = translated;
-    saveCache();
-    return translated;
-  } catch (error) {
-    console.warn(`Primary (Lingva) failed: ${error.message}. Trying fallback 1 (MyMemory)...`);
+  // Lista med översättningstjänster att försöka i ordning
+  // Google först eftersom det är mest pålitligt
+  const translationServices = [
+    { name: 'Google Translate', fn: () => translateWithGoogle(text, sourceLang, targetLang) },
+    { name: 'MyMemory', fn: () => translateWithMyMemory(text, sourceLang, targetLang) },
+    { name: 'LibreTranslate (Terraprint)', fn: () => translateWithLibreTranslate(text, sourceLang, targetLang, LIBRETRANSLATE_API_1) },
+    { name: 'LibreTranslate (Fedilab)', fn: () => translateWithLibreTranslate(text, sourceLang, targetLang, LIBRETRANSLATE_API_2) },
+    { name: 'Dictionary Fallback', fn: () => Promise.resolve(translateWithDictionary(text, sourceLang, targetLang)) }
+  ];
+
+  let lastError = null;
+
+  // Försök med varje tjänst i ordning
+  for (const service of translationServices) {
     try {
-      // Fallback 1: MyMemory
-      const translated = await translateWithMyMemory(text, sourceLang, targetLang);
-      translationCache[cacheKey] = translated;
-      saveCache();
-      return translated;
-    } catch (fallbackError) {
-      console.warn(`Fallback 1 (MyMemory) failed: ${fallbackError.message}. Trying fallback 2 (Argos)...`);
-      try {
-        // Fallback 2: ArgosOpenTech
-        const translated = await translateWithLibreTranslate(text, sourceLang, targetLang, LIBRETRANSLATE_API_1);
+      const translated = await service.fn();
+      // Validera att översättningen är giltig
+      if (translated && translated.trim() !== '') {
+        // Acceptera översättningen även om den är samma som originalet (kan vara korrekt för vissa ord)
         translationCache[cacheKey] = translated;
         saveCache();
+        console.log(`[Translation] Success with ${service.name}`);
         return translated;
-      } catch (finalFallbackError) {
-        console.warn(`Fallback 2 (Argos) failed: ${finalFallbackError.message}. Trying final fallback (Zillyhuhn)...`);
-        try {
-          // Fallback 3: Zillyhuhn
-          const translated = await translateWithLibreTranslate(text, sourceLang, targetLang, LIBRETRANSLATE_API_2);
-          translationCache[cacheKey] = translated;
-          saveCache();
-          return translated;
-        } catch (superFinalFallbackError) {
-          console.error(`All translation fallbacks failed: ${superFinalFallbackError.message}. Returning original text.`);
-          return text; // Returnera originaltexten om alla misslyckas
-        }
       }
+    } catch (error) {
+      console.warn(`[Translation] ${service.name} failed: ${error.message}`);
+      lastError = error;
+      // Fortsätt till nästa tjänst
     }
   }
+
+  // Om ALLA tjänster misslyckas (inklusive dictionary fallback), kasta fel
+  console.error('[Translation] All translation services failed, including fallback');
+  throw new Error(`Translation failed for all services. Last error: ${lastError?.message || 'Unknown error'}`);
 };
 
 export const translateTexts = async (texts, sourceLang, targetLang) => {

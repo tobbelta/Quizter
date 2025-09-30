@@ -86,7 +86,7 @@ const CreateRunPage = () => {
         setIsImporting(true);
     try {
       await questionService.fetchAndAddFromOpenTDB({
-        amount: Math.max(5, Number(form.questionCount) || 5),
+        amount: 10,
         difficulty: form.difficulty,
         audience: form.audience
       });

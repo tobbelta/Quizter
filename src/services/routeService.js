@@ -268,16 +268,16 @@ const generateCircularWaypoints = ({ origin, lengthMeters, checkpointCount }) =>
 
 /**
  * Justerar en checkpoint-position för att undvika stora vägar.
- * Flyttar punkten en liten bit åt sidan från den ursprungliga positionen.
+ * UPPDATERAD: Returnerar nu originalposition för att hålla checkpoints på själva rutten.
+ * Den tidigare implementationen flyttade checkpoints slumpmässigt vilket orsakade
+ * att frågor hamnade långt från rundan.
  */
 const adjustCheckpointAwayFromHighways = (originalLocation) => {
-  // Skapa en liten offset (cirka 50-100m) åt ett slumpmässigt håll
-  const offsetDistance = 0.0005 + Math.random() * 0.0005; // 50-100m i grader
-  const angle = Math.random() * Math.PI * 2;
-
+  // Returnera originalposition utan offset
+  // Checkpoints ska ligga på själva rutten, inte bredvid
   return {
-    lat: originalLocation.lat + Math.sin(angle) * offsetDistance,
-    lng: originalLocation.lng + Math.cos(angle) * offsetDistance
+    lat: originalLocation.lat,
+    lng: originalLocation.lng
   };
 };
 

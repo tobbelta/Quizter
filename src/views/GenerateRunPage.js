@@ -2,12 +2,12 @@
  * Vy för att skapa en auto-genererad runda på plats.
  */
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import Header from '../components/layout/Header';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import RunMap from '../components/run/RunMap';
+import PaymentModal from '../components/payment/PaymentModal';
 import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
@@ -24,9 +24,8 @@ const defaultForm = {
 };
 
 const GenerateRunPage = () => {
-  const navigate = useNavigate();
-  const { currentUser, isAdmin } = useAuth();
-  const { generateRun, currentRun } = useRun();
+  const { currentUser } = useAuth();
+  const { generateRun } = useRun();
   const [form, setForm] = useState(defaultForm);
   const [error, setError] = useState('');
   const [generatedRun, setGeneratedRun] = useState(null);
@@ -34,6 +33,7 @@ const GenerateRunPage = () => {
   const [isRunSaved, setIsRunSaved] = useState(false);
   const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
 
   const joinLink = generatedRun ? buildJoinLink(generatedRun.joinCode) : '';
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
@@ -73,6 +73,34 @@ const GenerateRunPage = () => {
   };
 
   const handleSaveRun = () => {
+    // Visa donation-modal innan QR-kod visas
+    setShowPayment(true);
+  };
+
+  const handlePaymentSuccess = (paymentResult) => {
+    setShowPayment(false);
+
+    // Spara rundan lokalt om användaren är anonym
+    if (generatedRun && !currentUser) {
+      localStorageService.addCreatedRun(generatedRun);
+    }
+
+    // Spara betalningsinformation
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`geoquest:payment:${generatedRun.id}`, JSON.stringify({
+        paymentIntentId: paymentResult.paymentIntentId,
+        testMode: paymentResult.testMode,
+        skipped: paymentResult.skipped || false,
+        timestamp: new Date().toISOString()
+      }));
+    }
+
+    setIsRunSaved(true);
+  };
+
+  const handlePaymentCancel = () => {
+    setShowPayment(false);
+    // Tillåt att fortsätta utan donation
     if (generatedRun && !currentUser) {
       localStorageService.addCreatedRun(generatedRun);
     }
@@ -120,6 +148,18 @@ const GenerateRunPage = () => {
 
       {isQRCodeFullscreen && <FullscreenQRCode dataUrl={dataUrl} onClose={() => setIsQRCodeFullscreen(false)} />}
       {isMapFullscreen && <FullscreenMap checkpoints={generatedRun.checkpoints} route={generatedRun.route} onClose={() => setIsMapFullscreen(false)} />}
+
+      {/* Betalningsmodal */}
+      <PaymentModal
+        isOpen={showPayment}
+        runName={generatedRun?.name || ''}
+        amount={1000}
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
+        runId={generatedRun?.id}
+        participantId={currentUser?.id}
+        allowSkip={true}
+      />
 
       <div className="mx-auto max-w-4xl px-4 pt-24 pb-8 space-y-8">
         {!generatedRun ? (
@@ -212,19 +252,11 @@ const GenerateRunPage = () => {
                 <>
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Förslag på runda</h2>
-                    <button
-                      type="button"
-                      onClick={handleRegenerate}
-                      disabled={isRegenerating}
-                      className="rounded bg-yellow-500 px-3 py-1 text-sm font-semibold text-black hover:bg-yellow-400 disabled:bg-slate-700 disabled:text-gray-400"
-                    >
-                      {isRegenerating ? 'Genererar...' : '🔄 Generera ny'}
-                    </button>
                   </div>
                   <p className="text-gray-200">
                     Granska kartan nedan. Om du är nöjd, spara rundan för att få en QR-kod.
                   </p>
-                  <div className="h-96">
+                  <div className="h-96 relative">
                     <RunMap
                       checkpoints={generatedRun.checkpoints || []}
                       userPosition={null}
@@ -232,6 +264,25 @@ const GenerateRunPage = () => {
                       answeredCount={0}
                       route={generatedRun.route}
                     />
+                    {/* Generera om-knapp som ikon på kartan */}
+                    <button
+                      type="button"
+                      onClick={handleRegenerate}
+                      disabled={isRegenerating}
+                      className="absolute top-4 right-4 z-[1000] rounded-full bg-yellow-500 p-3 text-black hover:bg-yellow-400 disabled:bg-slate-700 disabled:text-gray-400 shadow-lg transition-all"
+                      title="Generera om"
+                    >
+                      {isRegenerating ? (
+                        <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                   <button
                     type="button"
