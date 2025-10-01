@@ -19,8 +19,7 @@ const defaultForm = {
   name: '',
   difficulty: 'family',
   lengthMeters: 3000,
-  questionCount: 8,
-  language: 'sv'
+  questionCount: 8
 };
 
 const GenerateRunPage = () => {
@@ -49,7 +48,6 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
-        language: form.language || 'sv',
         origin: FALLBACK_POSITION
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
       if (run) {
@@ -122,7 +120,6 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true, // Alltid tillåt anonyma
-        language: form.language || 'sv',
         origin: FALLBACK_POSITION
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
       if (run) {
@@ -222,19 +219,6 @@ const GenerateRunPage = () => {
                   onChange={handleChange}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                 />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-purple-200">Språk</label>
-                <select
-                  name="language"
-                  value={form.language}
-                  onChange={handleChange}
-                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                >
-                  <option value="sv">Svenska</option>
-                  <option value="en">English</option>
-                </select>
               </div>
 
               <button
