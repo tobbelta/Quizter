@@ -41,19 +41,17 @@ jobs:
         # Behandla varningar som fel i CI-miljön för att upptäcka problem tidigt.
         run: CI=true npm run build
 
-      - name: Install Functions dependencies
-        run: cd functions && npm ci && cd ..
-
-      - name: Create Firebase service account file
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST2 }}' > $HOME/gcloud-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud-key.json" >> $GITHUB_ENV
-
-      - name: Deploy to Firebase (Hosting + Functions)
-        run: |
-          npm install -g firebase-tools
-          firebase deploy --only hosting,functions --non-interactive --project geoquest2-7e45c
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GEOQUEST2 }}'
+          channelId: live
+          projectId: 'geoquest2-7e45c'
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
+
+      # Note: Functions deployment kräver extra behörigheter.
+      # Deploy functions manuellt med: firebase deploy --only functions
 
 
