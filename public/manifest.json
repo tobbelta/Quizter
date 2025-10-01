@@ -1,15 +1,17 @@
 {
   "short_name": "GeoQuest",
-  "name": "GeoQuest - Location-based Adventure Game",
-  "description": "En platsbaserad äventyrsspel för lag och grupper",
-  "start_url": "/",
+  "name": "GeoQuest - Skapa & Spela Tipspromenader",
+  "description": "Skapa och gå interaktiva tipspromenader på begäran. Utforska din stad med GPS-baserade frågor och upptäck platser medan du tävlar mot vänner. Perfekt för familjeaktiviteter, teambuilding och utomhusäventyr.",
+  "start_url": "/?utm_source=pwa",
   "display": "standalone",
   "theme_color": "#30b6c4",
   "background_color": "#0d1117",
   "orientation": "portrait-primary",
-  "categories": ["games", "entertainment"],
+  "categories": ["lifestyle", "entertainment", "education", "health"],
   "lang": "sv",
   "scope": "/",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/favicon.ico",
@@ -20,7 +22,7 @@
       "src": "/logo192.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "maskable"
+      "purpose": "maskable any"
     },
     {
       "src": "/logo512.png",
@@ -29,20 +31,45 @@
       "purpose": "any"
     }
   ],
+  "screenshots": [
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
   "shortcuts": [
     {
-      "name": "Spela som spelare",
-      "short_name": "Spela",
-      "description": "Starta en spelomgång som spelare",
-      "url": "/teams",
+      "name": "Gå på tipspromenad",
+      "short_name": "Anslut",
+      "description": "Anslut till en befintlig tipspromenad med QR-kod eller kod",
+      "url": "/join?utm_source=pwa_shortcut",
       "icons": [{ "src": "/logo192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Game Master",
-      "short_name": "GM",
-      "description": "Hantera spel som Game Master",
-      "url": "/gm",
+      "name": "Skapa tipspromenad",
+      "short_name": "Skapa",
+      "description": "Skapa din egen tipspromenad direkt",
+      "url": "/generate?utm_source=pwa_shortcut",
+      "icons": [{ "src": "/logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Mina rundor",
+      "short_name": "Rundor",
+      "description": "Visa dina skapade och genomförda rundor",
+      "url": "/my-runs?utm_source=pwa_shortcut",
       "icons": [{ "src": "/logo192.png", "sizes": "192x192" }]
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/join",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "related_applications": []
 }

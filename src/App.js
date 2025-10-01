@@ -21,6 +21,7 @@ import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
+import InstallPrompt from './components/shared/InstallPrompt';
 
 /**
  * Skyddar SuperUser-rutter
@@ -149,6 +150,7 @@ function App() {
         <div className="min-h-screen bg-slate-950 text-gray-100">
           <MigrationHandler />
           <LocalRunsImportHandler />
+          <InstallPrompt />
           <AppRoutes />
         </div>
       </RunProvider>
