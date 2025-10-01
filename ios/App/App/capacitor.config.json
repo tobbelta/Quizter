@@ -1,6 +1,6 @@
 {
-	"appId": "com.geoquest.app",
-	"appName": "GeoQuest",
+	"appId": "com.routequest.app",
+	"appName": "RouteQuest",
 	"webDir": "build",
 	"packageClassList": []
 }

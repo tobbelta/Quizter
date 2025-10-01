@@ -87,7 +87,7 @@ const InstallPrompt = () => {
               </svg>
             </div>
             <div className="flex-1">
-              <h3 className="text-white font-bold text-lg mb-1">Installera GeoQuest!</h3>
+              <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
               <p className="text-white/90 text-sm mb-2">
                 Få snabb åtkomst till tipspromenader direkt från din hemskärm.
               </p>
@@ -124,7 +124,7 @@ const InstallPrompt = () => {
             </svg>
           </div>
           <div className="flex-1">
-            <h3 className="text-white font-bold text-lg mb-1">Installera GeoQuest!</h3>
+            <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
             <p className="text-white/90 text-sm mb-3">
               Få snabb åtkomst till tipspromenader direkt från din hemskärm. Fungerar offline!
             </p>
