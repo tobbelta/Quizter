@@ -53,7 +53,7 @@ const TestModePaymentForm = ({ runName, amount, onSuccess, onCancel, allowSkip =
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[1100]">
       <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">
@@ -136,9 +136,15 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
   // Skapa PaymentIntent när komponenten mountas
   useEffect(() => {
     const createPayment = async () => {
+      // Validera att vi har nödvändig data innan vi försöker skapa betalning
+      if (!runId || !amount) {
+        setError('Saknar nödvändig information för betalning');
+        return;
+      }
+
       const result = await paymentService.createPaymentIntent({
         runId,
-        participantId,
+        participantId: participantId || 'anonymous',
         amount
       });
 
@@ -204,7 +210,7 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[1100]">
       <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">

@@ -69,7 +69,7 @@ const InstallPrompt = () => {
   if (isIOS && !isStandalone && showPrompt) {
     return (
       <div className="fixed bottom-4 left-4 right-4 z-50 animate-slide-up">
-        <div className="bg-gradient-to-r from-cyan-500 to-blue-500 rounded-xl shadow-2xl p-4 border-2 border-white/20">
+        <div className="bg-slate-900 rounded-xl shadow-2xl p-4 border border-purple-500/40">
           <button
             onClick={handleDismiss}
             className="absolute top-2 right-2 text-white/80 hover:text-white"
@@ -81,19 +81,17 @@ const InstallPrompt = () => {
           </button>
 
           <div className="flex items-start gap-3 pr-6">
-            <div className="flex-shrink-0 bg-white rounded-lg p-2">
-              <svg className="w-8 h-8 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-              </svg>
+            <div className="flex-shrink-0">
+              <img src="/logo-compass.svg" alt="RouteQuest" className="w-12 h-12" />
             </div>
             <div className="flex-1">
               <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
-              <p className="text-white/90 text-sm mb-2">
+              <p className="text-gray-300 text-sm mb-2">
                 Få snabb åtkomst till tipspromenader direkt från din hemskärm.
               </p>
-              <div className="bg-white/10 rounded-lg p-3 text-white/90 text-xs space-y-1">
-                <p>📱 Tryck på <strong>Dela</strong>-knappen nedan</p>
-                <p>➕ Välj <strong>"Lägg till på hemskärmen"</strong></p>
+              <div className="bg-slate-800 rounded-lg p-3 text-gray-300 text-xs space-y-1">
+                <p>1. Tryck på <strong className="text-white">Dela</strong>-knappen nedan</p>
+                <p>2. Välj <strong className="text-white">"Lägg till på hemskärmen"</strong></p>
               </div>
             </div>
           </div>
@@ -106,7 +104,7 @@ const InstallPrompt = () => {
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 animate-slide-up">
-      <div className="bg-gradient-to-r from-cyan-500 to-blue-500 rounded-xl shadow-2xl p-4 border-2 border-white/20">
+      <div className="bg-slate-900 rounded-xl shadow-2xl p-4 border border-purple-500/40">
         <button
           onClick={handleDismiss}
           className="absolute top-2 right-2 text-white/80 hover:text-white"
@@ -118,19 +116,17 @@ const InstallPrompt = () => {
         </button>
 
         <div className="flex items-start gap-3 pr-6">
-          <div className="flex-shrink-0 bg-white rounded-lg p-2">
-            <svg className="w-8 h-8 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-            </svg>
+          <div className="flex-shrink-0">
+            <img src="/logo-compass.svg" alt="RouteQuest" className="w-12 h-12" />
           </div>
           <div className="flex-1">
             <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
-            <p className="text-white/90 text-sm mb-3">
+            <p className="text-gray-300 text-sm mb-3">
               Få snabb åtkomst till tipspromenader direkt från din hemskärm. Fungerar offline!
             </p>
             <button
               onClick={handleInstallClick}
-              className="w-full bg-white text-cyan-600 font-bold py-2 px-4 rounded-lg hover:bg-gray-100 transition-colors"
+              className="w-full bg-purple-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-400 transition-colors"
             >
               📲 Installera nu
             </button>
