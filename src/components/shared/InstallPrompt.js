@@ -81,8 +81,11 @@ const InstallPrompt = () => {
           </button>
 
           <div className="flex items-start gap-3 pr-6">
+            <div className="flex-shrink-0">
+              <img src="/logo-compass.svg" alt="RouteQuest" className="w-12 h-12" />
+            </div>
             <div className="flex-1">
-              <h3 className="text-white font-bold text-lg mb-1">📱 Installera RouteQuest!</h3>
+              <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
               <p className="text-gray-300 text-sm mb-2">
                 Få snabb åtkomst till tipspromenader direkt från din hemskärm.
               </p>
@@ -113,8 +116,11 @@ const InstallPrompt = () => {
         </button>
 
         <div className="flex items-start gap-3 pr-6">
+          <div className="flex-shrink-0">
+            <img src="/logo-compass.svg" alt="RouteQuest" className="w-12 h-12" />
+          </div>
           <div className="flex-1">
-            <h3 className="text-white font-bold text-lg mb-1">📱 Installera RouteQuest!</h3>
+            <h3 className="text-white font-bold text-lg mb-1">Installera RouteQuest!</h3>
             <p className="text-gray-300 text-sm mb-3">
               Få snabb åtkomst till tipspromenader direkt från din hemskärm. Fungerar offline!
             </p>
