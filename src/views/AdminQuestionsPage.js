@@ -129,6 +129,8 @@ const AdminQuestionsPage = () => {
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
   const [aiDifficulty, setAiDifficulty] = useState('');
+  const [aiStatus, setAiStatus] = useState(null);
+  const [loadingAiStatus, setLoadingAiStatus] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -159,6 +161,27 @@ const AdminQuestionsPage = () => {
       navigate('/');
     }
   }, [isSuperUser, navigate]);
+
+  // Hämta AI-status när AI-dialogen öppnas
+  useEffect(() => {
+    if (showAIDialog && !aiStatus) {
+      fetchAIStatus();
+    }
+  }, [showAIDialog]);
+
+  const fetchAIStatus = async () => {
+    setLoadingAiStatus(true);
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
+      const data = await response.json();
+      setAiStatus(data);
+    } catch (error) {
+      console.error('Failed to fetch AI status:', error);
+      setAiStatus({ available: false, message: 'Kunde inte hämta AI-status' });
+    } finally {
+      setLoadingAiStatus(false);
+    }
+  };
 
   // Filtrera frågor baserat på sökning och kategori
   const filteredQuestions = questions.filter(question => {
@@ -455,6 +478,53 @@ const AdminQuestionsPage = () => {
               Generera frågor med Anthropic Claude som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
             </p>
 
+            {/* AI Status Display */}
+            {loadingAiStatus ? (
+              <div className="bg-slate-800 rounded-lg p-4 mb-4 flex items-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-cyan-400"></div>
+                <span className="text-gray-300 text-sm">Kontrollerar AI-status...</span>
+              </div>
+            ) : aiStatus && (
+              <div className={`rounded-lg p-4 mb-4 ${
+                aiStatus.available
+                  ? 'bg-green-500/10 border border-green-500/30'
+                  : aiStatus.isCreditsIssue
+                  ? 'bg-red-500/10 border border-red-500/30'
+                  : 'bg-yellow-500/10 border border-yellow-500/30'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">
+                    {aiStatus.available ? '✅' : aiStatus.isCreditsIssue ? '⚠️' : 'ℹ️'}
+                  </span>
+                  <div className="flex-1">
+                    <p className={`font-semibold mb-1 ${
+                      aiStatus.available ? 'text-green-400' : 'text-yellow-400'
+                    }`}>
+                      {aiStatus.message}
+                    </p>
+                    {aiStatus.model && (
+                      <p className="text-sm text-gray-400">Model: {aiStatus.model}</p>
+                    )}
+                    {aiStatus.isCreditsIssue && (
+                      <a
+                        href="https://console.anthropic.com/settings/limits"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline"
+                      >
+                        Kontrollera krediter i Anthropic Console →
+                      </a>
+                    )}
+                    {!aiStatus.configured && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Sätt ANTHROPIC_API_KEY i Firebase Functions
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               {/* Antal */}
               <div>
@@ -512,7 +582,7 @@ const AdminQuestionsPage = () => {
               {/* Info box */}
               <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
                 <p className="text-xs text-cyan-200">
-                  💡 AI genererar frågor på både svenska och engelska automatiskt. Kostnaden är ca 0.01-0.05 SEK per fråga med gpt-4o-mini.
+                  💡 AI genererar frågor på både svenska och engelska automatiskt. Anthropic ger $5 gratis kredit per månad (ca 500-1000 frågor).
                 </p>
               </div>
 
@@ -526,7 +596,12 @@ const AdminQuestionsPage = () => {
                 </button>
                 <button
                   onClick={handleGenerateAIQuestions}
-                  className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700"
+                  disabled={!aiStatus?.available}
+                  className={`flex-1 rounded-lg px-4 py-2 font-semibold text-white transition-colors ${
+                    aiStatus?.available
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
+                      : 'bg-gray-600 cursor-not-allowed opacity-50'
+                  }`}
                 >
                   Generera
                 </button>

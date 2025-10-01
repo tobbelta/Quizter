@@ -98,6 +98,69 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
 });
 
 /**
+ * Hämta AI-status (krediter och tillgänglighet)
+ */
+exports.getAIStatus = createHttpsHandler(async (req, res) => {
+  return cors(req, res, async () => {
+    try {
+      const apiKey = anthropicApiKey.value();
+
+      if (!apiKey) {
+        res.status(200).json({
+          configured: false,
+          available: false,
+          message: "Anthropic API-nyckel inte konfigurerad"
+        });
+        return;
+      }
+
+      // Testa API:et med en minimal request
+      const Anthropic = require('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey });
+
+      try {
+        await anthropic.messages.create({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 10,
+          messages: [{ role: 'user', content: 'Hi' }]
+        });
+
+        res.status(200).json({
+          configured: true,
+          available: true,
+          model: 'claude-3-5-haiku-20241022',
+          message: "AI-generering tillgänglig"
+        });
+      } catch (apiError) {
+        logger.error("Anthropic API error", { error: apiError.message });
+
+        // Kolla om det är kredit-problem
+        const isCreditsError = apiError.message?.includes('credit') ||
+                               apiError.message?.includes('quota') ||
+                               apiError.status === 429;
+
+        res.status(200).json({
+          configured: true,
+          available: false,
+          error: apiError.message,
+          isCreditsIssue: isCreditsError,
+          message: isCreditsError ?
+            "AI-krediter slut - kontrollera Anthropic Console" :
+            "AI-tjänst ej tillgänglig"
+        });
+      }
+    } catch (error) {
+      logger.error("Error checking AI status", { error: error.message });
+      res.status(500).json({
+        configured: false,
+        available: false,
+        error: error.message
+      });
+    }
+  });
+});
+
+/**
  * Generera frågor manuellt med AI (HTTP endpoint)
  */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
