@@ -21,6 +21,21 @@
   100% { background-position: 0% 50%; }
 }
 
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
 body {
   background-color: var(--bg-color);
   background: linear-gradient(-45deg, #0d1117, #111522, #0d1117, #1a1f2c);
