@@ -13,7 +13,7 @@ const QRCodeDisplay = ({ dataUrl, isLoading, error, description }) => {
     <div className="rounded-lg bg-slate-900/60 p-4">
       {description && <p className="text-sm text-gray-400 mb-3">{description}</p>}
       {dataUrl && (
-        <img src={dataUrl} alt="QR-kod" className="h-80 w-80 rounded" />
+        <img src={dataUrl} alt="QR-kod" className="w-full max-w-sm mx-auto rounded" />
       )}
     </div>
   );

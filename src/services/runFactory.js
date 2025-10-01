@@ -32,9 +32,15 @@ const resolveQuestionPool = () => {
 
 /**
  * Filtrerar och väljer ut rätt antal frågor baserat på målgrupp och svårighet.
+ * Tillåter återanvändning av frågor om det inte finns tillräckligt många.
  */
 const pickQuestions = ({ audience, difficulty, questionCount }) => {
   const pool = resolveQuestionPool();
+
+  if (pool.length === 0) {
+    throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt.');
+  }
+
   const filtered = pool.filter((question) => {
     if (audience === 'family') {
       return question.audience === 'family' || question.audience === 'kid';
@@ -46,9 +52,22 @@ const pickQuestions = ({ audience, difficulty, questionCount }) => {
   });
 
   const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-  if (shuffled.length < questionCount) {
-    throw new Error('Frågebanken innehåller inte tillräckligt många frågor för vald profil.');
+
+  // Om vi inte har tillräckligt många frågor, återanvänd dem genom att loopa
+  if (shuffled.length === 0) {
+    throw new Error('Inga frågor matchar vald profil.');
   }
+
+  if (shuffled.length < questionCount) {
+    // Återanvänd frågor men blanda om dem varje gång
+    const result = [];
+    while (result.length < questionCount) {
+      const reShuffled = [...shuffled].sort(() => Math.random() - 0.5);
+      result.push(...reShuffled);
+    }
+    return result.slice(0, questionCount);
+  }
+
   return shuffled.slice(0, questionCount);
 };
 
