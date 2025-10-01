@@ -1,8 +1,8 @@
 /**
- * AI-baserad frågegenerering med OpenAI
+ * AI-baserad frågegenerering med Anthropic Claude
  * Genererar frågor på både svenska och engelska med kategorier och svårighetsgrader
  */
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('firebase-functions/logger');
 
@@ -10,20 +10,20 @@ const CATEGORIES = ['geography', 'history', 'science', 'culture', 'sports', 'nat
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 /**
- * Genererar frågor med OpenAI
+ * Genererar frågor med Anthropic Claude
  * @param {Object} options - Genereringsalternativ
  * @param {number} options.amount - Antal frågor att generera (default: 10)
  * @param {string} options.category - Specifik kategori (valfri)
  * @param {string} options.difficulty - Svårighetsgrad (valfri)
- * @param {string} apiKey - OpenAI API-nyckel
+ * @param {string} apiKey - Anthropic API-nyckel
  * @returns {Promise<Array>} Array med genererade frågor
  */
 async function generateQuestions({ amount = 10, category = null, difficulty = null }, apiKey) {
   if (!apiKey) {
-    throw new Error('OpenAI API key is required');
+    throw new Error('Anthropic API key is required');
   }
 
-  const openai = new OpenAI({ apiKey });
+  const anthropic = new Anthropic({ apiKey });
 
   const categoryPrompt = category ? `All questions should be about ${category}.` : `Questions should cover various categories: ${CATEGORIES.join(', ')}.`;
   const difficultyPrompt = difficulty ? `All questions should be ${difficulty} difficulty.` : `Mix of easy, medium, and hard difficulty levels.`;
@@ -41,57 +41,60 @@ Requirements:
 - Make questions clear and unambiguous
 
 Return ONLY a valid JSON array with this exact structure:
-[
-  {
-    "category": "geography",
-    "difficulty": "easy",
-    "correctOption": 0,
-    "languages": {
-      "sv": {
-        "text": "Vilken är Sveriges huvudstad?",
-        "options": ["Stockholm", "Göteborg", "Malmö", "Uppsala"],
-        "explanation": "Stockholm är Sveriges huvudstad och största stad."
-      },
-      "en": {
-        "text": "What is the capital of Sweden?",
-        "options": ["Stockholm", "Gothenburg", "Malmö", "Uppsala"],
-        "explanation": "Stockholm is the capital and largest city of Sweden."
+{
+  "questions": [
+    {
+      "category": "geography",
+      "difficulty": "easy",
+      "correctOption": 0,
+      "languages": {
+        "sv": {
+          "text": "Vilken är Sveriges huvudstad?",
+          "options": ["Stockholm", "Göteborg", "Malmö", "Uppsala"],
+          "explanation": "Stockholm är Sveriges huvudstad och största stad."
+        },
+        "en": {
+          "text": "What is the capital of Sweden?",
+          "options": ["Stockholm", "Gothenburg", "Malmö", "Uppsala"],
+          "explanation": "Stockholm is the capital and largest city of Sweden."
+        }
       }
     }
-  }
-]
+  ]
+}
 
 Important:
 - correctOption is 0-indexed (0 = first option, 1 = second, etc.)
 - Category must be one of: ${CATEGORIES.join(', ')}
 - Difficulty must be one of: ${DIFFICULTIES.join(', ')}
-- Return ONLY the JSON array, no other text`;
+- Return ONLY valid JSON, no markdown or other formatting`;
 
   try {
-    logger.info('Generating questions with OpenAI', { amount, category, difficulty });
+    logger.info('Generating questions with Anthropic Claude', { amount, category, difficulty });
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Använd gpt-4o-mini för kostnadseffektivitet
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022', // Använd Haiku för snabbhet och låg kostnad
+      max_tokens: 4096,
+      temperature: 0.8,
+      system: systemPrompt,
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate ${amount} quiz questions in both Swedish and English.` }
-      ],
-      temperature: 0.8, // Lite kreativitet men inte för mycket
-      max_tokens: 4000,
-      response_format: { type: 'json_object' } // Säkerställ JSON-svar
+        {
+          role: 'user',
+          content: `Generate ${amount} quiz questions in both Swedish and English. Return only valid JSON.`
+        }
+      ]
     });
 
-    const content = response.choices[0].message.content;
-    logger.info('Received response from OpenAI', { contentLength: content.length });
+    const content = message.content[0].text;
+    logger.info('Received response from Anthropic', { contentLength: content.length });
 
     // Parsa JSON-svar
     let questions;
     try {
-      // Om OpenAI returnerar ett objekt med "questions" property
       const parsed = JSON.parse(content);
-      questions = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      questions = parsed.questions || (Array.isArray(parsed) ? parsed : []);
     } catch (parseError) {
-      logger.error('Failed to parse OpenAI response', { content, error: parseError.message });
+      logger.error('Failed to parse Anthropic response', { content, error: parseError.message });
       throw new Error('Failed to parse AI response');
     }
 
@@ -105,19 +108,20 @@ Important:
       .map(q => ({
         id: uuidv4(),
         ...q,
-        source: 'ai-generated',
+        source: 'ai-generated-anthropic',
         generatedAt: new Date().toISOString()
       }));
 
     logger.info('Successfully generated and validated questions', {
       requested: amount,
-      generated: validatedQuestions.length
+      generated: validatedQuestions.length,
+      model: 'claude-3-5-haiku-20241022'
     });
 
     return validatedQuestions;
 
   } catch (error) {
-    logger.error('Error generating questions with OpenAI', {
+    logger.error('Error generating questions with Anthropic', {
       error: error.message,
       stack: error.stack
     });
@@ -175,7 +179,7 @@ function validateQuestion(question) {
  * @param {string} category - Kategori
  * @param {string} difficulty - Svårighetsgrad
  * @param {number} amount - Antal frågor
- * @param {string} apiKey - OpenAI API-nyckel
+ * @param {string} apiKey - Anthropic API-nyckel
  * @returns {Promise<Array>} Array med frågor
  */
 async function generateQuestionsForCategory(category, difficulty, amount, apiKey) {

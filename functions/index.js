@@ -21,8 +21,8 @@ const cors = require("cors")({
 
 // Define Stripe secret key parameter
 const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
-// Define OpenAI API key parameter
-const openaiApiKey = defineString("OPENAI_API_KEY");
+// Define Anthropic API key parameter
+const anthropicApiKey = defineString("ANTHROPIC_API_KEY");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -117,9 +117,9 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
         return;
       }
 
-      const apiKey = openaiApiKey.value();
+      const apiKey = anthropicApiKey.value();
       if (!apiKey) {
-        logger.error("OpenAI API key not configured");
+        logger.error("Anthropic API key not configured");
         res.status(500).json({
           error: "AI question generation not configured"
         });
@@ -176,10 +176,10 @@ exports.questionImport = onSchedule(
 
     try {
       const { generateQuestions } = require('./services/aiQuestionGenerator');
-      const apiKey = openaiApiKey.value();
+      const apiKey = anthropicApiKey.value();
 
       if (!apiKey) {
-        logger.warn("OpenAI API key not configured, skipping automatic question import");
+        logger.warn("Anthropic API key not configured, skipping automatic question import");
         return;
       }
 

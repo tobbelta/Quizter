@@ -214,7 +214,7 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  /** Genererar frågor med AI (OpenAI) */
+  /** Genererar frågor med AI (Anthropic Claude) */
   const handleGenerateAIQuestions = async () => {
     setIsGeneratingAI(true);
     setShowAIDialog(false);
@@ -244,7 +244,7 @@ const AdminQuestionsPage = () => {
 
       alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
     } catch (error) {
-      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att OpenAI API-nyckeln är konfigurerad i Firebase.`);
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -452,7 +452,7 @@ const AdminQuestionsPage = () => {
             </div>
 
             <p className="text-gray-300 text-sm mb-4">
-              Generera frågor med OpenAI som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
+              Generera frågor med Anthropic Claude som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
             </p>
 
             <div className="space-y-4">
