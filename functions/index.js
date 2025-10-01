@@ -6,7 +6,18 @@ const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {defineString} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const cors = require("cors")({ origin: true });
+
+// CORS-konfiguration för att tillåta routequest.se och andra domäner
+const cors = require("cors")({
+  origin: [
+    "https://routequest.se",
+    "https://www.routequest.se",
+    "https://geoquest2-7e45c.firebaseapp.com",
+    "https://geoquest2-7e45c.web.app",
+    "http://localhost:3000" // För lokal utveckling
+  ],
+  credentials: true
+});
 
 // Define Stripe secret key parameter
 const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
