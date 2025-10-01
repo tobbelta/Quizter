@@ -187,7 +187,16 @@ const AboutDialog = ({ isOpen, onClose }) => {
 
             {/* Footer */}
             <div className="text-center text-sm text-gray-500 pt-4 border-t border-slate-700">
-              © 2025 RouteQuest. Skapad med ❤️ för äventyrslystna själar.
+              <p className="mb-2">© 2025 RouteQuest. Skapad med ❤️ för äventyrslystna själar.</p>
+              <div className="flex justify-center gap-4 text-xs">
+                <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                  Integritetspolicy
+                </a>
+                <span className="text-gray-600">|</span>
+                <a href="/terms-of-service.html" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                  Användarvillkor
+                </a>
+              </div>
             </div>
 
             {/* Stäng-knapp längst ner */}
