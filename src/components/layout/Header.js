@@ -8,11 +8,13 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
+import AboutDialog from '../shared/AboutDialog';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   console.log('Header isSuperUser:', isSuperUser);
 
@@ -38,6 +40,7 @@ const Header = ({ title = 'RouteQuest' }) => {
   const hasLocalRuns = localCreatedCount > 0 || localJoinedCount > 0;
 
   return (
+    <>
     <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50 safe-area-inset">
       <div className="w-full px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
         {/* Vänster: Logotyp */}
@@ -148,6 +151,15 @@ const Header = ({ title = 'RouteQuest' }) => {
                     </>
                   )}
 
+                  {/* Om RouteQuest */}
+                  <div className="my-2 border-t border-slate-700" />
+                  <button
+                    onClick={() => { setIsMenuOpen(false); setShowAbout(true); }}
+                    className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-gray-200"
+                  >
+                    Om RouteQuest
+                  </button>
+
                   {/* Login/Logout */}
                   <div className="my-2 border-t border-slate-700" />
                   {isAuthenticated ? (
@@ -172,6 +184,10 @@ const Header = ({ title = 'RouteQuest' }) => {
         </div>
       </div>
     </header>
+
+    {/* About Dialog - måste vara utanför header */}
+    <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+    </>
   );
 };
 

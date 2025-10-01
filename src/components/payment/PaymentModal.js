@@ -136,9 +136,15 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
   // Skapa PaymentIntent när komponenten mountas
   useEffect(() => {
     const createPayment = async () => {
+      // Validera att vi har nödvändig data innan vi försöker skapa betalning
+      if (!runId || !amount) {
+        setError('Saknar nödvändig information för betalning');
+        return;
+      }
+
       const result = await paymentService.createPaymentIntent({
         runId,
-        participantId,
+        participantId: participantId || 'anonymous',
         amount
       });
 
