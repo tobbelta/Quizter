@@ -213,25 +213,34 @@ const AdminQuestionsPage = () => {
     setCurrentPage(page);
   };
 
-  /** Hämtar fler frågor från OpenTDB. */
+  /** Genererar 10 frågor med AI */
   const handleImportQuestions = async () => {
     setIsImporting(true);
     try {
-      const newQuestions = await questionService.fetchAndAddFromOpenTDB({
-        amount: 10,
-        difficulty: 'medium',
-        audience: 'adult'
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          amount: 10
+        })
       });
-      // Ladda om frågorna efter import
-      setQuestions(questionService.listAll() || []);
 
-      if (newQuestions && newQuestions.length > 0) {
-        alert(`${newQuestions.length} nya frågor importerades och översattes!`);
-      } else {
-        alert('Inga nya frågor kunde importeras. Detta kan bero på att översättningen misslyckades eller att inga passande frågor hittades.');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to generate questions');
       }
+
+      // Ladda om frågorna efter 1 sekund (ge Firestore tid att synka)
+      setTimeout(() => {
+        setQuestions(questionService.listAll() || []);
+      }, 1000);
+
+      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
     } catch (error) {
-      alert(`Kunde inte importera frågor: ${error.message}`);
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
     } finally {
       setIsImporting(false);
     }
@@ -379,7 +388,7 @@ const AdminQuestionsPage = () => {
               disabled={isImporting}
               className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
             >
-              {isImporting ? 'Importerar...' : 'Importera 10 frågor'}
+              {isImporting ? 'Genererar AI-frågor...' : '⚡ Snabbgenerera 10 AI-frågor'}
             </button>
           </div>
         </div>
