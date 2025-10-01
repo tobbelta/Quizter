@@ -1,6 +1,6 @@
 name: 🐛 Bug Report
-description: Rapportera en bugg eller ett fel i GeoQuest
-title: "[BUG] "
+description: Rapportera en bugg eller ett fel i RouteQuest
+title: "[BUG] RouteQuest: "
 labels: ["bug"]
 assignees: []
 body:
@@ -95,8 +95,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: 🏷️ App-version
-      description: Vilken version av GeoQuest använder du?
+      label: 🏷️ App-version (RouteQuest)
+      description: Vilken version av RouteQuest använder du?
       placeholder: ex. v2.8.51 (finns i hamburger-menyn)
 
   - type: dropdown

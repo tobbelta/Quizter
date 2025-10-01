@@ -21,7 +21,7 @@ const LandingPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-950">
-      <Header title="GeoQuest" />
+      <Header title="RouteQuest" />
 
       <div className="mx-auto max-w-4xl px-4 py-16 pt-24">
         {/* Två huvudknappar */}

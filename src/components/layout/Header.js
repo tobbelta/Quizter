@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
 
-const Header = ({ title = 'GeoQuest' }) => {
+const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -47,7 +47,7 @@ const Header = ({ title = 'GeoQuest' }) => {
         >
           <img
             src="/logo-compass.svg"
-            alt="GeoQuest"
+            alt="RouteQuest"
             className="w-10 h-10 flex-shrink-0"
           />
         </button>
