@@ -124,6 +124,11 @@ const AdminQuestionsPage = () => {
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
+  const [aiAmount, setAiAmount] = useState(10);
+  const [aiCategory, setAiCategory] = useState('');
+  const [aiDifficulty, setAiDifficulty] = useState('');
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -206,6 +211,42 @@ const AdminQuestionsPage = () => {
       alert(`Kunde inte importera frågor: ${error.message}`);
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  /** Genererar frågor med AI (OpenAI) */
+  const handleGenerateAIQuestions = async () => {
+    setIsGeneratingAI(true);
+    setShowAIDialog(false);
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: aiAmount,
+          category: aiCategory || undefined,
+          difficulty: aiDifficulty || undefined
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to generate questions');
+      }
+
+      // Ladda om frågorna efter generering
+      setTimeout(() => {
+        setQuestions(questionService.listAll() || []);
+      }, 1000);
+
+      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
+    } catch (error) {
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att OpenAI API-nyckeln är konfigurerad i Firebase.`);
+    } finally {
+      setIsGeneratingAI(false);
     }
   };
 
@@ -304,6 +345,13 @@ const AdminQuestionsPage = () => {
           </div>
           <div className="flex gap-2 items-center">
             <button
+              onClick={() => setShowAIDialog(true)}
+              disabled={isGeneratingAI}
+              className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
+            >
+              {isGeneratingAI ? '🤖 Genererar...' : '🤖 AI-Generera frågor'}
+            </button>
+            <button
               onClick={handleImportQuestions}
               disabled={isImporting}
               className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
@@ -384,6 +432,109 @@ const AdminQuestionsPage = () => {
           </div>
         )}
       </div>
+
+      {/* AI Generation Dialog */}
+      {showAIDialog && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[1200]">
+          <div className="bg-slate-900 rounded-xl shadow-2xl border border-purple-500/40 max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
+                🤖 AI-Generera frågor
+              </h3>
+              <button
+                onClick={() => setShowAIDialog(false)}
+                className="text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-gray-300 text-sm mb-4">
+              Generera frågor med OpenAI som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
+            </p>
+
+            <div className="space-y-4">
+              {/* Antal */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Antal frågor (1-50)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={aiAmount}
+                  onChange={(e) => setAiAmount(parseInt(e.target.value) || 10)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Kategori */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Kategori (valfri)
+                </label>
+                <select
+                  value={aiCategory}
+                  onChange={(e) => setAiCategory(e.target.value)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                >
+                  <option value="">Blandad</option>
+                  <option value="geography">Geography</option>
+                  <option value="history">History</option>
+                  <option value="science">Science</option>
+                  <option value="culture">Culture</option>
+                  <option value="sports">Sports</option>
+                  <option value="nature">Nature</option>
+                  <option value="technology">Technology</option>
+                </select>
+              </div>
+
+              {/* Svårighetsgrad */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Svårighetsgrad (valfri)
+                </label>
+                <select
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                >
+                  <option value="">Blandad</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+
+              {/* Info box */}
+              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+                <p className="text-xs text-cyan-200">
+                  💡 AI genererar frågor på både svenska och engelska automatiskt. Kostnaden är ca 0.01-0.05 SEK per fråga med gpt-4o-mini.
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowAIDialog(false)}
+                  className="flex-1 rounded-lg bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
+                >
+                  Avbryt
+                </button>
+                <button
+                  onClick={handleGenerateAIQuestions}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700"
+                >
+                  Generera
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

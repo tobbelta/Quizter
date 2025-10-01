@@ -21,6 +21,8 @@ const cors = require("cors")({
 
 // Define Stripe secret key parameter
 const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
+// Define OpenAI API key parameter
+const openaiApiKey = defineString("OPENAI_API_KEY");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -95,7 +97,75 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
   res.status(501).json({ error: "Not implemented" });
 });
 
-// Schemalagd funktion som ska hämta fler frågor löpande.
+/**
+ * Generera frågor manuellt med AI (HTTP endpoint)
+ */
+exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
+  return cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { amount = 10, category, difficulty } = req.body;
+
+      // Validera amount
+      if (amount < 1 || amount > 50) {
+        res.status(400).json({
+          error: "Amount must be between 1 and 50"
+        });
+        return;
+      }
+
+      const apiKey = openaiApiKey.value();
+      if (!apiKey) {
+        logger.error("OpenAI API key not configured");
+        res.status(500).json({
+          error: "AI question generation not configured"
+        });
+        return;
+      }
+
+      const { generateQuestions } = require('./services/aiQuestionGenerator');
+
+      logger.info("Generating AI questions", { amount, category, difficulty });
+
+      const questions = await generateQuestions({ amount, category, difficulty }, apiKey);
+
+      // Spara till Firestore
+      const db = admin.firestore();
+      const batch = db.batch();
+
+      questions.forEach(question => {
+        const docRef = db.collection('questions').doc(question.id);
+        batch.set(docRef, question);
+      });
+
+      await batch.commit();
+
+      logger.info("Successfully generated and saved AI questions", {
+        count: questions.length
+      });
+
+      res.status(200).json({
+        success: true,
+        count: questions.length,
+        questions: questions
+      });
+    } catch (error) {
+      logger.error("Error generating AI questions", {
+        error: error.message,
+        stack: error.stack
+      });
+      res.status(500).json({
+        error: "Failed to generate questions",
+        message: error.message
+      });
+    }
+  });
+});
+
+// Schemalagd funktion som ska hämta fler frågor löpande med AI.
 exports.questionImport = onSchedule(
   {
     schedule: "every 6 hours",
@@ -103,7 +173,40 @@ exports.questionImport = onSchedule(
   },
   async (event) => {
     logger.info("questionImport trigger executed", { timestamp: event.scheduleTime });
-    logger.warn("TODO: implement automatic question import");
+
+    try {
+      const { generateQuestions } = require('./services/aiQuestionGenerator');
+      const apiKey = openaiApiKey.value();
+
+      if (!apiKey) {
+        logger.warn("OpenAI API key not configured, skipping automatic question import");
+        return;
+      }
+
+      // Generera 5 frågor var 6:e timme (120 frågor/månad)
+      const questions = await generateQuestions({ amount: 5 }, apiKey);
+
+      // Spara till Firestore
+      const db = admin.firestore();
+      const batch = db.batch();
+
+      questions.forEach(question => {
+        const docRef = db.collection('questions').doc(question.id);
+        batch.set(docRef, question);
+      });
+
+      await batch.commit();
+
+      logger.info("Successfully imported AI-generated questions", {
+        count: questions.length,
+        timestamp: event.scheduleTime
+      });
+    } catch (error) {
+      logger.error("Failed to import questions", {
+        error: error.message,
+        stack: error.stack
+      });
+    }
   }
 );
 
