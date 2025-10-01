@@ -49,8 +49,11 @@ export const createPaymentIntent = async ({ runId, participantId, amount = 500 }
   }
 
   try {
-    // I riktigt läge: anropa backend för att skapa PaymentIntent
-    const response = await fetch('/api/create-payment-intent', {
+    // I riktigt läge: anropa Firebase Function för att skapa PaymentIntent
+    const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+    const functionUrl = `https://europe-west1-${projectId}.cloudfunctions.net/createPaymentIntent`;
+
+    const response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -64,7 +67,8 @@ export const createPaymentIntent = async ({ runId, participantId, amount = 500 }
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
     }
 
     const { client_secret, payment_intent_id } = await response.json();
