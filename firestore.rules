@@ -98,10 +98,9 @@ service cloud.firestore {
       allow create: if isSuperUser() &&
                        request.resource.data.createdAt is timestamp;
 
-      // Uppdatera: Autentiserade användare kan markera meddelanden som lästa eller deleted
+      // Uppdatera: Alla kan markera meddelanden som lästa eller deleted (soft delete)
       // SuperUser kan uppdatera allt
-      allow update: if (isAuthenticated() &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt', 'deleted', 'deletedAt'])) ||
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt', 'deleted', 'deletedAt']) ||
                        isSuperUser();
 
       // Ta bort: Endast SuperUser kan permanent ta bort
