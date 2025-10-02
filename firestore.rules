@@ -133,9 +133,10 @@ service cloud.firestore {
                        request.resource.data.timestamp is timestamp &&
                        request.resource.data.eventType is string;
 
-      // Uppdatera: Alla kan uppdatera sina egna analytics events (för linking till userId)
-      // SuperUser kan uppdatera allt
-      allow update: if true;
+      // Uppdatera: Autentiserade kan uppdatera (för linking deviceId till userId)
+      // Eller om uppdateringen bara lägger till userId field
+      allow update: if isAuthenticated() ||
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId']));
 
       // Ta bort: Endast SuperUser
       allow delete: if isSuperUser();
