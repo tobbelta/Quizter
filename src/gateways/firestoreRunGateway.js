@@ -349,9 +349,10 @@ export const firestoreRunGateway = {
     await deleteDoc(doc(hämtaRundsCollection(), runId));
   },
 
-  /** Realtidslyssnare för rundor. */
+  // Realtidslyssnare för rundor.
   subscribeRuns(listener) {
-    return onSnapshot(hämtaRundsCollection(), (snapshot) => {
+    const q = query(hämtaRundsCollection(), where("status", "==", "active"));
+    return onSnapshot(q, (snapshot) => {
       const runs = snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
       listener(runs);
     });
