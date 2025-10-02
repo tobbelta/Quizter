@@ -9,6 +9,7 @@ import Header from '../components/layout/Header';
 const LandingPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const [isBetaExpanded, setIsBetaExpanded] = React.useState(false);
 
   const handleStartRun = () => {
     navigate('/join');
@@ -24,6 +25,45 @@ const LandingPage = () => {
       <Header title="RouteQuest" />
 
       <div className="mx-auto max-w-4xl px-4 py-16 pt-24">
+        {/* Beta-notis - Kollapsbar */}
+        <div className="mb-8 rounded-xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-900/20 to-slate-900/40 overflow-hidden">
+          <button
+            onClick={() => setIsBetaExpanded(!isBetaExpanded)}
+            className="w-full flex items-center justify-between p-4 hover:bg-amber-900/10 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="text-2xl">⚠️</div>
+              <h3 className="text-lg font-bold text-amber-300">
+                OBS! Beta-version
+              </h3>
+            </div>
+            <div className="text-amber-300 text-xl transition-transform" style={{ transform: isBetaExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              ▼
+            </div>
+          </button>
+
+          {isBetaExpanded && (
+            <div className="px-4 pb-4 pt-2 border-t border-amber-500/20">
+              <p className="text-sm text-gray-300 mb-3">
+                RouteQuest är just nu i beta. Vi arbetar kontinuerligt med att förbättra appen och värdesätter din feedback!
+              </p>
+              <p className="text-sm text-gray-300 mb-3">
+                Alla donationer tas tacksamt emot och hjälper oss att utveckla tjänsten. Om appen inte lever upp till dina förväntningar, kontakta oss på{' '}
+                <a
+                  href="mailto:info@routequest.se"
+                  className="text-cyan-400 hover:text-cyan-300 underline transition-colors"
+                >
+                  info@routequest.se
+                </a>
+                {' '}så kan vi diskutera en återbetalning.
+              </p>
+              <p className="text-xs text-gray-400 italic">
+                Tack för att du testar RouteQuest och hjälper oss att göra den bättre!
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Två huvudknappar */}
         <div className="grid md:grid-cols-2 gap-6 mb-8">
           {/* Starta runda */}
@@ -63,7 +103,7 @@ const LandingPage = () => {
 
 
         {/* Info-sektion */}
-        <div className="mt-12 text-center">
+        <div className="mt-8 text-center">
           <p className="text-sm text-gray-400">
             {isAuthenticated ? (
               <>Dina rundor och framsteg sparas automatiskt i ditt konto</>

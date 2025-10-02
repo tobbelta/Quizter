@@ -167,6 +167,7 @@ const AdminQuestionsPage = () => {
     if (showAIDialog && !aiStatus) {
       fetchAIStatus();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAIDialog]);
 
   const fetchAIStatus = async () => {
@@ -561,13 +562,15 @@ const AdminQuestionsPage = () => {
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                 >
                   <option value="">Blandad</option>
-                  <option value="geography">Geography</option>
-                  <option value="history">History</option>
-                  <option value="science">Science</option>
-                  <option value="culture">Culture</option>
-                  <option value="sports">Sports</option>
-                  <option value="nature">Nature</option>
-                  <option value="technology">Technology</option>
+                  <option value="Geografi">Geografi</option>
+                  <option value="Historia">Historia</option>
+                  <option value="Naturvetenskap">Naturvetenskap</option>
+                  <option value="Kultur">Kultur</option>
+                  <option value="Sport">Sport</option>
+                  <option value="Natur">Natur</option>
+                  <option value="Teknik">Teknik</option>
+                  <option value="Djur">Djur</option>
+                  <option value="Gåtor">Gåtor</option>
                 </select>
               </div>
 
@@ -582,9 +585,9 @@ const AdminQuestionsPage = () => {
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                 >
                   <option value="">Blandad</option>
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
+                  <option value="kid">Barn (6-12 år)</option>
+                  <option value="family">Familj (alla åldrar)</option>
+                  <option value="adult">Vuxen (utmanande)</option>
                 </select>
               </div>
 

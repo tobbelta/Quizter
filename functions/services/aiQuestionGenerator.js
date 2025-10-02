@@ -6,8 +6,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('firebase-functions/logger');
 
-const CATEGORIES = ['geography', 'history', 'science', 'culture', 'sports', 'nature', 'technology'];
-const DIFFICULTIES = ['easy', 'medium', 'hard'];
+// Svenska kategorier
+const CATEGORIES = ['Geografi', 'Historia', 'Naturvetenskap', 'Kultur', 'Sport', 'Natur', 'Teknik', 'Djur', 'Gåtor'];
+
+// Svårighetsgrader: barn, familj, vuxen
+const DIFFICULTIES = ['kid', 'family', 'adult'];
 
 /**
  * Genererar frågor med Anthropic Claude
@@ -25,27 +28,35 @@ async function generateQuestions({ amount = 10, category = null, difficulty = nu
 
   const anthropic = new Anthropic({ apiKey });
 
-  const categoryPrompt = category ? `All questions should be about ${category}.` : `Questions should cover various categories: ${CATEGORIES.join(', ')}.`;
-  const difficultyPrompt = difficulty ? `All questions should be ${difficulty} difficulty.` : `Mix of easy, medium, and hard difficulty levels.`;
+  // Översätt svårighetsgrad till läsbart format
+  const difficultyMapping = {
+    'kid': 'barn (lämplig för barn 6-12 år, enkla frågor)',
+    'family': 'familj (lämplig för alla åldrar, medel svårighet)',
+    'adult': 'vuxen (utmanande frågor för vuxna)'
+  };
 
-  const systemPrompt = `You are an expert quiz question generator. Generate ${amount} multiple-choice questions in both Swedish and English.
+  const categoryPrompt = category ? `Alla frågor ska handla om kategorin "${category}".` : `Frågorna ska täcka olika kategorier: ${CATEGORIES.join(', ')}.`;
+  const difficultyPrompt = difficulty ? `Alla frågor ska vara på nivå: ${difficultyMapping[difficulty] || difficulty}` : `Blanda olika svårighetsgrader: barn (kid), familj (family), vuxen (adult).`;
 
-Requirements:
-- Each question must have exactly 4 options (A, B, C, D)
-- Only one correct answer
-- Include a brief explanation for the correct answer
+  const systemPrompt = `Du är en expert på att skapa quizfrågor. Generera ${amount} flervalsfrågor på både svenska och engelska.
+
+Krav:
+- Varje fråga ska ha exakt 4 svarsalternativ (A, B, C, D)
+- Endast ett korrekt svar
+- Inkludera en kort förklaring till det korrekta svaret
 - ${categoryPrompt}
 - ${difficultyPrompt}
-- Questions should be interesting, educational, and suitable for all ages
-- Avoid controversial or offensive topics
-- Make questions clear and unambiguous
+- Frågorna ska vara intressanta, pedagogiska och lämpliga för målgruppen
+- Undvik kontroversiella eller stötande ämnen
+- Gör frågorna tydliga och entydiga
 
-Return ONLY a valid JSON array with this exact structure:
+Svara ENDAST med en giltig JSON-array med denna exakta struktur:
 {
   "questions": [
     {
-      "category": "geography",
-      "difficulty": "easy",
+      "category": "Geografi",
+      "difficulty": "family",
+      "audience": "family",
       "correctOption": 0,
       "languages": {
         "sv": {
@@ -63,11 +74,11 @@ Return ONLY a valid JSON array with this exact structure:
   ]
 }
 
-Important:
-- correctOption is 0-indexed (0 = first option, 1 = second, etc.)
-- Category must be one of: ${CATEGORIES.join(', ')}
-- Difficulty must be one of: ${DIFFICULTIES.join(', ')}
-- Return ONLY valid JSON, no markdown or other formatting`;
+Viktigt:
+- correctOption är 0-indexerad (0 = första alternativet, 1 = andra, etc.)
+- category måste vara en av: ${CATEGORIES.join(', ')}
+- difficulty och audience måste vara en av: kid, family, adult
+- Svara ENDAST med giltig JSON, ingen markdown eller annan formatering`;
 
   try {
     logger.info('Generating questions with Anthropic Claude', { amount, category, difficulty });
@@ -108,6 +119,8 @@ Important:
       .map(q => ({
         id: uuidv4(),
         ...q,
+        // Sätt audience till samma som difficulty om den saknas
+        audience: q.audience || q.difficulty,
         source: 'ai-generated-anthropic',
         generatedAt: new Date().toISOString()
       }));

@@ -17,6 +17,7 @@ const defaultForm = {
   description: 'En promenad med blandade frågor.',
   audience: 'family',
   difficulty: 'family',
+  categories: [], // Valda kategorier (tom = alla)
   questionCount: 6,
   lengthMeters: 2000,
   allowAnonymous: true
@@ -32,6 +33,18 @@ const difficultyOptions = [
   { value: 'kid', label: 'Barn' },
   { value: 'family', label: 'Familj' },
   { value: 'adult', label: 'Vuxen' }
+];
+
+const categoryOptions = [
+  { value: 'Geografi', label: 'Geografi' },
+  { value: 'Historia', label: 'Historia' },
+  { value: 'Naturvetenskap', label: 'Naturvetenskap' },
+  { value: 'Kultur', label: 'Kultur' },
+  { value: 'Sport', label: 'Sport' },
+  { value: 'Natur', label: 'Natur' },
+  { value: 'Teknik', label: 'Teknik' },
+  { value: 'Djur', label: 'Djur' },
+  { value: 'Gåtor', label: 'Gåtor' }
 ];
 
 const CreateRunPage = () => {
@@ -78,6 +91,20 @@ const CreateRunPage = () => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+  };
+
+  /** Togglar kategori i multichoice */
+  const toggleCategory = (category) => {
+    setForm((prev) => {
+      const categories = prev.categories || [];
+      const isSelected = categories.includes(category);
+      return {
+        ...prev,
+        categories: isSelected
+          ? categories.filter(c => c !== category)
+          : [...categories, category]
+      };
+    });
   };
 
   /** Hämtar fler frågor från OpenTDB med aktuell profil. */
@@ -200,34 +227,51 @@ const CreateRunPage = () => {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-cyan-200">Målgrupp</label>
-                <select
-                  name="audience"
-                  value={form.audience}
-                  onChange={handleChange}
-                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
-                >
-                  {audienceOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-gray-400">Tillgängliga: {maxQuestionsPerAudience[form.audience] || 0}</p>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-cyan-200">Svårighetsgrad</label>
+              <select
+                name="difficulty"
+                value={form.difficulty}
+                onChange={handleChange}
+                className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
+              >
+                {difficultyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">
+                {form.difficulty === 'kid' && 'Enkla frågor lämpliga för barn 6-12 år'}
+                {form.difficulty === 'family' && 'Blandar barn- och vuxenfrågor för hela familjen'}
+                {form.difficulty === 'adult' && 'Utmanande frågor för vuxna'}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-cyan-200">
+                Kategorier {form.categories.length === 0 ? '(Alla)' : `(${form.categories.length} valda)`}
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {categoryOptions.map((cat) => {
+                  const isSelected = form.categories.includes(cat.value);
+                  return (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => toggleCategory(cat.value)}
+                      className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        isSelected
+                          ? 'bg-cyan-500 text-black'
+                          : 'bg-slate-800 border border-slate-600 text-gray-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
               </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-cyan-200">Svårighetsgrad</label>
-                <select
-                  name="difficulty"
-                  value={form.difficulty}
-                  onChange={handleChange}
-                  className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
-                >
-                  {difficultyOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Välj kategorier eller lämna tomt för alla kategorier
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
