@@ -2,7 +2,7 @@
  * Message Service - Hanterar meddelanden från admin till användare
  */
 import { getFirebaseDb } from '../firebaseClient';
-import { collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, serverTimestamp, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 const db = getFirebaseDb();
 
@@ -113,6 +113,114 @@ export const getMessages = async (userId = null, deviceId = null) => {
 };
 
 /**
+ * Lyssna på meddelanden i realtid för en användare eller enhet
+ * @param {string} userId - Användar-ID (optional)
+ * @param {string} deviceId - Device-ID (optional)
+ * @param {Function} callback - Callback-funktion som anropas med meddelanden
+ * @returns {Function} Unsubscribe-funktion
+ */
+export const subscribeToMessages = (userId = null, deviceId = null, callback) => {
+  const messagesRef = collection(db, 'messages');
+  const unsubscribers = [];
+  const messagesMap = new Map();
+
+  const updateMessages = () => {
+    const messages = Array.from(messagesMap.values());
+    messages.sort((a, b) => {
+      if (!a.createdAt || !b.createdAt) return 0;
+      return b.createdAt.toDate() - a.createdAt.toDate();
+    });
+    callback(messages);
+  };
+
+  // Lyssna på meddelanden till alla
+  const unsubAll = onSnapshot(
+    query(
+      messagesRef,
+      where('targetType', '==', 'all'),
+      where('deleted', '==', false),
+      orderBy('createdAt', 'desc')
+    ),
+    (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const message = { id: change.doc.id, ...change.doc.data() };
+        if (change.type === 'removed' || message.deleted) {
+          messagesMap.delete(change.doc.id);
+        } else {
+          messagesMap.set(change.doc.id, message);
+        }
+      });
+      updateMessages();
+    },
+    (error) => {
+      console.error('Error in messages subscription:', error);
+    }
+  );
+  unsubscribers.push(unsubAll);
+
+  // Lyssna på användarspecifika meddelanden
+  if (userId) {
+    const unsubUser = onSnapshot(
+      query(
+        messagesRef,
+        where('targetType', '==', 'user'),
+        where('targetId', '==', userId),
+        where('deleted', '==', false),
+        orderBy('createdAt', 'desc')
+      ),
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const message = { id: change.doc.id, ...change.doc.data() };
+          if (change.type === 'removed' || message.deleted) {
+            messagesMap.delete(change.doc.id);
+          } else {
+            messagesMap.set(change.doc.id, message);
+          }
+        });
+        updateMessages();
+      },
+      (error) => {
+        console.error('Error in user messages subscription:', error);
+      }
+    );
+    unsubscribers.push(unsubUser);
+  }
+
+  // Lyssna på enhetsspecifika meddelanden
+  if (deviceId) {
+    const unsubDevice = onSnapshot(
+      query(
+        messagesRef,
+        where('targetType', '==', 'device'),
+        where('targetId', '==', deviceId),
+        where('deleted', '==', false),
+        orderBy('createdAt', 'desc')
+      ),
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const message = { id: change.doc.id, ...change.doc.data() };
+          if (change.type === 'removed' || message.deleted) {
+            messagesMap.delete(change.doc.id);
+          } else {
+            messagesMap.set(change.doc.id, message);
+          }
+        });
+        updateMessages();
+      },
+      (error) => {
+        console.error('Error in device messages subscription:', error);
+      }
+    );
+    unsubscribers.push(unsubDevice);
+  }
+
+  // Returnera en funktion som avbryter alla subscriptions
+  return () => {
+    unsubscribers.forEach(unsub => unsub());
+  };
+};
+
+/**
  * Markera meddelande som läst
  * @param {string} messageId - Meddelande-ID
  */
@@ -195,6 +303,7 @@ export const getUnreadCount = async (userId = null, deviceId = null) => {
 export const messageService = {
   sendMessage,
   getMessages,
+  subscribeToMessages,
   markAsRead,
   deleteMessage,
   permanentDeleteMessage,

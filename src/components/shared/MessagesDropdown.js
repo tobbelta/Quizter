@@ -9,34 +9,31 @@ import { useAuth } from '../../context/AuthContext';
 const MessagesDropdown = ({ isOpen, onClose }) => {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (isOpen) {
-      loadMessages();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+    const deviceId = analyticsService.getDeviceId();
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
 
-  const loadMessages = async () => {
-    try {
-      setIsLoading(true);
-      const deviceId = analyticsService.getDeviceId();
-      const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+    // Sätt upp realtidslyssnare på meddelanden
+    const unsubscribe = messageService.subscribeToMessages(
+      userId,
+      deviceId,
+      (updatedMessages) => {
+        setMessages(updatedMessages);
+        setIsLoading(false);
+      }
+    );
 
-      const allMessages = await messageService.getMessages(userId, deviceId);
-      setMessages(allMessages);
-    } catch (error) {
-      console.error('Kunde inte ladda meddelanden:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // Städa upp lyssnaren när komponenten unmountas
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser]);
 
   const handleMarkAsRead = async (messageId) => {
     try {
       await messageService.markAsRead(messageId);
-      await loadMessages();
     } catch (error) {
       console.error('Kunde inte markera meddelande som läst:', error);
     }
@@ -45,7 +42,6 @@ const MessagesDropdown = ({ isOpen, onClose }) => {
   const handleDelete = async (messageId) => {
     try {
       await messageService.deleteMessage(messageId);
-      await loadMessages();
     } catch (error) {
       console.error('Kunde inte radera meddelande:', error);
     }

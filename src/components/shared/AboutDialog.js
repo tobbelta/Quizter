@@ -7,11 +7,13 @@
  */
 import React, { useState } from 'react';
 import PaymentModal from '../payment/PaymentModal';
+import FeedbackDialog from './FeedbackDialog';
 
 const AboutDialog = ({ isOpen, onClose }) => {
   const [showDonation, setShowDonation] = useState(false);
   const [donationAmount, setDonationAmount] = useState(50);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   if (!isOpen) return null;
 
@@ -160,22 +162,23 @@ const AboutDialog = ({ isOpen, onClose }) => {
               </div>
             </section>
 
-            {/* Kontakt */}
+            {/* Kontakt & Feedback */}
             <section>
-              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
+              <h3 className="text-lg font-semibold text-cyan-400 mb-3">
                 Kontakta oss
               </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              <div className="space-y-3">
+                <button
+                  onClick={() => setShowFeedback(true)}
+                  className="w-full bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                   </svg>
-                  <a href="mailto:info@routequest.se" className="text-cyan-300 hover:text-cyan-200 transition-colors">
-                    info@routequest.se
-                  </a>
-                </div>
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  Ge feedback / Kontakta oss
+                </button>
+                <div className="flex items-center gap-2 text-sm text-gray-400 justify-center">
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                   </svg>
                   <a href="https://www.routequest.se" target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:text-cyan-200 transition-colors">
@@ -230,6 +233,12 @@ const AboutDialog = ({ isOpen, onClose }) => {
           onCancel={() => setShowDonation(false)}
         />
       )}
+
+      {/* Feedback Dialog */}
+      <FeedbackDialog
+        isOpen={showFeedback}
+        onClose={() => setShowFeedback(false)}
+      />
     </>
   );
 };
