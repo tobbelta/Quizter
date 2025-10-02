@@ -11,6 +11,7 @@ import PaymentModal from '../components/payment/PaymentModal';
 import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
+import { analyticsService } from '../services/analyticsService';
 import useQRCode from '../hooks/useQRCode';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 import FullscreenMap from '../components/shared/FullscreenMap';
@@ -154,6 +155,14 @@ const GenerateRunPage = () => {
       if (run) {
         setGeneratedRun(run); // Spara den genererade rundan i lokal state
         setIsRunSaved(false);
+
+        // Logga analytics
+        analyticsService.logVisit('create_run', {
+          runId: run.id,
+          difficulty: form.difficulty,
+          categories: form.categories,
+          questionCount: form.questionCount
+        });
       }
     } catch (generationError) {
       setError(generationError.message);

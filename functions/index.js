@@ -23,6 +23,8 @@ const cors = require("cors")({
 const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
 // Define Anthropic API key parameter
 const anthropicApiKey = defineString("ANTHROPIC_API_KEY");
+// Define OpenAI API key parameter
+const openaiApiKey = defineString("OPENAI_API_KEY");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -162,6 +164,7 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
 
 /**
  * Generera frågor manuellt med AI (HTTP endpoint)
+ * Använder Anthropic Claude som primär, OpenAI som fallback
  */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
@@ -180,20 +183,53 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
         return;
       }
 
-      const apiKey = anthropicApiKey.value();
-      if (!apiKey) {
-        logger.error("Anthropic API key not configured");
-        res.status(500).json({
-          error: "AI question generation not configured"
-        });
-        return;
+      let questions = null;
+      let usedProvider = null;
+
+      // Försök med Anthropic först
+      const anthropicKey = anthropicApiKey.value();
+      if (anthropicKey) {
+        try {
+          const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
+          logger.info("Trying Anthropic Claude", { amount, category, difficulty });
+
+          questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
+          usedProvider = 'anthropic';
+          logger.info("Successfully generated with Anthropic");
+        } catch (anthropicError) {
+          logger.warn("Anthropic failed, trying OpenAI fallback", {
+            error: anthropicError.message
+          });
+        }
       }
 
-      const { generateQuestions } = require('./services/aiQuestionGenerator');
+      // Fallback till OpenAI om Anthropic misslyckades eller inte konfigurerad
+      if (!questions) {
+        const openaiKey = openaiApiKey.value();
+        if (!openaiKey) {
+          logger.error("Neither Anthropic nor OpenAI API keys are configured");
+          res.status(500).json({
+            error: "AI question generation not configured"
+          });
+          return;
+        }
 
-      logger.info("Generating AI questions", { amount, category, difficulty });
+        try {
+          const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
+          logger.info("Trying OpenAI", { amount, category, difficulty });
 
-      const questions = await generateQuestions({ amount, category, difficulty }, apiKey);
+          questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
+          usedProvider = 'openai';
+          logger.info("Successfully generated with OpenAI");
+        } catch (openaiError) {
+          logger.error("OpenAI also failed", { error: openaiError.message });
+          res.status(500).json({
+            error: "Failed to generate questions with both AI providers",
+            details: openaiError.message
+          });
+          return;
+        }
+      }
 
       // Spara till Firestore
       const db = admin.firestore();
@@ -207,12 +243,14 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
       await batch.commit();
 
       logger.info("Successfully generated and saved AI questions", {
-        count: questions.length
+        count: questions.length,
+        provider: usedProvider
       });
 
       res.status(200).json({
         success: true,
         count: questions.length,
+        provider: usedProvider,
         questions: questions
       });
     } catch (error) {
@@ -229,6 +267,7 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
 });
 
 // Schemalagd funktion som ska hämta fler frågor löpande med AI.
+// Använder Anthropic som primär, OpenAI som fallback
 exports.questionImport = onSchedule(
   {
     schedule: "every 6 hours",
@@ -238,16 +277,37 @@ exports.questionImport = onSchedule(
     logger.info("questionImport trigger executed", { timestamp: event.scheduleTime });
 
     try {
-      const { generateQuestions } = require('./services/aiQuestionGenerator');
-      const apiKey = anthropicApiKey.value();
+      let questions = null;
+      let usedProvider = null;
 
-      if (!apiKey) {
-        logger.warn("Anthropic API key not configured, skipping automatic question import");
-        return;
+      // Försök med Anthropic först
+      const anthropicKey = anthropicApiKey.value();
+      if (anthropicKey) {
+        try {
+          const { generateQuestions } = require('./services/aiQuestionGenerator');
+          questions = await generateQuestions({ amount: 5 }, anthropicKey);
+          usedProvider = 'anthropic';
+          logger.info("Generated with Anthropic");
+        } catch (anthropicError) {
+          logger.warn("Anthropic failed in scheduled import, trying OpenAI", {
+            error: anthropicError.message
+          });
+        }
       }
 
-      // Generera 5 frågor var 6:e timme (120 frågor/månad)
-      const questions = await generateQuestions({ amount: 5 }, apiKey);
+      // Fallback till OpenAI
+      if (!questions) {
+        const openaiKey = openaiApiKey.value();
+        if (!openaiKey) {
+          logger.warn("Neither Anthropic nor OpenAI configured, skipping automatic question import");
+          return;
+        }
+
+        const { generateQuestions } = require('./services/openaiQuestionGenerator');
+        questions = await generateQuestions({ amount: 5 }, openaiKey);
+        usedProvider = 'openai';
+        logger.info("Generated with OpenAI");
+      }
 
       // Spara till Firestore
       const db = admin.firestore();
@@ -262,6 +322,7 @@ exports.questionImport = onSchedule(
 
       logger.info("Successfully imported AI-generated questions", {
         count: questions.length,
+        provider: usedProvider,
         timestamp: event.scheduleTime
       });
     } catch (error) {

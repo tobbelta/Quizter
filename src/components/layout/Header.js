@@ -4,19 +4,43 @@
  * Props:
  * - title: Text som visas i mitten (default: "GeoQuest")
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
+import { messageService } from '../../services/messageService';
+import { analyticsService } from '../../services/analyticsService';
 import AboutDialog from '../shared/AboutDialog';
+import MessagesDropdown from '../shared/MessagesDropdown';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   console.log('Header isSuperUser:', isSuperUser);
+
+  // Hämta antal olästa meddelanden
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const deviceId = analyticsService.getDeviceId();
+        const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+        const count = await messageService.getUnreadCount(userId, deviceId);
+        setUnreadMessageCount(count);
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
+      }
+    };
+
+    fetchUnreadCount();
+    // Uppdatera var 30:e sekund
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   const handleLogout = () => {
     logout();
@@ -113,6 +137,19 @@ const Header = ({ title = 'RouteQuest' }) => {
 
                 {/* Menyalternativ */}
                 <div className="py-2">
+                  {/* Meddelanden */}
+                  <button
+                    onClick={() => { setShowMessages(!showMessages); }}
+                    className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
+                  >
+                    <span className="text-gray-200">Meddelanden</span>
+                    {unreadMessageCount > 0 && (
+                      <span className="px-2 py-0.5 bg-cyan-500 rounded text-xs font-bold text-black">
+                        {unreadMessageCount}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Mina rundor */}
                   <button
                     onClick={handleMyRuns}
@@ -147,6 +184,18 @@ const Header = ({ title = 'RouteQuest' }) => {
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Frågebank
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/analytics'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Besöksstatistik
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/messages'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Meddelanden
                       </button>
                     </>
                   )}
@@ -187,6 +236,24 @@ const Header = ({ title = 'RouteQuest' }) => {
 
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+
+    {/* Messages Dropdown */}
+    {showMessages && (
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowMessages(false)}
+        />
+        {/* Dropdown positioned near hamburger menu */}
+        <div className="fixed top-16 right-4 z-50">
+          <MessagesDropdown
+            isOpen={showMessages}
+            onClose={() => setShowMessages(false)}
+          />
+        </div>
+      </>
+    )}
     </>
   );
 };

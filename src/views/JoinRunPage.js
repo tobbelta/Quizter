@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import PaymentModal from '../components/payment/PaymentModal';
 import { localStorageService } from '../services/localStorageService';
+import { analyticsService } from '../services/analyticsService';
 import Header from '../components/layout/Header';
 
 const JoinRunPage = () => {
@@ -99,6 +100,20 @@ const JoinRunPage = () => {
 
     if (!currentUser || currentUser.isAnonymous) {
       localStorageService.addJoinedRun(runToJoin, participantData);
+    }
+
+    // Logga join analytics
+    analyticsService.logVisit('join_run', {
+      runId: runToJoin.id,
+      runName: runToJoin.name
+    });
+
+    // Logga donation om det inte hoppades över
+    if (!paymentResult.skipped && paymentResult.paymentIntentId) {
+      analyticsService.logDonation(1000, paymentResult.paymentIntentId, {
+        runId: runToJoin.id,
+        context: 'join_run'
+      });
     }
 
     if (typeof window !== 'undefined') {
