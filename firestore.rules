@@ -46,14 +46,16 @@ service cloud.firestore {
       // Läs: Alla kan läsa aktiva rundor
       allow read: if resource.data.status == 'active';
 
-      // Skapa: Autentiserade användare kan skapa rundor med validering
-      allow create: if isAuthenticated() &&
-                       isValidRun(request.resource.data) &&
-                       request.resource.data.createdBy == request.auth.uid &&
-                       request.resource.data.createdAt is timestamp;
+      // Skapa: Alla kan skapa rundor (även anonyma användare)
+      // Validera data-format och begränsningar
+      allow create: if isValidRun(request.resource.data) &&
+                       request.resource.data.createdAt is timestamp &&
+                       // Om autentiserad: createdBy måste vara användarens uid
+                       // Om anonym: createdBy får vara vilken sträng som helst
+                       (!isAuthenticated() || request.resource.data.createdBy == request.auth.uid);
 
       // Uppdatera: Endast ägare eller SuperUser
-      allow update: if isOwner(resource.data.createdBy) || isSuperUser();
+      allow update: if (isAuthenticated() && isOwner(resource.data.createdBy)) || isSuperUser();
 
       // Ta bort: Endast SuperUser
       allow delete: if isSuperUser();
