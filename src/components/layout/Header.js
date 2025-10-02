@@ -23,23 +23,18 @@ const Header = ({ title = 'RouteQuest' }) => {
 
   console.log('Header isSuperUser:', isSuperUser);
 
-  // Hämta antal olästa meddelanden
+  // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
-    const fetchUnreadCount = async () => {
-      try {
-        const deviceId = analyticsService.getDeviceId();
-        const userId = currentUser?.isAnonymous ? null : currentUser?.id;
-        const count = await messageService.getUnreadCount(userId, deviceId);
-        setUnreadMessageCount(count);
-      } catch (error) {
-        console.error('Error fetching unread count:', error);
-      }
-    };
+    const deviceId = analyticsService.getDeviceId();
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
 
-    fetchUnreadCount();
-    // Uppdatera var 30:e sekund
-    const interval = setInterval(fetchUnreadCount, 30000);
-    return () => clearInterval(interval);
+    // Prenumerera på meddelanden i realtid
+    const unsubscribe = messageService.subscribeToMessages(userId, deviceId, (messages) => {
+      const unreadCount = messages.filter(m => !m.read && !m.deleted).length;
+      setUnreadMessageCount(unreadCount);
+    });
+
+    return () => unsubscribe();
   }, [currentUser]);
 
   const handleLogout = () => {
@@ -103,12 +98,16 @@ const Header = ({ title = 'RouteQuest' }) => {
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'opacity-0' : ''}`} />
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-2' : ''}`} />
             </div>
-            {/* Badge för antal lokala rundor */}
-            {hasLocalRuns && (
+            {/* Badge för olästa meddelanden (prioritet) eller lokala rundor */}
+            {unreadMessageCount > 0 ? (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs font-bold text-white flex items-center justify-center animate-pulse">
+                {unreadMessageCount}
+              </span>
+            ) : hasLocalRuns ? (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-cyan-500 rounded-full text-xs font-bold text-black flex items-center justify-center">
                 {localCreatedCount + localJoinedCount}
               </span>
-            )}
+            ) : null}
           </button>
 
           {/* Dropdown-meny */}
