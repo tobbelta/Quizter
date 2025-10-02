@@ -105,11 +105,13 @@ const MyRunsPage = () => {
     }
 
     try {
-      // Ta bort från Firestore
-      const deletePromises = Array.from(selectedRuns).map(runId =>
-        runRepository.deleteRun(runId)
-      );
-      await Promise.all(deletePromises);
+      // Ta bort från Firestore om användaren är inloggad
+      if (isAuthenticated) {
+        const deletePromises = Array.from(selectedRuns).map(runId =>
+          runRepository.deleteRun(runId)
+        );
+        await Promise.all(deletePromises);
+      }
 
       // Ta bort från localStorage
       const localRunsMeta = localStorageService.getCreatedRuns();
@@ -131,8 +133,10 @@ const MyRunsPage = () => {
     }
 
     try {
-      // Ta bort från Firestore
-      await runRepository.deleteRun(runId);
+      // Ta bort från Firestore om användaren är inloggad
+      if (isAuthenticated) {
+        await runRepository.deleteRun(runId);
+      }
 
       // Ta bort från localStorage
       const localRunsMeta = localStorageService.getCreatedRuns();

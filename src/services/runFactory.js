@@ -83,7 +83,9 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
     const result = [];
     while (result.length < questionCount) {
       const reShuffled = [...shuffled].sort(() => Math.random() - 0.5);
-      result.push(...reShuffled);
+      // Create new question objects with unique IDs to avoid key collisions in React
+      const uniqueQuestions = reShuffled.map(q => ({ ...q, id: `${q.id}-${uuidv4()}` }));
+      result.push(...uniqueQuestions);
     }
     return result.slice(0, questionCount);
   }
@@ -116,7 +118,7 @@ const createHostedCheckpoints = (questions, origin = FALLBACK_POSITION) => quest
  * Skapar en cirkulär rutt för auto-genererade rundor utifrån längd och startpunkt.
  * Använder ruttplanering för att följa faktiska gångvägar.
  */
-const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, origin }) => {
+const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, origin, seed, preferGreenAreas }) => {
   const baseLat = origin?.lat ?? FALLBACK_POSITION.lat;
   const baseLng = origin?.lng ?? FALLBACK_POSITION.lng;
 
@@ -125,7 +127,9 @@ const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, orig
     const routeData = await generateWalkingRoute({
       origin: { lat: baseLat, lng: baseLng },
       lengthMeters,
-      checkpointCount: questions.length
+      checkpointCount: questions.length,
+      seed,
+      preferGreenAreas
     });
 
     // Skapa checkpoints med frågor längs den planerade rutten
@@ -312,11 +316,13 @@ export const buildGeneratedRun = async ({
   categories = [],
   allowAnonymous = true,
   language = 'sv',
-  origin
+  origin,
+  seed,
+  preferGreenAreas
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
-  const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin });
+  const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin, seed, preferGreenAreas });
 
   if (process.env.NODE_ENV !== 'production') {
     console.debug('[RunFactory] checkpointData från createGeneratedCheckpoints:', {

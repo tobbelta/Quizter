@@ -14,10 +14,10 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 timmar
 /**
  * Genererar en cache-nyckel baserat på route-parametrar.
  */
-const generateCacheKey = (origin, lengthMeters, checkpointCount) => {
+const generateCacheKey = (origin, lengthMeters, checkpointCount, seed, preferGreenAreas) => {
   const lat = origin.lat.toFixed(4); // ~11m precision
   const lng = origin.lng.toFixed(4);
-  return `${CACHE_KEY_PREFIX}${lat}_${lng}_${lengthMeters}_${checkpointCount}`;
+  return `${CACHE_KEY_PREFIX}${lat}_${lng}_${lengthMeters}_${checkpointCount}_${seed}_${preferGreenAreas}`;
 };
 
 /**
@@ -168,13 +168,15 @@ const decodePolyline = (encoded) => {
 /**
  * Skapar en cirkulär gångrutt med riktiga vägar mellan punkter.
  */
-export const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCount }) => {
+export const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCount, seed, preferGreenAreas }) => {
   if (process.env.NODE_ENV !== 'production') {
     console.debug('[RouteService] generateWalkingRoute startar:', {
       origin,
       lengthMeters,
       checkpointCount,
-      hasApiKey: !!ORS_API_KEY
+      hasApiKey: !!ORS_API_KEY,
+      seed,
+      preferGreenAreas
     });
   }
 
@@ -197,7 +199,7 @@ export const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCou
   }
 
   // Kolla cache först
-  const cacheKey = generateCacheKey(origin, lengthMeters, checkpointCount);
+  const cacheKey = generateCacheKey(origin, lengthMeters, checkpointCount, seed, preferGreenAreas);
   const cachedRoute = getCachedRoute(cacheKey);
 
   if (cachedRoute) {
@@ -217,7 +219,7 @@ export const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCou
       console.debug('[RouteService] Begär komplett rutt med', completeRoute.length, 'waypoints');
     }
 
-    const routeData = await getCompleteWalkingRoute(completeRoute, lengthMeters);
+    const routeData = await getCompleteWalkingRoute(completeRoute, lengthMeters, seed, preferGreenAreas);
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[RouteService] API-ruttdata mottagen:', {
@@ -258,9 +260,29 @@ export const generateWalkingRoute = async ({ origin, lengthMeters, checkpointCou
 /**
  * Hämtar gångdirektioner för en komplett rutt med flera waypoints.
  */
-const getCompleteWalkingRoute = async (waypoints, lengthMeters = 2000) => {
-  const url = `${ORS_BASE_URL}/directions/foot-walking`;
+const getCompleteWalkingRoute = async (waypoints, lengthMeters = 2000, seed, preferGreenAreas) => {
+  const profile = preferGreenAreas ? 'foot-hiking' : 'foot-walking';
+  const url = `${ORS_BASE_URL}/directions/${profile}`;
   const coordinates = waypoints.map(wp => [wp.lng, wp.lat]);
+
+  const options = {
+    avoid_features: ['ferries'],
+    round_trip: {
+      length: lengthMeters,
+      points: Math.min(4, Math.max(2, Math.floor(lengthMeters / 1000))),
+      seed: seed || Math.floor(Math.random() * 90)
+    }
+  };
+
+  if (preferGreenAreas) {
+    options.profile_params = {
+      weightings: {
+        green: 1,
+        quiet: 1
+      }
+    };
+    options.avoid_features.push('steps');
+  }
 
   // Använd OpenRouteService round_trip API för cirkulära rutter
   const body = {
@@ -268,14 +290,7 @@ const getCompleteWalkingRoute = async (waypoints, lengthMeters = 2000) => {
     format: 'json',
     instructions: false,
     geometry: true,
-    options: {
-      avoid_features: ['ferries'], // Undviker bara färjor - stora vägar är okej för rutten
-      round_trip: {
-        length: lengthMeters,
-        points: Math.min(4, Math.max(2, Math.floor(lengthMeters / 1000))),
-        seed: Math.floor(Math.random() * 90)
-      }
-    }
+    options: options
   };
 
   if (process.env.NODE_ENV !== 'production') {

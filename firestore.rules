@@ -60,8 +60,8 @@ service cloud.firestore {
       // Uppdatera: Endast ägare eller SuperUser
       allow update: if (isAuthenticated() && isOwner(resource.data.createdBy)) || isSuperUser();
 
-      // Ta bort: Endast SuperUser
-      allow delete: if isSuperUser();
+      // Ta bort: Endast ägare eller SuperUser
+      allow delete: if (isAuthenticated() && isOwner(resource.data.createdBy)) || isSuperUser();
     }
 
     // Questions collection

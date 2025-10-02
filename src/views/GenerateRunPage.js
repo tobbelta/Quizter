@@ -21,7 +21,8 @@ const defaultForm = {
   difficulty: 'family',
   categories: [],
   lengthMeters: 3000,
-  questionCount: 8
+  questionCount: 8,
+  preferGreenAreas: false
 };
 
 const categoryOptions = [
@@ -47,6 +48,7 @@ const GenerateRunPage = () => {
   const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000));
 
   const joinLink = generatedRun ? buildJoinLink(generatedRun.joinCode) : '';
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
@@ -54,6 +56,8 @@ const GenerateRunPage = () => {
   const handleRegenerate = async () => {
     setError('');
     setIsRegenerating(true);
+    const newSeed = Math.floor(Math.random() * 100000);
+    setSeed(newSeed);
     try {
       const run = await generateRun({
         name: form.name,
@@ -63,7 +67,9 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
-        origin: FALLBACK_POSITION
+        origin: FALLBACK_POSITION,
+        seed: newSeed,
+        preferGreenAreas: form.preferGreenAreas
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
       if (run) {
         setGeneratedRun(run);
@@ -150,7 +156,9 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true, // Alltid tillåt anonyma
-        origin: FALLBACK_POSITION
+        origin: FALLBACK_POSITION,
+        seed: seed,
+        preferGreenAreas: form.preferGreenAreas
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
       if (run) {
         setGeneratedRun(run); // Spara den genererade rundan i lokal state
@@ -285,6 +293,19 @@ const GenerateRunPage = () => {
                   onChange={handleChange}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                 />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
+                  <input
+                    type="checkbox"
+                    name="preferGreenAreas"
+                    checked={form.preferGreenAreas}
+                    onChange={handleChange}
+                    className="rounded bg-slate-800 border-slate-600 text-purple-500 focus:ring-purple-500"
+                  />
+                  Föredra parker & stigar
+                </label>
               </div>
 
               <button
