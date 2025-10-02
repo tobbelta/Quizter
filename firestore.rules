@@ -11,7 +11,8 @@ service cloud.firestore {
     function isSuperUser() {
       return isAuthenticated() &&
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superuser';
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superuser' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperUser == true);
     }
 
     function isOwner(userId) {
