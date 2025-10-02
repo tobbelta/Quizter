@@ -9,7 +9,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "targetType",
+          "fieldPath": "userId",
           "order": "ASCENDING"
         },
         {
@@ -27,11 +27,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "targetId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "targetType",
+          "fieldPath": "deviceId",
           "order": "ASCENDING"
         },
         {

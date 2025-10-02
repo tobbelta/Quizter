@@ -13,7 +13,7 @@ const MessagesDropdown = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
     // Sätt upp realtidslyssnare på meddelanden
     const unsubscribe = messageService.subscribeToMessages(
@@ -138,7 +138,7 @@ const MessagesDropdown = ({ isOpen, onClose }) => {
                     </div>
 
                     <p className="text-sm text-gray-300 mb-2 line-clamp-2">
-                      {message.body}
+                      {message.message}
                     </p>
 
                     <div className="flex items-center gap-2 text-xs text-gray-500">

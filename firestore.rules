@@ -145,6 +145,21 @@ service cloud.firestore {
       allow delete: if isSuperUser();
     }
 
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Läs: Endast SuperUser kan läsa notifikationer
+      allow read: if isSuperUser();
+
+      // Skapa: Endast backend (via service account) eller SuperUser
+      allow create: if isSuperUser();
+
+      // Uppdatera: SuperUser kan uppdatera (t.ex. markera som läst)
+      allow update: if isSuperUser();
+
+      // Ta bort: Endast SuperUser
+      allow delete: if isSuperUser();
+    }
+
     // Participants sub-collection under runs
     match /runs/{runId}/participants/{participantId} {
       // Läs: Alla kan läsa deltagare i en aktiv runda

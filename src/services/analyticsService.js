@@ -7,6 +7,69 @@ import { collection, addDoc, getDocs, query, where, orderBy, limit, serverTimest
 const db = getFirebaseDb();
 
 /**
+ * Detekterar enhetstyp baserat på user agent
+ */
+const getDeviceType = () => {
+  if (typeof window === 'undefined') return 'unknown';
+
+  const ua = navigator.userAgent.toLowerCase();
+
+  if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
+    return 'tablet';
+  }
+  if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
+    return 'mobile';
+  }
+  return 'desktop';
+};
+
+/**
+ * Detekterar operativsystem
+ */
+const getOS = () => {
+  if (typeof window === 'undefined') return 'unknown';
+
+  const ua = navigator.userAgent;
+
+  if (/Windows/.test(ua)) return 'Windows';
+  if (/Mac OS X/.test(ua)) return 'macOS';
+  if (/Linux/.test(ua)) return 'Linux';
+  if (/Android/.test(ua)) return 'Android';
+  if (/iOS|iPhone|iPad|iPod/.test(ua)) return 'iOS';
+
+  return 'unknown';
+};
+
+/**
+ * Detekterar webbläsare
+ */
+const getBrowser = () => {
+  if (typeof window === 'undefined') return 'unknown';
+
+  const ua = navigator.userAgent;
+
+  if (/Edg/.test(ua)) return 'Edge';
+  if (/Chrome/.test(ua) && !/Edg/.test(ua)) return 'Chrome';
+  if (/Safari/.test(ua) && !/Chrome/.test(ua)) return 'Safari';
+  if (/Firefox/.test(ua)) return 'Firefox';
+  if (/MSIE|Trident/.test(ua)) return 'Internet Explorer';
+
+  return 'unknown';
+};
+
+/**
+ * Hämtar timezone
+ */
+const getTimezone = () => {
+  if (typeof window === 'undefined') return 'unknown';
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return 'unknown';
+  }
+};
+
+/**
  * Genererar eller hämtar unikt device ID från localStorage
  */
 const getDeviceId = () => {
@@ -35,6 +98,10 @@ export const logVisit = async (eventType, metadata = {}) => {
       deviceId,
       eventType, // 'page_view', 'create_run', 'join_run', 'complete_run', 'donation', etc.
       timestamp: serverTimestamp(),
+      deviceType: getDeviceType(),
+      os: getOS(),
+      browser: getBrowser(),
+      timezone: getTimezone(),
       metadata: Object.fromEntries(Object.entries({
         ...metadata,
         userAgent: navigator.userAgent,

@@ -509,16 +509,28 @@ const AdminQuestionsPage = () => {
               }`}>
                 <div className="flex items-start gap-3">
                   <span className="text-2xl">
-                    {aiStatus.available ? '✅' : aiStatus.isCreditsIssue ? '⚠️' : 'ℹ️'}
+                    {aiStatus.available ? '✅' : aiStatus.isCreditsIssue ? '⚠️' : aiStatus.isNetworkError ? '🌐' : 'ℹ️'}
                   </span>
                   <div className="flex-1">
                     <p className={`font-semibold mb-1 ${
-                      aiStatus.available ? 'text-green-400' : 'text-yellow-400'
+                      aiStatus.available ? 'text-green-400' : aiStatus.isCreditsIssue ? 'text-red-400' : 'text-yellow-400'
                     }`}>
                       {aiStatus.message}
                     </p>
                     {aiStatus.model && (
                       <p className="text-sm text-gray-400">Model: {aiStatus.model}</p>
+                    )}
+                    {aiStatus.error && !aiStatus.available && (
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-gray-400 hover:text-gray-300">
+                          Teknisk information
+                        </summary>
+                        <div className="mt-2 p-2 bg-slate-800/50 rounded font-mono text-gray-300 break-words">
+                          <p className="mb-1"><strong>Fel:</strong> {aiStatus.error}</p>
+                          {aiStatus.errorType && <p className="mb-1"><strong>Typ:</strong> {aiStatus.errorType}</p>}
+                          {aiStatus.errorStatus && <p><strong>Status:</strong> {aiStatus.errorStatus}</p>}
+                        </div>
+                      </details>
                     )}
                     {aiStatus.isCreditsIssue && (
                       <a
@@ -529,6 +541,11 @@ const AdminQuestionsPage = () => {
                       >
                         Kontrollera krediter i Anthropic Console →
                       </a>
+                    )}
+                    {aiStatus.isNetworkError && (
+                      <p className="text-sm text-yellow-300 mt-2">
+                        💡 Kontrollera din internetanslutning och att Firebase Functions är deployade.
+                      </p>
                     )}
                     {!aiStatus.configured && (
                       <p className="text-sm text-gray-400 mt-1">

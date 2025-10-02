@@ -3,7 +3,6 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
-import { opentdbService } from './opentdbService';
 import { questionRepository } from '../repositories/questionRepository';
 
 let cachedQuestions = [...QUESTION_BANK];
@@ -88,11 +87,7 @@ export const questionService = {
   },
   getManyByIds: (ids) => ids.map(id => questionService.getById(id)).filter(Boolean),
   getManyByIdsForLanguage: (ids, language = 'sv') => ids.map(id => questionService.getByIdForLanguage(id, language)).filter(Boolean),
-  async fetchAndAddFromOpenTDB({ amount = 10, audience = 'family', difficulty = 'family' } = {}) {
-    const fetched = await opentdbService.fetchQuestions({ amount, difficulty, audience });
-    await addQuestions(fetched);
-    return fetched;
-  },
+  addQuestions: async (questions) => await addQuestions(questions),
   delete: async (questionId) => {
     const questionIndex = cachedQuestions.findIndex(q => q.id === questionId);
     if (questionIndex === -1) {

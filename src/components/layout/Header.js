@@ -26,7 +26,7 @@ const Header = ({ title = 'RouteQuest' }) => {
   // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
     // Prenumerera på meddelanden i realtid
     const unsubscribe = messageService.subscribeToMessages(userId, deviceId, (messages) => {
@@ -166,6 +166,12 @@ const Header = ({ title = 'RouteQuest' }) => {
                   {isSuperUser && (
                     <>
                       <div className="my-2 border-t border-slate-700" />
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/notifications'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Systemnotiser
+                      </button>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/superuser/all-runs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
