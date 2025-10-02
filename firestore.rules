@@ -97,13 +97,13 @@ service cloud.firestore {
       allow create: if isSuperUser() &&
                        request.resource.data.createdAt is timestamp;
 
-      // Uppdatera: Autentiserade användare kan markera meddelanden som lästa
+      // Uppdatera: Autentiserade användare kan markera meddelanden som lästa eller deleted
       // SuperUser kan uppdatera allt
       allow update: if (isAuthenticated() &&
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])) ||
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt', 'deleted', 'deletedAt'])) ||
                        isSuperUser();
 
-      // Ta bort: Endast SuperUser
+      // Ta bort: Endast SuperUser kan permanent ta bort
       allow delete: if isSuperUser();
     }
 
@@ -125,8 +125,8 @@ service cloud.firestore {
 
     // Analytics collection
     match /analytics/{eventId} {
-      // Läs: Endast SuperUser
-      allow read: if isSuperUser();
+      // Läs: Autentiserade kan läsa sina egna analytics, SuperUser kan läsa alla
+      allow read: if isAuthenticated() || isSuperUser();
 
       // Skapa: Alla kan logga events (även anonyma för spårning)
       allow create: if request.resource.data.keys().hasAll(['eventType', 'timestamp', 'deviceId']) &&
@@ -134,9 +134,7 @@ service cloud.firestore {
                        request.resource.data.eventType is string;
 
       // Uppdatera: Autentiserade kan uppdatera (för linking deviceId till userId)
-      // Eller om uppdateringen bara lägger till userId field
-      allow update: if isAuthenticated() ||
-                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId']));
+      allow update: if isAuthenticated();
 
       // Ta bort: Endast SuperUser
       allow delete: if isSuperUser();
