@@ -31,10 +31,10 @@ const resolveQuestionPool = () => {
 };
 
 /**
- * Filtrerar och väljer ut rätt antal frågor baserat på målgrupp och svårighet.
+ * Filtrerar och väljer ut rätt antal frågor baserat på målgrupp, svårighet och kategorier.
  * Tillåter återanvändning av frågor om det inte finns tillräckligt många.
  */
-const pickQuestions = ({ audience, difficulty, questionCount }) => {
+const pickQuestions = ({ audience, difficulty, questionCount, categories = [] }) => {
   const pool = resolveQuestionPool();
 
   if (pool.length === 0) {
@@ -42,20 +42,35 @@ const pickQuestions = ({ audience, difficulty, questionCount }) => {
   }
 
   const filtered = pool.filter((question) => {
-    if (audience === 'family') {
-      return question.audience === 'family' || question.audience === 'kid';
+    // Filtrera efter svårighetsgrad/målgrupp
+    let matchesDifficulty = false;
+
+    if (difficulty === 'family') {
+      // Familj: blanda barn och vuxenfrågor
+      matchesDifficulty = question.audience === 'family' ||
+                          question.audience === 'kid' ||
+                          question.difficulty === 'kid' ||
+                          question.difficulty === 'family';
+    } else if (difficulty === 'kid') {
+      matchesDifficulty = question.audience === 'kid' || question.difficulty === 'kid';
+    } else if (difficulty === 'adult') {
+      matchesDifficulty = question.audience === 'adult' || question.difficulty === 'adult';
+    } else {
+      matchesDifficulty = true; // Ingen svårighetsfiltrering
     }
-    if (audience === 'kid') {
-      return question.audience === 'kid';
-    }
-    return question.audience === 'adult' || question.difficulty === difficulty;
+
+    // Filtrera efter kategorier (om några är valda)
+    const matchesCategory = categories.length === 0 ||
+                           categories.includes(question.category);
+
+    return matchesDifficulty && matchesCategory;
   });
 
   const shuffled = [...filtered].sort(() => Math.random() - 0.5);
 
   // Om vi inte har tillräckligt många frågor, återanvänd dem genom att loopa
   if (shuffled.length === 0) {
-    throw new Error('Inga frågor matchar vald profil.');
+    throw new Error('Inga frågor matchar vald profil och kategorier.');
   }
 
   if (shuffled.length < questionCount) {
@@ -172,13 +187,14 @@ export const buildHostedRun = async ({
   audience = 'family',
   difficulty = 'family',
   questionCount = 8,
+  categories = [],
   type = 'hosted',
   lengthMeters = 2000,
   allowAnonymous = true,
   language = 'sv',
   origin = null
 }, creator) => {
-  const questions = pickQuestions({ audience, difficulty, questionCount });
+  const questions = pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
 
   // Först skapa rutten, sedan placera checkpoints längs den
@@ -265,11 +281,12 @@ export const buildGeneratedRun = async ({
   difficulty = 'family',
   lengthMeters = 2500,
   questionCount = 8,
+  categories = [],
   allowAnonymous = true,
   language = 'sv',
   origin
 }, creator) => {
-  const questions = pickQuestions({ audience, difficulty, questionCount });
+  const questions = pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
   const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin });
 

@@ -11,6 +11,7 @@ import PaymentModal from '../components/payment/PaymentModal';
 import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
+import { analyticsService } from '../services/analyticsService';
 import useQRCode from '../hooks/useQRCode';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 import FullscreenMap from '../components/shared/FullscreenMap';
@@ -18,9 +19,22 @@ import FullscreenMap from '../components/shared/FullscreenMap';
 const defaultForm = {
   name: '',
   difficulty: 'family',
+  categories: [],
   lengthMeters: 3000,
   questionCount: 8
 };
+
+const categoryOptions = [
+  { value: 'Geografi', label: 'Geografi' },
+  { value: 'Historia', label: 'Historia' },
+  { value: 'Naturvetenskap', label: 'Naturvetenskap' },
+  { value: 'Kultur', label: 'Kultur' },
+  { value: 'Sport', label: 'Sport' },
+  { value: 'Natur', label: 'Natur' },
+  { value: 'Teknik', label: 'Teknik' },
+  { value: 'Djur', label: 'Djur' },
+  { value: 'Gåtor', label: 'Gåtor' }
+];
 
 const GenerateRunPage = () => {
   const { currentUser } = useAuth();
@@ -45,6 +59,7 @@ const GenerateRunPage = () => {
         name: form.name,
         difficulty: form.difficulty,
         audience: form.difficulty,
+        categories: form.categories || [],
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
@@ -68,6 +83,20 @@ const GenerateRunPage = () => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+  };
+
+  /** Togglar kategori i multichoice */
+  const toggleCategory = (category) => {
+    setForm((prev) => {
+      const categories = prev.categories || [];
+      const isSelected = categories.includes(category);
+      return {
+        ...prev,
+        categories: isSelected
+          ? categories.filter(c => c !== category)
+          : [...categories, category]
+      };
+    });
   };
 
   const handleSaveRun = () => {
@@ -117,6 +146,7 @@ const GenerateRunPage = () => {
         name: form.name,
         difficulty: form.difficulty,
         audience: form.difficulty, // Använd difficulty som audience också
+        categories: form.categories || [],
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true, // Alltid tillåt anonyma
@@ -125,6 +155,14 @@ const GenerateRunPage = () => {
       if (run) {
         setGeneratedRun(run); // Spara den genererade rundan i lokal state
         setIsRunSaved(false);
+
+        // Logga analytics
+        analyticsService.logVisit('create_run', {
+          runId: run.id,
+          difficulty: form.difficulty,
+          categories: form.categories,
+          questionCount: form.questionCount
+        });
       }
     } catch (generationError) {
       setError(generationError.message);
@@ -192,6 +230,34 @@ const GenerateRunPage = () => {
                   <option value="family">Familj (medel)</option>
                   <option value="adult">Vuxen (svår)</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-purple-200">
+                  Kategorier {form.categories.length === 0 ? '(Alla)' : `(${form.categories.length} valda)`}
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {categoryOptions.map((cat) => {
+                    const isSelected = form.categories.includes(cat.value);
+                    return (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() => toggleCategory(cat.value)}
+                        className={`rounded px-2 py-1.5 text-sm font-medium transition-colors ${
+                          isSelected
+                            ? 'bg-purple-500 text-black'
+                            : 'bg-slate-800 border border-slate-600 text-gray-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  Välj kategorier eller lämna tomt för alla kategorier
+                </p>
               </div>
 
               <div>

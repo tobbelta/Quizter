@@ -2,10 +2,11 @@
  * Router-konfiguration för tipspromenaden samt auth-/run-provider.
  */
 import React, { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
 import { localStorageService } from './services/localStorageService';
+import { analyticsService } from './services/analyticsService';
 
 import LandingPage from './views/LandingPage';
 import LoginPage from './views/LoginPage';
@@ -19,6 +20,8 @@ import MyRunsPage from './views/MyRunsPage';
 import AdminQuestionsPage from './views/AdminQuestionsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
+import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
+import SuperUserMessagesPage from './views/SuperUserMessagesPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
@@ -86,10 +89,50 @@ const AppRoutes = () => (
         </RequireSuperUser>
       )}
     />
+    <Route
+      path="/superuser/analytics"
+      element={(
+        <RequireSuperUser>
+          <SuperUserAnalyticsPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/superuser/messages"
+      element={(
+        <RequireSuperUser>
+          <SuperUserMessagesPage />
+        </RequireSuperUser>
+      )}
+    />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
 );
+
+/**
+ * Spårar sidvisningar och länkar device till användare
+ */
+const AnalyticsTracker = () => {
+  const location = useLocation();
+  const { currentUser, isAuthInitialized } = useAuth();
+
+  // Logga sidvisningar
+  useEffect(() => {
+    analyticsService.logVisit('page_view', {
+      path: location.pathname
+    });
+  }, [location.pathname]);
+
+  // Länka device till användare när de loggar in
+  useEffect(() => {
+    if (isAuthInitialized && currentUser && !currentUser.isAnonymous) {
+      analyticsService.linkDeviceToUser(currentUser.id);
+    }
+  }, [currentUser, isAuthInitialized]);
+
+  return null;
+};
 
 /**
  * Komponent som hanterar import av localStorage-rundor vid inloggning
@@ -148,6 +191,7 @@ function App() {
     <AuthProvider>
       <RunProvider>
         <div className="min-h-screen bg-slate-950 text-gray-100">
+          <AnalyticsTracker />
           <MigrationHandler />
           <LocalRunsImportHandler />
           <InstallPrompt />

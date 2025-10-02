@@ -215,12 +215,17 @@ const AboutDialog = ({ isOpen, onClose }) => {
       {/* Payment Modal */}
       {showDonation && (
         <PaymentModal
+          isOpen={showDonation}
+          runName="RouteQuest Donation"
           runId="donation"
           participantId="donation"
-          amount={donationAmount}
-          onSuccess={() => {
+          amount={donationAmount * 100}
+          allowSkip={true}
+          onSuccess={(paymentResult) => {
             setShowDonation(false);
-            alert('Tack för din donation! 💚');
+            if (!paymentResult.skipped) {
+              alert('Tack för din donation! 💚');
+            }
           }}
           onCancel={() => setShowDonation(false)}
         />

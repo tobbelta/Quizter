@@ -40,8 +40,13 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-sm font-mono text-gray-400">#{index + 1}</span>
                 {question.category && (
-                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                  <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
                     {question.category}
+                  </span>
+                )}
+                {question.difficulty && (
+                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                    {question.difficulty === 'kid' ? 'Barn' : question.difficulty === 'family' ? 'Familj' : question.difficulty === 'adult' ? 'Vuxen' : question.difficulty}
                   </span>
                 )}
                 {hasBothLanguages && (
@@ -124,6 +129,13 @@ const AdminQuestionsPage = () => {
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
+  const [aiAmount, setAiAmount] = useState(10);
+  const [aiCategory, setAiCategory] = useState('');
+  const [aiDifficulty, setAiDifficulty] = useState('');
+  const [aiStatus, setAiStatus] = useState(null);
+  const [loadingAiStatus, setLoadingAiStatus] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -155,6 +167,28 @@ const AdminQuestionsPage = () => {
     }
   }, [isSuperUser, navigate]);
 
+  // Hämta AI-status när AI-dialogen öppnas
+  useEffect(() => {
+    if (showAIDialog && !aiStatus) {
+      fetchAIStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAIDialog]);
+
+  const fetchAIStatus = async () => {
+    setLoadingAiStatus(true);
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
+      const data = await response.json();
+      setAiStatus(data);
+    } catch (error) {
+      console.error('Failed to fetch AI status:', error);
+      setAiStatus({ available: false, message: 'Kunde inte hämta AI-status' });
+    } finally {
+      setLoadingAiStatus(false);
+    }
+  };
+
   // Filtrera frågor baserat på sökning och kategori
   const filteredQuestions = questions.filter(question => {
     // Hämta text för valt språk
@@ -185,27 +219,72 @@ const AdminQuestionsPage = () => {
     setCurrentPage(page);
   };
 
-  /** Hämtar fler frågor från OpenTDB. */
+  /** Genererar 10 frågor med AI */
   const handleImportQuestions = async () => {
     setIsImporting(true);
     try {
-      const newQuestions = await questionService.fetchAndAddFromOpenTDB({
-        amount: 10,
-        difficulty: 'medium',
-        audience: 'adult'
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          amount: 10
+        })
       });
-      // Ladda om frågorna efter import
-      setQuestions(questionService.listAll() || []);
 
-      if (newQuestions && newQuestions.length > 0) {
-        alert(`${newQuestions.length} nya frågor importerades och översattes!`);
-      } else {
-        alert('Inga nya frågor kunde importeras. Detta kan bero på att översättningen misslyckades eller att inga passande frågor hittades.');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to generate questions');
       }
+
+      // Ladda om frågorna efter 1 sekund (ge Firestore tid att synka)
+      setTimeout(() => {
+        setQuestions(questionService.listAll() || []);
+      }, 1000);
+
+      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
     } catch (error) {
-      alert(`Kunde inte importera frågor: ${error.message}`);
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  /** Genererar frågor med AI (Anthropic Claude) */
+  const handleGenerateAIQuestions = async () => {
+    setIsGeneratingAI(true);
+    setShowAIDialog(false);
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: aiAmount,
+          category: aiCategory || undefined,
+          difficulty: aiDifficulty || undefined
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to generate questions');
+      }
+
+      // Ladda om frågorna efter generering
+      setTimeout(() => {
+        setQuestions(questionService.listAll() || []);
+      }, 1000);
+
+      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
+    } catch (error) {
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
+    } finally {
+      setIsGeneratingAI(false);
     }
   };
 
@@ -304,11 +383,18 @@ const AdminQuestionsPage = () => {
           </div>
           <div className="flex gap-2 items-center">
             <button
+              onClick={() => setShowAIDialog(true)}
+              disabled={isGeneratingAI}
+              className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
+            >
+              {isGeneratingAI ? '🤖 Genererar...' : '🤖 AI-Generera frågor'}
+            </button>
+            <button
               onClick={handleImportQuestions}
               disabled={isImporting}
               className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
             >
-              {isImporting ? 'Importerar...' : 'Importera 10 frågor'}
+              {isImporting ? 'Genererar AI-frågor...' : '⚡ Snabbgenerera 10 AI-frågor'}
             </button>
           </div>
         </div>
@@ -384,6 +470,163 @@ const AdminQuestionsPage = () => {
           </div>
         )}
       </div>
+
+      {/* AI Generation Dialog */}
+      {showAIDialog && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[1200]">
+          <div className="bg-slate-900 rounded-xl shadow-2xl border border-purple-500/40 max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
+                🤖 AI-Generera frågor
+              </h3>
+              <button
+                onClick={() => setShowAIDialog(false)}
+                className="text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="text-gray-300 text-sm mb-4">
+              Generera frågor med Anthropic Claude som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
+            </p>
+
+            {/* AI Status Display */}
+            {loadingAiStatus ? (
+              <div className="bg-slate-800 rounded-lg p-4 mb-4 flex items-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-cyan-400"></div>
+                <span className="text-gray-300 text-sm">Kontrollerar AI-status...</span>
+              </div>
+            ) : aiStatus && (
+              <div className={`rounded-lg p-4 mb-4 ${
+                aiStatus.available
+                  ? 'bg-green-500/10 border border-green-500/30'
+                  : aiStatus.isCreditsIssue
+                  ? 'bg-red-500/10 border border-red-500/30'
+                  : 'bg-yellow-500/10 border border-yellow-500/30'
+              }`}>
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">
+                    {aiStatus.available ? '✅' : aiStatus.isCreditsIssue ? '⚠️' : 'ℹ️'}
+                  </span>
+                  <div className="flex-1">
+                    <p className={`font-semibold mb-1 ${
+                      aiStatus.available ? 'text-green-400' : 'text-yellow-400'
+                    }`}>
+                      {aiStatus.message}
+                    </p>
+                    {aiStatus.model && (
+                      <p className="text-sm text-gray-400">Model: {aiStatus.model}</p>
+                    )}
+                    {aiStatus.isCreditsIssue && (
+                      <a
+                        href="https://console.anthropic.com/settings/limits"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline"
+                      >
+                        Kontrollera krediter i Anthropic Console →
+                      </a>
+                    )}
+                    {!aiStatus.configured && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Sätt ANTHROPIC_API_KEY i Firebase Functions
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {/* Antal */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Antal frågor (1-50)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={aiAmount}
+                  onChange={(e) => setAiAmount(parseInt(e.target.value) || 10)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Kategori */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Kategori (valfri)
+                </label>
+                <select
+                  value={aiCategory}
+                  onChange={(e) => setAiCategory(e.target.value)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                >
+                  <option value="">Blandad</option>
+                  <option value="Geografi">Geografi</option>
+                  <option value="Historia">Historia</option>
+                  <option value="Naturvetenskap">Naturvetenskap</option>
+                  <option value="Kultur">Kultur</option>
+                  <option value="Sport">Sport</option>
+                  <option value="Natur">Natur</option>
+                  <option value="Teknik">Teknik</option>
+                  <option value="Djur">Djur</option>
+                  <option value="Gåtor">Gåtor</option>
+                </select>
+              </div>
+
+              {/* Svårighetsgrad */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  Svårighetsgrad (valfri)
+                </label>
+                <select
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                >
+                  <option value="">Blandad</option>
+                  <option value="kid">Barn (6-12 år)</option>
+                  <option value="family">Familj (alla åldrar)</option>
+                  <option value="adult">Vuxen (utmanande)</option>
+                </select>
+              </div>
+
+              {/* Info box */}
+              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+                <p className="text-xs text-cyan-200">
+                  💡 AI genererar frågor på både svenska och engelska automatiskt. Anthropic ger $5 gratis kredit per månad (ca 500-1000 frågor).
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowAIDialog(false)}
+                  className="flex-1 rounded-lg bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
+                >
+                  Avbryt
+                </button>
+                <button
+                  onClick={handleGenerateAIQuestions}
+                  disabled={!aiStatus?.available}
+                  className={`flex-1 rounded-lg px-4 py-2 font-semibold text-white transition-colors ${
+                    aiStatus?.available
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
+                      : 'bg-gray-600 cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  Generera
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
