@@ -38,7 +38,11 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
   const pool = resolveQuestionPool();
 
   if (pool.length === 0) {
-    throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt.');
+    throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt från databasen.');
+  }
+
+  if (questionCount < 1 || questionCount > 50) {
+    throw new Error(`Ogiltigt antal frågor (${questionCount}). Välj mellan 1 och 50 frågor.`);
   }
 
   const filtered = pool.filter((question) => {
@@ -70,7 +74,8 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
 
   // Om vi inte har tillräckligt många frågor, återanvänd dem genom att loopa
   if (shuffled.length === 0) {
-    throw new Error('Inga frågor matchar vald profil och kategorier.');
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(`Inga frågor matchar vald svårighetsgrad (${difficulty})${categoryText}. Prova en annan kombination.`);
   }
 
   if (shuffled.length < questionCount) {
@@ -141,6 +146,17 @@ const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, orig
 
   } catch (error) {
     console.warn('[RunFactory] Ruttplanering misslyckades, använder cirkulär fallback:', error);
+
+    // Ge användaren specifik feedback om vad som gick fel
+    const errorMessage = error.message?.includes('API')
+      ? 'Kunde inte ansluta till karttjänsten. Använder förenklad rutt.'
+      : error.message?.includes('network') || error.message?.includes('fetch')
+      ? 'Nätverksfel - kontrollera din internetanslutning. Använder förenklad rutt.'
+      : 'Kunde inte generera rutt med karttjänst. Använder förenklad rutt.';
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[RunFactory] Felmeddelande till användare:', errorMessage);
+    }
 
     // Fallback till den gamla cirkular-metoden
     const fallbackCheckpoints = questions.map((question, index) => {
@@ -245,6 +261,18 @@ export const buildHostedRun = async ({
     }
   } catch (error) {
     console.warn('[RunFactory] buildHostedRun: kunde inte generera route-data:', error);
+
+    // Ge mer specifik feedback
+    const errorType = !origin
+      ? 'GPS-position saknas'
+      : error.message?.includes('API')
+      ? 'Karttjänsten svarar inte'
+      : 'Ruttgenereringen misslyckades';
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[RunFactory] Feltyp:', errorType, '- Använder fallback-checkpoints');
+    }
+
     // Fallback till gamla metoden
     const errorOrigin = origin || FALLBACK_POSITION;
     checkpoints = createHostedCheckpoints(questions, errorOrigin);

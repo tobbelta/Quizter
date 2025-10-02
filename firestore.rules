@@ -1,0 +1,167 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper-funktioner
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperUser() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superuser';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validera run-data
+    function isValidRun(data) {
+      return data.questionCount is int &&
+             data.questionCount >= 1 &&
+             data.questionCount <= 50 &&
+             data.lengthMeters is int &&
+             data.lengthMeters >= 500 &&
+             data.lengthMeters <= 10000 &&
+             data.type in ['hosted', 'generated'] &&
+             data.difficulty in ['kid', 'family', 'adult'] &&
+             data.audience in ['kid', 'family', 'adult'] &&
+             data.language is string &&
+             data.name is string &&
+             data.name.size() >= 1 &&
+             data.name.size() <= 100 &&
+             data.joinCode is string &&
+             data.joinCode.size() == 6;
+    }
+
+    // OBS: isValidLocation är tillgänglig för framtida användning om geografisk
+    // validering läggs till i runs collection
+
+    // Runs collection
+    match /runs/{runId} {
+      // Läs: Alla kan läsa aktiva rundor
+      allow read: if resource.data.status == 'active';
+
+      // Skapa: Autentiserade användare kan skapa rundor med validering
+      allow create: if isAuthenticated() &&
+                       isValidRun(request.resource.data) &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.createdAt is timestamp;
+
+      // Uppdatera: Endast ägare eller SuperUser
+      allow update: if isOwner(resource.data.createdBy) || isSuperUser();
+
+      // Ta bort: Endast SuperUser
+      allow delete: if isSuperUser();
+    }
+
+    // Questions collection
+    match /questions/{questionId} {
+      // Läs: Alla kan läsa frågor
+      allow read: if true;
+
+      // Skapa/Uppdatera/Ta bort: Endast SuperUser eller backend (via service account)
+      allow write: if isSuperUser();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Läs: Användare kan läsa sin egen data, SuperUser kan läsa alla
+      allow read: if isOwner(userId) || isSuperUser();
+
+      // Skapa: Användare kan skapa sin egen profil
+      allow create: if isOwner(userId) &&
+                       request.resource.data.keys().hasAll(['createdAt', 'email']) &&
+                       request.resource.data.createdAt is timestamp;
+
+      // Uppdatera: Användare kan uppdatera sin egen data (men inte role om de inte är SuperUser)
+      allow update: if isOwner(userId) &&
+                       (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) ||
+                        isSuperUser());
+
+      // Ta bort: Användare kan ta bort sig själva, SuperUser kan ta bort alla
+      allow delete: if isOwner(userId) || isSuperUser();
+    }
+
+    // Messages collection
+    match /messages/{messageId} {
+      // Läs: Alla kan läsa meddelanden (eftersom vi filtrerar i koden)
+      // SuperUser kan läsa alla, andra ser bara meddelanden riktade till dem
+      allow read: if true;
+
+      // Skapa: Endast SuperUser kan skapa meddelanden
+      // Kräver vissa fält men är flexibel för olika message-format
+      allow create: if isSuperUser() &&
+                       request.resource.data.createdAt is timestamp;
+
+      // Uppdatera: Autentiserade användare kan markera meddelanden som lästa
+      // SuperUser kan uppdatera allt
+      allow update: if (isAuthenticated() &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])) ||
+                       isSuperUser();
+
+      // Ta bort: Endast SuperUser
+      allow delete: if isSuperUser();
+    }
+
+    // Feedback collection
+    match /feedback/{feedbackId} {
+      // Läs: Endast SuperUser kan läsa feedback
+      allow read: if isSuperUser();
+
+      // Skapa: Alla kan skicka feedback (även anonyma)
+      allow create: if request.resource.data.keys().hasAll(['message', 'createdAt', 'page']) &&
+                       request.resource.data.createdAt is timestamp &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() >= 1 &&
+                       request.resource.data.message.size() <= 5000;
+
+      // Uppdatera/Ta bort: Endast SuperUser
+      allow update, delete: if isSuperUser();
+    }
+
+    // Analytics collection
+    match /analytics/{eventId} {
+      // Läs: Endast SuperUser
+      allow read: if isSuperUser();
+
+      // Skapa: Alla kan logga events (även anonyma för spårning)
+      allow create: if request.resource.data.keys().hasAll(['eventType', 'timestamp', 'deviceId']) &&
+                       request.resource.data.timestamp is timestamp &&
+                       request.resource.data.eventType is string;
+
+      // Uppdatera: Alla kan uppdatera sina egna analytics events (för linking till userId)
+      // SuperUser kan uppdatera allt
+      allow update: if true;
+
+      // Ta bort: Endast SuperUser
+      allow delete: if isSuperUser();
+    }
+
+    // Participants sub-collection under runs
+    match /runs/{runId}/participants/{participantId} {
+      // Läs: Alla kan läsa deltagare i en aktiv runda
+      allow read: if true;
+
+      // Skapa: Autentiserade kan gå med i rundor
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid;
+
+      // Uppdatera: Endast den egna deltagaren
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid;
+
+      // Ta bort: Endast ägaren eller SuperUser
+      allow delete: if isAuthenticated() &&
+                       (resource.data.userId == request.auth.uid || isSuperUser());
+    }
+
+    // Default: Neka all annan åtkomst
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

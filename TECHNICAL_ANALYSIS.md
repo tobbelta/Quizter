@@ -110,3 +110,73 @@ Appen inkluderar ett system för envägskommunikation från administratörer (Su
 - **Deployment:**
   - **Frontend:** Sannolikt deployad via Firebase Hosting.
   - **Backend:** Funktionerna deployas manuellt med `firebase deploy --only functions`.
+
+## 6. Säkerhetsanalys (2025-10-02)
+
+### Identifierade Säkerhetsrisker
+
+1. **Hårdkodad API-nyckel (Medel Risk)**
+   - **Plats:** `src/services/routeService.js:6`
+   - **Problem:** OpenRouteService API-nyckeln är hårdkodad som fallback-värde
+   - **Risk:** Nyckeln exponeras i källkoden och kan missbrukas om repositoryt är publikt
+   - **Rekommendation:** Ta bort fallback-värdet och kräv att miljövariabeln alltid är satt
+
+2. **Klientsidig Rund-skapande (Hög Risk)**
+   - **Plats:** `src/services/runFactory.js`, `src/context/RunContext.js`
+   - **Problem:** All logik för att skapa rundor körs på klienten innan data sparas i Firestore
+   - **Risk:** Tekniskt kunniga användare kan manipulera:
+     - `questionCount` (skapa rundor med för många/få frågor)
+     - `lengthMeters` (skapa extremt långa/korta rundor)
+     - `questionIds` (referera till icke-existerande frågor)
+     - Metadata som `createdBy`, `createdAt`
+   - **Rekommendation:** Implementera backend-validering (se ACTION_PLAN.md)
+
+3. **Saknade Firestore Security Rules**
+   - **Problem:** Okänt om robusta security rules finns för `runs`, `questions`, `messages`, `feedback` collections
+   - **Risk:** Utan strikta rules kan användare potentiellt:
+     - Läsa privata rundor
+     - Modifiera andras rundor
+     - Ta bort rundor de inte äger
+   - **Rekommendation:** Granska och förstärk firestore.rules
+
+### Säkerhetsåtgärder som Finns
+
+1. **CORS-konfiguration:** Backend har korrekt CORS-setup med whitelisting av tillåtna domäner
+2. **Firebase Authentication:** Användarhantering via Firebase Auth med stöd för roller (SuperUser)
+3. **API-nyckelparametrar:** Känsliga nycklar (Stripe, Anthropic, OpenAI) hanteras via Firebase Functions parameters
+4. **Method validation:** Backend-funktioner validerar HTTP-metoder (ensurePost)
+5. **Input validation:** Partiell validering i backend för AI-frågor och betalningar
+
+## 7. Prestandaanalys
+
+### Optimeringsmöjligheter
+
+1. **Route Caching**
+   - **Nuvarande:** Varje rund-skapande anropar OpenRouteService API
+   - **Problem:** Slösar API-krediter och skapar onödig latens
+   - **Lösning:** Cacha rutter baserat på `origin + lengthMeters + checkpointCount` i localStorage
+
+2. **Question Loading**
+   - **Nuvarande:** `questionService.listAll()` hämtar alla frågor från Firestore vid varje rund-skapande
+   - **Problem:** Onödiga Firestore-läsningar
+   - **Lösning:** Implementera caching med TTL (Time To Live)
+
+3. **Bundle Size**
+   - **Dependencies:** Leaflet, React-Leaflet, Firebase, Stripe är stora bibliotek
+   - **Lösning:** Överväg code splitting och lazy loading för vissa vyer
+
+## 8. Kodkvalitet och Underhåll
+
+### Styrkor
+
+1. **Välstrukturerad arkitektur:** Tydlig separation mellan services, components, views, gateways
+2. **Omfattande loggning:** Särskilt i `routeService.js` och `runFactory.js` med utvecklingsloggar
+3. **Fallback-hantering:** Robust hantering när externa tjänster misslyckas (route, AI)
+4. **Kommenterad kod:** Bra JSDoc-kommentarer i nyckelfiler
+
+### Förbättringsområden
+
+1. **Felhantering:** Vissa funktioner kastar generiska fel utan specifik användarfeedback
+2. **TypeScript:** Projektet använder JavaScript - TypeScript skulle ge bättre type safety
+3. **Testing:** Ingen information om enhetstester eller integrationstester
+4. **Environment variables:** Blandning av hårdkodade värden och environment variables
