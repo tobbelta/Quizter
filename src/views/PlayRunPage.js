@@ -495,9 +495,16 @@ const PlayRunPage = () => {
             <form onSubmit={handleSubmit} className="bg-slate-900/95 backdrop-blur-sm rounded-xl border border-cyan-400/40 p-4 shadow-xl">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-white flex-1">{currentQuestion.text}</h2>
-                <span className="ml-3 inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
-                  {selectedLanguage.toUpperCase()}
-                </span>
+                <div className="ml-3 flex items-center gap-2">
+                  {currentQuestion.category && (
+                    <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
+                      {currentQuestion.category}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                    {selectedLanguage.toUpperCase()}
+                  </span>
+                </div>
               </div>
               <div className="space-y-2 mb-4">
                 {currentQuestion.options.map((option, index) => (

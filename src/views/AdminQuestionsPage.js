@@ -40,8 +40,13 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-sm font-mono text-gray-400">#{index + 1}</span>
                 {question.category && (
-                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                  <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
                     {question.category}
+                  </span>
+                )}
+                {question.difficulty && (
+                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                    {question.difficulty === 'kid' ? 'Barn' : question.difficulty === 'family' ? 'Familj' : question.difficulty === 'adult' ? 'Vuxen' : question.difficulty}
                   </span>
                 )}
                 {hasBothLanguages && (
