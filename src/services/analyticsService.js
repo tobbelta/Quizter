@@ -35,13 +35,13 @@ export const logVisit = async (eventType, metadata = {}) => {
       deviceId,
       eventType, // 'page_view', 'create_run', 'join_run', 'complete_run', 'donation', etc.
       timestamp: serverTimestamp(),
-      metadata: {
+      metadata: Object.fromEntries(Object.entries({
         ...metadata,
         userAgent: navigator.userAgent,
         language: navigator.language,
         screenResolution: `${window.screen.width}x${window.screen.height}`,
         path: window.location.pathname
-      }
+      }).filter(([_, v]) => v !== undefined))
     };
 
     await addDoc(collection(db, 'analytics'), visitData);

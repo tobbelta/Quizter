@@ -24,7 +24,8 @@ import {
   setDoc,
   updateDoc,
   where,
-  documentId
+  documentId,
+  serverTimestamp
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
@@ -218,7 +219,10 @@ export const firestoreRunGateway = {
   /** Sparar en ny admin-skapad runda. */
   async createRun(payload, creator) {
     const run = await buildHostedRun(payload, creator);
-    await setDoc(doc(hämtaRundsCollection(), run.id), serialiseraFörFirestore(run));
+    await setDoc(doc(hämtaRundsCollection(), run.id), {
+      ...serialiseraFörFirestore(run),
+      createdAt: serverTimestamp(),
+    });
     return run;
   },
 
@@ -242,17 +246,7 @@ export const firestoreRunGateway = {
 
     const serialized = serialiseraFörFirestore(run);
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[FirestoreGateway] Efter serialisering:', {
-        id: serialized.id,
-        hasRoute: !!serialized.route,
-        routePointCount: serialized.route?.length || 0,
-        hasCheckpoints: !!serialized.checkpoints,
-        checkpointCount: serialized.checkpoints?.length || 0
-      });
-    }
-
-    await setDoc(doc(hämtaRundsCollection(), run.id), serialized);
+    await setDoc(doc(hämtaRundsCollection(), run.id), { ...serialized, createdAt: serverTimestamp() });
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] Returnerar run med route:', !!run.route);
@@ -349,9 +343,10 @@ export const firestoreRunGateway = {
     await deleteDoc(doc(hämtaRundsCollection(), runId));
   },
 
-  /** Realtidslyssnare för rundor. */
+  // Realtidslyssnare för rundor.
   subscribeRuns(listener) {
-    return onSnapshot(hämtaRundsCollection(), (snapshot) => {
+    const q = query(hämtaRundsCollection(), where("status", "==", "active"));
+    return onSnapshot(q, (snapshot) => {
       const runs = snapshot.docs.map(mapperaRundeDokument).filter(Boolean);
       listener(runs);
     });

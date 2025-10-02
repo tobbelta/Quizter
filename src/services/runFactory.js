@@ -38,7 +38,11 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
   const pool = resolveQuestionPool();
 
   if (pool.length === 0) {
-    throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt.');
+    throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt från databasen.');
+  }
+
+  if (questionCount < 1 || questionCount > 50) {
+    throw new Error(`Ogiltigt antal frågor (${questionCount}). Välj mellan 1 och 50 frågor.`);
   }
 
   const filtered = pool.filter((question) => {
@@ -70,7 +74,8 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
 
   // Om vi inte har tillräckligt många frågor, återanvänd dem genom att loopa
   if (shuffled.length === 0) {
-    throw new Error('Inga frågor matchar vald profil och kategorier.');
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(`Inga frågor matchar vald svårighetsgrad (${difficulty})${categoryText}. Prova en annan kombination.`);
   }
 
   if (shuffled.length < questionCount) {
@@ -78,7 +83,9 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
     const result = [];
     while (result.length < questionCount) {
       const reShuffled = [...shuffled].sort(() => Math.random() - 0.5);
-      result.push(...reShuffled);
+      // Create new question objects with unique IDs to avoid key collisions in React
+      const uniqueQuestions = reShuffled.map(q => ({ ...q, id: `${q.id}-${uuidv4()}` }));
+      result.push(...uniqueQuestions);
     }
     return result.slice(0, questionCount);
   }
@@ -111,7 +118,7 @@ const createHostedCheckpoints = (questions, origin = FALLBACK_POSITION) => quest
  * Skapar en cirkulär rutt för auto-genererade rundor utifrån längd och startpunkt.
  * Använder ruttplanering för att följa faktiska gångvägar.
  */
-const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, origin }) => {
+const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, origin, seed, preferGreenAreas }) => {
   const baseLat = origin?.lat ?? FALLBACK_POSITION.lat;
   const baseLng = origin?.lng ?? FALLBACK_POSITION.lng;
 
@@ -120,7 +127,9 @@ const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, orig
     const routeData = await generateWalkingRoute({
       origin: { lat: baseLat, lng: baseLng },
       lengthMeters,
-      checkpointCount: questions.length
+      checkpointCount: questions.length,
+      seed,
+      preferGreenAreas
     });
 
     // Skapa checkpoints med frågor längs den planerade rutten
@@ -141,6 +150,17 @@ const createGeneratedCheckpoints = async (questions, { lengthMeters = 2500, orig
 
   } catch (error) {
     console.warn('[RunFactory] Ruttplanering misslyckades, använder cirkulär fallback:', error);
+
+    // Ge användaren specifik feedback om vad som gick fel
+    const errorMessage = error.message?.includes('API')
+      ? 'Kunde inte ansluta till karttjänsten. Använder förenklad rutt.'
+      : error.message?.includes('network') || error.message?.includes('fetch')
+      ? 'Nätverksfel - kontrollera din internetanslutning. Använder förenklad rutt.'
+      : 'Kunde inte generera rutt med karttjänst. Använder förenklad rutt.';
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[RunFactory] Felmeddelande till användare:', errorMessage);
+    }
 
     // Fallback till den gamla cirkular-metoden
     const fallbackCheckpoints = questions.map((question, index) => {
@@ -245,6 +265,18 @@ export const buildHostedRun = async ({
     }
   } catch (error) {
     console.warn('[RunFactory] buildHostedRun: kunde inte generera route-data:', error);
+
+    // Ge mer specifik feedback
+    const errorType = !origin
+      ? 'GPS-position saknas'
+      : error.message?.includes('API')
+      ? 'Karttjänsten svarar inte'
+      : 'Ruttgenereringen misslyckades';
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[RunFactory] Feltyp:', errorType, '- Använder fallback-checkpoints');
+    }
+
     // Fallback till gamla metoden
     const errorOrigin = origin || FALLBACK_POSITION;
     checkpoints = createHostedCheckpoints(questions, errorOrigin);
@@ -284,11 +316,13 @@ export const buildGeneratedRun = async ({
   categories = [],
   allowAnonymous = true,
   language = 'sv',
-  origin
+  origin,
+  seed,
+  preferGreenAreas
 }, creator) => {
   const questions = pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
-  const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin });
+  const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin, seed, preferGreenAreas });
 
   if (process.env.NODE_ENV !== 'production') {
     console.debug('[RunFactory] checkpointData från createGeneratedCheckpoints:', {
