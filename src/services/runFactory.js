@@ -50,11 +50,11 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
     let matchesDifficulty = false;
 
     if (difficulty === 'family') {
-      // Familj: blanda barn och vuxenfrågor
-      matchesDifficulty = question.audience === 'family' ||
-                          question.audience === 'kid' ||
+      // Familj: blanda kid och adult frågor (50/50)
+      matchesDifficulty = question.audience === 'kid' ||
                           question.difficulty === 'kid' ||
-                          question.difficulty === 'family';
+                          question.audience === 'adult' ||
+                          question.difficulty === 'adult';
     } else if (difficulty === 'kid') {
       matchesDifficulty = question.audience === 'kid' || question.difficulty === 'kid';
     } else if (difficulty === 'adult') {

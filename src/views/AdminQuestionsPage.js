@@ -5,7 +5,6 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
-import { QUESTION_BANK } from '../data/questions';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
@@ -21,24 +20,41 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
 
   const displayLang = currentLang === 'sv' ? svLang : enLang;
   const hasBothLanguages = svLang && enLang;
-  const isBuiltIn = QUESTION_BANK.some(q => q.id === question.id);
 
   return (
     <div className={`rounded-lg border bg-slate-900/60 p-4 transition-colors ${isSelected ? 'border-cyan-500' : 'border-slate-700'}`}>
       <div className="flex items-start gap-4">
-        {!isBuiltIn && (
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => onSelect(question.id)}
-            className="mt-1 h-5 w-5 rounded border-gray-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500"
-          />
-        )}
-        <div className={`flex-1 ${isBuiltIn ? 'ml-9' : ''}`}>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onSelect(question.id)}
+          className="mt-1 h-5 w-5 rounded border-gray-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500"
+        />
+        <div className="flex-1">
           <div className="flex items-start justify-between mb-2">
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
                 <span className="text-sm font-mono text-gray-400">#{index + 1}</span>
+                {question.createdAt && (
+                  <span className="text-xs text-gray-500">
+                    {question.createdAt.toDate ?
+                      question.createdAt.toDate().toLocaleString('sv-SE', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) :
+                      new Date(question.createdAt).toLocaleString('sv-SE', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })
+                    }
+                  </span>
+                )}
                 {question.category && (
                   <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
                     {question.category}
@@ -63,18 +79,12 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                 {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
               </button>
             </div>
-            {isBuiltIn ? (
-              <span className="rounded bg-gray-600 px-3 py-1 text-sm font-semibold text-gray-300 cursor-not-allowed">
-                Inbyggd
-              </span>
-            ) : (
-              <button
-                onClick={() => handleDeleteQuestion(question.id)}
-                className="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white hover:bg-red-500"
-              >
-                Ta bort
-              </button>
-            )}
+            <button
+              onClick={() => handleDeleteQuestion(question.id)}
+              className="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white hover:bg-red-500"
+            >
+              Ta bort
+            </button>
           </div>
         </div>
       </div>
@@ -112,7 +122,7 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
             </div>
           )}
 
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-gray-400 space-y-1">
             <p>ID: {question.id}</p>
             {question.source && <p>Källa: {question.source}</p>}
             {question.createdBy && <p>Skapad av: {question.createdBy}</p>}
@@ -128,13 +138,13 @@ const AdminQuestionsPage = () => {
   const { isSuperUser } = useAuth();
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isImporting, setIsImporting] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
   const [aiDifficulty, setAiDifficulty] = useState('');
-  const [aiStatus, setAiStatus] = useState(null);
+  const [aiProvider, setAiProvider] = useState('gemini'); // gemini, anthropic, openai
+  const [aiStatus, setAiStatus] = useState(null); // Status för alla providers
   const [loadingAiStatus, setLoadingAiStatus] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -158,6 +168,13 @@ const AdminQuestionsPage = () => {
     };
 
     loadQuestions();
+
+    // Prenumerera på uppdateringar
+    const unsubscribe = questionService.subscribe((updatedQuestions) => {
+      setQuestions(updatedQuestions || []);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Redirect om användaren inte är SuperUser
@@ -180,10 +197,25 @@ const AdminQuestionsPage = () => {
     try {
       const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
       const data = await response.json();
-      setAiStatus(data);
+
+      // Använd providers från response
+      setAiStatus(data.providers);
+
+      // Välj första tillgängliga provider
+      if (data.providers.gemini?.available) {
+        setAiProvider('gemini');
+      } else if (data.providers.anthropic?.available) {
+        setAiProvider('anthropic');
+      } else if (data.providers.openai?.available) {
+        setAiProvider('openai');
+      }
     } catch (error) {
       console.error('Failed to fetch AI status:', error);
-      setAiStatus({ available: false, message: 'Kunde inte hämta AI-status' });
+      setAiStatus({
+        gemini: { available: false, message: 'Kunde inte hämta status' },
+        anthropic: { available: false, message: 'Kunde inte hämta status' },
+        openai: { available: false, message: 'Kunde inte hämta status' }
+      });
     } finally {
       setLoadingAiStatus(false);
     }
@@ -219,40 +251,7 @@ const AdminQuestionsPage = () => {
     setCurrentPage(page);
   };
 
-  /** Genererar 10 frågor med AI */
-  const handleImportQuestions = async () => {
-    setIsImporting(true);
-    try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          amount: 10
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to generate questions');
-      }
-
-      // Ladda om frågorna efter 1 sekund (ge Firestore tid att synka)
-      setTimeout(() => {
-        setQuestions(questionService.listAll() || []);
-      }, 1000);
-
-      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
-    } catch (error) {
-      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  /** Genererar frågor med AI (Anthropic Claude) */
+  /** Genererar frågor med AI */
   const handleGenerateAIQuestions = async () => {
     setIsGeneratingAI(true);
     setShowAIDialog(false);
@@ -265,7 +264,8 @@ const AdminQuestionsPage = () => {
         body: JSON.stringify({
           amount: aiAmount,
           category: aiCategory || undefined,
-          difficulty: aiDifficulty || undefined
+          difficulty: aiDifficulty || undefined,
+          provider: aiProvider
         })
       });
 
@@ -275,14 +275,12 @@ const AdminQuestionsPage = () => {
         throw new Error(data.error || data.message || 'Failed to generate questions');
       }
 
-      // Ladda om frågorna efter generering
-      setTimeout(() => {
-        setQuestions(questionService.listAll() || []);
-      }, 1000);
+      // Lägg till frågor (subscription i useEffect kommer uppdatera UI automatiskt)
+      await questionService.addQuestions(data.questions || []);
 
-      alert(`🎉 ${data.count} nya AI-genererade frågor skapades!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
+      alert(`🎉 ${data.count} nya AI-genererade frågor skapades med ${aiProvider}!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
     } catch (error) {
-      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att Anthropic API-nyckeln är konfigurerad i Firebase.`);
+      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att API-nyckeln för ${aiProvider} är konfigurerad i Firebase.`);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -341,9 +339,8 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  const deletableQuestions = filteredQuestions.filter(
-    q => !QUESTION_BANK.some(bq => bq.id === q.id)
-  );
+  // Alla frågor kan raderas nu (inga inbyggda frågor)
+  const deletableQuestions = filteredQuestions;
   const isAllSelected = selectedQuestions.size > 0 && selectedQuestions.size === deletableQuestions.length;
 
   if (!isSuperUser) {
@@ -388,13 +385,6 @@ const AdminQuestionsPage = () => {
               className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
             >
               {isGeneratingAI ? '🤖 Genererar...' : '🤖 AI-Generera frågor'}
-            </button>
-            <button
-              onClick={handleImportQuestions}
-              disabled={isImporting}
-              className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
-            >
-              {isImporting ? 'Genererar AI-frågor...' : '⚡ Snabbgenerera 10 AI-frågor'}
             </button>
           </div>
         </div>
@@ -490,70 +480,37 @@ const AdminQuestionsPage = () => {
             </div>
 
             <p className="text-gray-300 text-sm mb-4">
-              Generera frågor med Anthropic Claude som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
+              Generera frågor med AI som automatiskt får både svensk och engelsk text, kategori och svårighetsgrad.
             </p>
 
             {/* AI Status Display */}
             {loadingAiStatus ? (
               <div className="bg-slate-800 rounded-lg p-4 mb-4 flex items-center gap-3">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-cyan-400"></div>
-                <span className="text-gray-300 text-sm">Kontrollerar AI-status...</span>
+                <span className="text-gray-300 text-sm">Kontrollerar AI-providers...</span>
               </div>
             ) : aiStatus && (
-              <div className={`rounded-lg p-4 mb-4 ${
-                aiStatus.available
-                  ? 'bg-green-500/10 border border-green-500/30'
-                  : aiStatus.isCreditsIssue
-                  ? 'bg-red-500/10 border border-red-500/30'
-                  : 'bg-yellow-500/10 border border-yellow-500/30'
-              }`}>
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">
-                    {aiStatus.available ? '✅' : aiStatus.isCreditsIssue ? '⚠️' : aiStatus.isNetworkError ? '🌐' : 'ℹ️'}
-                  </span>
-                  <div className="flex-1">
-                    <p className={`font-semibold mb-1 ${
-                      aiStatus.available ? 'text-green-400' : aiStatus.isCreditsIssue ? 'text-red-400' : 'text-yellow-400'
-                    }`}>
-                      {aiStatus.message}
-                    </p>
-                    {aiStatus.model && (
-                      <p className="text-sm text-gray-400">Model: {aiStatus.model}</p>
-                    )}
-                    {aiStatus.error && !aiStatus.available && (
-                      <details className="mt-2 text-xs">
-                        <summary className="cursor-pointer text-gray-400 hover:text-gray-300">
-                          Teknisk information
-                        </summary>
-                        <div className="mt-2 p-2 bg-slate-800/50 rounded font-mono text-gray-300 break-words">
-                          <p className="mb-1"><strong>Fel:</strong> {aiStatus.error}</p>
-                          {aiStatus.errorType && <p className="mb-1"><strong>Typ:</strong> {aiStatus.errorType}</p>}
-                          {aiStatus.errorStatus && <p><strong>Status:</strong> {aiStatus.errorStatus}</p>}
-                        </div>
-                      </details>
-                    )}
-                    {aiStatus.isCreditsIssue && (
-                      <a
-                        href="https://console.anthropic.com/settings/limits"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block mt-2 text-sm text-cyan-400 hover:text-cyan-300 underline"
-                      >
-                        Kontrollera krediter i Anthropic Console →
-                      </a>
-                    )}
-                    {aiStatus.isNetworkError && (
-                      <p className="text-sm text-yellow-300 mt-2">
-                        💡 Kontrollera din internetanslutning och att Firebase Functions är deployade.
-                      </p>
-                    )}
-                    {!aiStatus.configured && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Sätt ANTHROPIC_API_KEY i Firebase Functions
-                      </p>
+              <div className="space-y-2 mb-4">
+                {Object.entries(aiStatus).map(([provider, status]) => (
+                  <div key={provider} className={`rounded-lg p-3 text-sm ${
+                    status.available
+                      ? 'bg-green-500/10 border border-green-500/30'
+                      : 'bg-red-500/10 border border-red-500/30 opacity-60'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">
+                        {status.available ? '✅' : '❌'}
+                      </span>
+                      <span className="font-semibold capitalize">{provider}</span>
+                      <span className={`ml-auto text-xs ${status.available ? 'text-green-400' : 'text-red-400'}`}>
+                        {status.available ? 'Tillgänglig' : 'Ej tillgänglig'}
+                      </span>
+                    </div>
+                    {status.model && (
+                      <p className="text-xs text-gray-400 mt-1">Model: {status.model}</p>
                     )}
                   </div>
-                </div>
+                ))}
               </div>
             )}
 
@@ -613,12 +570,54 @@ const AdminQuestionsPage = () => {
                 </select>
               </div>
 
-              {/* Info box */}
-              <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
-                <p className="text-xs text-cyan-200">
-                  💡 AI genererar frågor på både svenska och engelska automatiskt. Anthropic ger $5 gratis kredit per månad (ca 500-1000 frågor).
-                </p>
+              {/* AI Provider */}
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">
+                  AI-Provider
+                </label>
+                <select
+                  value={aiProvider}
+                  onChange={(e) => setAiProvider(e.target.value)}
+                  className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  disabled={!aiStatus || Object.values(aiStatus).every(s => !s.available)}
+                >
+                  {aiStatus?.gemini?.available && (
+                    <option value="gemini">Gemini (Google) - Snabb & Gratis</option>
+                  )}
+                  {aiStatus?.anthropic?.available && (
+                    <option value="anthropic">Claude (Anthropic) - Hög kvalitet</option>
+                  )}
+                  {aiStatus?.openai?.available && (
+                    <option value="openai">GPT-4 (OpenAI) - Balanserad</option>
+                  )}
+                  {(!aiStatus || Object.values(aiStatus).every(s => !s.available)) && (
+                    <option value="">Ingen provider tillgänglig</option>
+                  )}
+                </select>
               </div>
+
+              {/* Info box - Dynamisk text baserat på vald provider */}
+              {aiProvider === 'gemini' && aiStatus?.gemini?.available && (
+                <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+                  <p className="text-xs text-cyan-200">
+                    💡 Gemini är Google's AI-modell. Den är helt gratis att använda och genererar frågor snabbt på både svenska och engelska.
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'anthropic' && aiStatus?.anthropic?.available && (
+                <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+                  <p className="text-xs text-purple-200">
+                    💡 Claude är Anthropic's AI-modell. Hög kvalitet med $5 gratis kredit per månad (ca 500-1000 frågor).
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'openai' && aiStatus?.openai?.available && (
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                  <p className="text-xs text-green-200">
+                    💡 GPT-4 är OpenAI's AI-modell. Balanserad mellan kvalitet och kostnad. Kräver betalning efter gratis-krediter.
+                  </p>
+                </div>
+              )}
 
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
@@ -630,9 +629,9 @@ const AdminQuestionsPage = () => {
                 </button>
                 <button
                   onClick={handleGenerateAIQuestions}
-                  disabled={!aiStatus?.available}
+                  disabled={!aiStatus || !aiStatus[aiProvider]?.available}
                   className={`flex-1 rounded-lg px-4 py-2 font-semibold text-white transition-colors ${
-                    aiStatus?.available
+                    (aiStatus && aiStatus[aiProvider]?.available)
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
                       : 'bg-gray-600 cursor-not-allowed opacity-50'
                   }`}

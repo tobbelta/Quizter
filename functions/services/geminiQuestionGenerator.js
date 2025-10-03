@@ -10,15 +10,35 @@ const CATEGORIES = ['Geografi', 'Historia', 'Naturvetenskap', 'Kultur', 'Sport',
 const DIFFICULTIES = ['kid', 'family', 'adult'];
 
 /**
- * Genererar frågor med Google Gemini
+ * Genererar frågor med Google Gemini SDK
  */
 async function generateQuestions({ amount = 10, category = null, difficulty = null }, apiKey) {
   if (!apiKey) {
     throw new Error('Gemini API key is required');
   }
 
+  // Hitta tillgänglig modell dynamiskt
+  const listResponse = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+  );
+
+  if (!listResponse.ok) {
+    throw new Error('Failed to list Gemini models');
+  }
+
+  const modelData = await listResponse.json();
+  const availableModels = modelData.models || [];
+  const compatibleModel = availableModels.find(m =>
+    m.supportedGenerationMethods?.includes('generateContent')
+  );
+
+  if (!compatibleModel) {
+    throw new Error('No compatible Gemini models found');
+  }
+
+  const modelName = compatibleModel.name.replace('models/', '');
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: modelName });
 
   const difficultyMapping = {
     'kid': 'barn (lämplig för barn 6-12 år, enkla frågor)',
@@ -72,7 +92,7 @@ Viktigt:
 - Svara ENDAST med giltig JSON, ingen markdown eller annan formatering`;
 
   try {
-    logger.info('Generating questions with Gemini', { amount, category, difficulty });
+    logger.info('Generating questions with Gemini SDK', { amount, category, difficulty });
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -111,7 +131,7 @@ Viktigt:
     logger.info('Successfully generated and validated questions', {
       requested: amount,
       generated: validatedQuestions.length,
-      model: 'gemini-1.5-flash'
+      model: 'gemini-pro'
     });
 
     return validatedQuestions;

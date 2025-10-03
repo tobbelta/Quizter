@@ -157,19 +157,36 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
         }
       }
 
-      // Testa Gemini
+      // Testa Gemini - lista tillgängliga modeller först
       const geminiKey = geminiApiKey.value();
       if (geminiKey) {
         providers.gemini.configured = true;
         try {
-          const { GoogleGenerativeAI } = require('@google/generative-ai');
-          const genAI = new GoogleGenerativeAI(geminiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+          // Lista tillgängliga modeller
+          const listResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`
+          );
 
-          await model.generateContent('Hi');
+          if (listResponse.ok) {
+            const modelData = await listResponse.json();
+            const availableModels = modelData.models || [];
 
-          providers.gemini.available = true;
-          providers.gemini.model = 'gemini-1.5-flash';
+            // Hitta första modellen som stöder generateContent
+            const compatibleModel = availableModels.find(m =>
+              m.supportedGenerationMethods?.includes('generateContent')
+            );
+
+            if (compatibleModel) {
+              providers.gemini.available = true;
+              providers.gemini.model = compatibleModel.name.replace('models/', '');
+              providers.gemini.availableModels = availableModels.map(m => m.name);
+            } else {
+              throw new Error('No compatible Gemini models found');
+            }
+          } else {
+            const errorText = await listResponse.text();
+            throw new Error(`Failed to list models: ${errorText}`);
+          }
         } catch (error) {
           logger.warn("Gemini unavailable", { error: error.message });
           providers.gemini.error = error.message;
@@ -221,7 +238,7 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
     }
 
     try {
-      const { amount = 10, category, difficulty } = req.body;
+      const { amount = 10, category, difficulty, provider = 'anthropic' } = req.body;
 
       // Validera amount
       if (amount < 1 || amount > 50) {
@@ -234,68 +251,57 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
       let questions = null;
       let usedProvider = null;
 
-      // Försök med Anthropic först
-      const anthropicKey = anthropicApiKey.value();
-      if (anthropicKey) {
-        try {
-          const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
-          logger.info("Trying Anthropic Claude", { amount, category, difficulty });
-
-          questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
-          usedProvider = 'anthropic';
-          logger.info("Successfully generated with Anthropic");
-        } catch (anthropicError) {
-          logger.warn("Anthropic failed, trying OpenAI fallback", {
-            error: anthropicError.message
-          });
+      // Använd den valda providern
+      if (provider === 'gemini') {
+        const geminiKey = geminiApiKey.value();
+        if (geminiKey) {
+          try {
+            const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
+            logger.info("Using Gemini (user selected)", { amount, category, difficulty });
+            questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
+            usedProvider = 'gemini';
+            logger.info("Successfully generated with Gemini");
+          } catch (error) {
+            logger.warn("Gemini failed", { error: error.message });
+          }
         }
-      }
-
-      // Fallback till OpenAI om Anthropic misslyckades eller inte konfigurerad
-      if (!questions) {
+      } else if (provider === 'openai') {
         const openaiKey = openaiApiKey.value();
         if (openaiKey) {
           try {
             const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
-            logger.info("Trying OpenAI", { amount, category, difficulty });
-
+            logger.info("Using OpenAI (user selected)", { amount, category, difficulty });
             questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
             usedProvider = 'openai';
             logger.info("Successfully generated with OpenAI");
-          } catch (openaiError) {
-            logger.warn("OpenAI also failed, trying Gemini fallback", {
-              error: openaiError.message
-            });
+          } catch (error) {
+            logger.warn("OpenAI failed", { error: error.message });
+          }
+        }
+      } else {
+        // Anthropic (default)
+        const anthropicKey = anthropicApiKey.value();
+        if (anthropicKey) {
+          try {
+            const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
+            logger.info("Using Anthropic (user selected or default)", { amount, category, difficulty });
+            questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
+            usedProvider = 'anthropic';
+            logger.info("Successfully generated with Anthropic");
+          } catch (error) {
+            logger.warn("Anthropic failed", { error: error.message });
           }
         }
       }
 
-      // Fallback till Gemini om både Anthropic och OpenAI misslyckades
+      // Om vald provider misslyckades, returnera fel
       if (!questions) {
-        const geminiKey = geminiApiKey.value();
-        if (!geminiKey) {
-          logger.error("No AI providers configured or all failed");
-          res.status(500).json({
-            error: "AI question generation not available"
-          });
-          return;
-        }
-
-        try {
-          const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
-          logger.info("Trying Gemini", { amount, category, difficulty });
-
-          questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
-          usedProvider = 'gemini';
-          logger.info("Successfully generated with Gemini");
-        } catch (geminiError) {
-          logger.error("All AI providers failed", { error: geminiError.message });
-          res.status(500).json({
-            error: "Failed to generate questions with all AI providers",
-            details: geminiError.message
-          });
-          return;
-        }
+        logger.error(`Selected provider ${provider} failed or not configured`);
+        res.status(500).json({
+          error: `Failed to generate questions with ${provider}`,
+          provider: provider
+        });
+        return;
       }
 
       // Spara till Firestore
@@ -304,7 +310,12 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        batch.set(docRef, question);
+        // Lägg till createdAt om det inte finns
+        const questionData = {
+          ...question,
+          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
+        };
+        batch.set(docRef, questionData);
       });
 
       await batch.commit();
@@ -400,7 +411,12 @@ exports.questionImport = onSchedule(
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        batch.set(docRef, question);
+        // Lägg till createdAt om det inte finns
+        const questionData = {
+          ...question,
+          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
+        };
+        batch.set(docRef, questionData);
       });
 
       await batch.commit();
@@ -534,6 +550,88 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
       res.status(500).json({
         error: "Failed to create payment",
         message: error.message,
+      });
+    }
+  });
+});
+
+/**
+ * One-time function to update all existing questions with createdAt field
+ * Call this once: https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt
+ */
+exports.updateQuestionsCreatedAt = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300, // 5 minutes
+}, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      logger.info('Starting update of questions with createdAt field');
+
+      const db = admin.firestore();
+      const questionsRef = db.collection('questions');
+      const snapshot = await questionsRef.get();
+
+      if (snapshot.empty) {
+        logger.info('No questions found in Firestore');
+        return res.status(200).json({ message: 'No questions found', updated: 0 });
+      }
+
+      logger.info(`Found ${snapshot.size} questions`);
+
+      let updatedCount = 0;
+      let alreadyHasCount = 0;
+      const batch = db.batch();
+      let batchCount = 0;
+      const batches = [];
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+
+        if (data.createdAt) {
+          alreadyHasCount++;
+          continue;
+        }
+
+        // Use generatedAt if it exists, otherwise use current timestamp
+        const createdAt = data.generatedAt
+          ? admin.firestore.Timestamp.fromDate(new Date(data.generatedAt))
+          : admin.firestore.FieldValue.serverTimestamp();
+
+        batch.update(doc.ref, { createdAt });
+        updatedCount++;
+        batchCount++;
+
+        // Firestore batch limit is 500, commit every 400 to be safe
+        if (batchCount >= 400) {
+          batches.push(batch.commit());
+          batchCount = 0;
+        }
+      }
+
+      // Commit any remaining updates
+      if (batchCount > 0) {
+        batches.push(batch.commit());
+      }
+
+      await Promise.all(batches);
+
+      logger.info('Finished updating questions', {
+        updated: updatedCount,
+        alreadyHad: alreadyHasCount,
+        total: snapshot.size
+      });
+
+      res.status(200).json({
+        message: 'Questions updated successfully',
+        updated: updatedCount,
+        alreadyHad: alreadyHasCount,
+        total: snapshot.size
+      });
+    } catch (error) {
+      logger.error('Error updating questions', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to update questions',
+        message: error.message
       });
     }
   });
