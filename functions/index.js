@@ -3,7 +3,7 @@
  */
 const {onRequest} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const {defineString} = require("firebase-functions/params");
+const {defineString, defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -21,10 +21,10 @@ const cors = require("cors")({
 
 // Define Stripe secret key parameter
 const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
-// Define Anthropic API key parameter
-const anthropicApiKey = defineString("ANTHROPIC_API_KEY");
-// Define OpenAI API key parameter
-const openaiApiKey = defineString("OPENAI_API_KEY");
+// Define AI API keys as secrets
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const openaiApiKey = defineSecret("OPENAI_API_KEY");
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -34,7 +34,8 @@ const REGION = "europe-west1";
 const runtimeDefaults = {
   region: REGION,
   memory: "512MB",
-  timeoutSeconds: 60
+  timeoutSeconds: 60,
+  secrets: [anthropicApiKey, openaiApiKey, geminiApiKey]
 };
 
 const createHttpsHandler = (handler) =>
@@ -100,63 +101,127 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
 });
 
 /**
- * Hämta AI-status (krediter och tillgänglighet)
+ * Hämta AI-status (krediter och tillgänglighet för alla providers)
  */
 exports.getAIStatus = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
     try {
-      const apiKey = anthropicApiKey.value();
+      const providers = {
+        anthropic: { configured: false, available: false },
+        openai: { configured: false, available: false },
+        gemini: { configured: false, available: false }
+      };
 
-      if (!apiKey) {
-        res.status(200).json({
-          configured: false,
-          available: false,
-          message: "Anthropic API-nyckel inte konfigurerad"
-        });
-        return;
+      // Testa Anthropic
+      const anthropicKey = anthropicApiKey.value();
+      if (anthropicKey) {
+        providers.anthropic.configured = true;
+        try {
+          const Anthropic = require('@anthropic-ai/sdk');
+          const anthropic = new Anthropic({ apiKey: anthropicKey });
+
+          await anthropic.messages.create({
+            model: 'claude-3-5-haiku-20241022',
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'Hi' }]
+          });
+
+          providers.anthropic.available = true;
+          providers.anthropic.model = 'claude-3-5-haiku-20241022';
+        } catch (error) {
+          logger.warn("Anthropic unavailable", { error: error.message });
+          providers.anthropic.error = error.message;
+          providers.anthropic.errorStatus = error.status;
+        }
       }
 
-      // Testa API:et med en minimal request
-      const Anthropic = require('@anthropic-ai/sdk');
-      const anthropic = new Anthropic({ apiKey });
+      // Testa OpenAI
+      const openaiKey = openaiApiKey.value();
+      if (openaiKey) {
+        providers.openai.configured = true;
+        try {
+          const OpenAI = require('openai');
+          const openai = new OpenAI({ apiKey: openaiKey });
 
-      try {
-        await anthropic.messages.create({
-          model: 'claude-3-5-haiku-20241022',
-          max_tokens: 10,
-          messages: [{ role: 'user', content: 'Hi' }]
-        });
+          await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens: 10
+          });
 
-        res.status(200).json({
-          configured: true,
-          available: true,
-          model: 'claude-3-5-haiku-20241022',
-          message: "AI-generering tillgänglig"
-        });
-      } catch (apiError) {
-        logger.error("Anthropic API error", { error: apiError.message });
-
-        // Kolla om det är kredit-problem
-        const isCreditsError = apiError.message?.includes('credit') ||
-                               apiError.message?.includes('quota') ||
-                               apiError.status === 429;
-
-        res.status(200).json({
-          configured: true,
-          available: false,
-          error: apiError.message,
-          isCreditsIssue: isCreditsError,
-          message: isCreditsError ?
-            "AI-krediter slut - kontrollera Anthropic Console" :
-            "AI-tjänst ej tillgänglig"
-        });
+          providers.openai.available = true;
+          providers.openai.model = 'gpt-4o-mini';
+        } catch (error) {
+          logger.warn("OpenAI unavailable", { error: error.message });
+          providers.openai.error = error.message;
+        }
       }
+
+      // Testa Gemini - lista tillgängliga modeller först
+      const geminiKey = geminiApiKey.value();
+      if (geminiKey) {
+        providers.gemini.configured = true;
+        try {
+          // Lista tillgängliga modeller
+          const listResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`
+          );
+
+          if (listResponse.ok) {
+            const modelData = await listResponse.json();
+            const availableModels = modelData.models || [];
+
+            // Hitta första modellen som stöder generateContent
+            const compatibleModel = availableModels.find(m =>
+              m.supportedGenerationMethods?.includes('generateContent')
+            );
+
+            if (compatibleModel) {
+              providers.gemini.available = true;
+              providers.gemini.model = compatibleModel.name.replace('models/', '');
+              providers.gemini.availableModels = availableModels.map(m => m.name);
+            } else {
+              throw new Error('No compatible Gemini models found');
+            }
+          } else {
+            const errorText = await listResponse.text();
+            throw new Error(`Failed to list models: ${errorText}`);
+          }
+        } catch (error) {
+          logger.warn("Gemini unavailable", { error: error.message });
+          providers.gemini.error = error.message;
+        }
+      }
+
+      // Bestäm vilken provider som kommer användas (prioritetsordning)
+      let primaryProvider = null;
+      let message = "Ingen AI-tjänst konfigurerad";
+
+      if (providers.anthropic.available) {
+        primaryProvider = 'anthropic';
+        message = `AI-generering tillgänglig (Anthropic Claude)`;
+      } else if (providers.openai.available) {
+        primaryProvider = 'openai';
+        message = `AI-generering tillgänglig (OpenAI fallback)`;
+      } else if (providers.gemini.available) {
+        primaryProvider = 'gemini';
+        message = `AI-generering tillgänglig (Gemini fallback)`;
+      } else if (providers.anthropic.configured || providers.openai.configured || providers.gemini.configured) {
+        message = "Alla AI-tjänster ej tillgängliga - kontrollera API-nycklar";
+      }
+
+      res.status(200).json({
+        available: primaryProvider !== null,
+        primaryProvider,
+        providers,
+        message
+      });
     } catch (error) {
       logger.error("Error checking AI status", { error: error.message });
       res.status(500).json({
-        configured: false,
         available: false,
-        error: error.message
+        error: error.message,
+        message: "Kunde inte kontrollera AI-status"
       });
     }
   });
@@ -164,7 +229,7 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
 
 /**
  * Generera frågor manuellt med AI (HTTP endpoint)
- * Använder Anthropic Claude som primär, OpenAI som fallback
+ * Använder Anthropic Claude som primär, OpenAI som andra fallback, Gemini som tredje fallback
  */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
@@ -173,7 +238,7 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
     }
 
     try {
-      const { amount = 10, category, difficulty } = req.body;
+      const { amount = 10, category, difficulty, provider = 'anthropic' } = req.body;
 
       // Validera amount
       if (amount < 1 || amount > 50) {
@@ -186,49 +251,57 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
       let questions = null;
       let usedProvider = null;
 
-      // Försök med Anthropic först
-      const anthropicKey = anthropicApiKey.value();
-      if (anthropicKey) {
-        try {
-          const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
-          logger.info("Trying Anthropic Claude", { amount, category, difficulty });
-
-          questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
-          usedProvider = 'anthropic';
-          logger.info("Successfully generated with Anthropic");
-        } catch (anthropicError) {
-          logger.warn("Anthropic failed, trying OpenAI fallback", {
-            error: anthropicError.message
-          });
+      // Använd den valda providern
+      if (provider === 'gemini') {
+        const geminiKey = geminiApiKey.value();
+        if (geminiKey) {
+          try {
+            const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
+            logger.info("Using Gemini (user selected)", { amount, category, difficulty });
+            questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
+            usedProvider = 'gemini';
+            logger.info("Successfully generated with Gemini");
+          } catch (error) {
+            logger.warn("Gemini failed", { error: error.message });
+          }
+        }
+      } else if (provider === 'openai') {
+        const openaiKey = openaiApiKey.value();
+        if (openaiKey) {
+          try {
+            const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
+            logger.info("Using OpenAI (user selected)", { amount, category, difficulty });
+            questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
+            usedProvider = 'openai';
+            logger.info("Successfully generated with OpenAI");
+          } catch (error) {
+            logger.warn("OpenAI failed", { error: error.message });
+          }
+        }
+      } else {
+        // Anthropic (default)
+        const anthropicKey = anthropicApiKey.value();
+        if (anthropicKey) {
+          try {
+            const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
+            logger.info("Using Anthropic (user selected or default)", { amount, category, difficulty });
+            questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
+            usedProvider = 'anthropic';
+            logger.info("Successfully generated with Anthropic");
+          } catch (error) {
+            logger.warn("Anthropic failed", { error: error.message });
+          }
         }
       }
 
-      // Fallback till OpenAI om Anthropic misslyckades eller inte konfigurerad
+      // Om vald provider misslyckades, returnera fel
       if (!questions) {
-        const openaiKey = openaiApiKey.value();
-        if (!openaiKey) {
-          logger.error("Neither Anthropic nor OpenAI API keys are configured");
-          res.status(500).json({
-            error: "AI question generation not configured"
-          });
-          return;
-        }
-
-        try {
-          const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
-          logger.info("Trying OpenAI", { amount, category, difficulty });
-
-          questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
-          usedProvider = 'openai';
-          logger.info("Successfully generated with OpenAI");
-        } catch (openaiError) {
-          logger.error("OpenAI also failed", { error: openaiError.message });
-          res.status(500).json({
-            error: "Failed to generate questions with both AI providers",
-            details: openaiError.message
-          });
-          return;
-        }
+        logger.error(`Selected provider ${provider} failed or not configured`);
+        res.status(500).json({
+          error: `Failed to generate questions with ${provider}`,
+          provider: provider
+        });
+        return;
       }
 
       // Spara till Firestore
@@ -237,7 +310,12 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        batch.set(docRef, question);
+        // Lägg till createdAt om det inte finns
+        const questionData = {
+          ...question,
+          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
+        };
+        batch.set(docRef, questionData);
       });
 
       await batch.commit();
@@ -267,11 +345,12 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
 });
 
 // Schemalagd funktion som ska hämta fler frågor löpande med AI.
-// Använder Anthropic som primär, OpenAI som fallback
+// Använder Anthropic som primär, OpenAI som andra fallback, Gemini som tredje fallback
 exports.questionImport = onSchedule(
   {
     schedule: "every 6 hours",
-    region: REGION
+    region: REGION,
+    secrets: [anthropicApiKey, openaiApiKey, geminiApiKey]
   },
   async (event) => {
     logger.info("questionImport trigger executed", { timestamp: event.scheduleTime });
@@ -285,7 +364,7 @@ exports.questionImport = onSchedule(
       if (anthropicKey) {
         try {
           const { generateQuestions } = require('./services/aiQuestionGenerator');
-          questions = await generateQuestions({ amount: 5 }, anthropicKey);
+          questions = await generateQuestions({ amount: 20 }, anthropicKey);
           usedProvider = 'anthropic';
           logger.info("Generated with Anthropic");
         } catch (anthropicError) {
@@ -298,15 +377,32 @@ exports.questionImport = onSchedule(
       // Fallback till OpenAI
       if (!questions) {
         const openaiKey = openaiApiKey.value();
-        if (!openaiKey) {
-          logger.warn("Neither Anthropic nor OpenAI configured, skipping automatic question import");
+        if (openaiKey) {
+          try {
+            const { generateQuestions } = require('./services/openaiQuestionGenerator');
+            questions = await generateQuestions({ amount: 20 }, openaiKey);
+            usedProvider = 'openai';
+            logger.info("Generated with OpenAI");
+          } catch (openaiError) {
+            logger.warn("OpenAI failed in scheduled import, trying Gemini", {
+              error: openaiError.message
+            });
+          }
+        }
+      }
+
+      // Fallback till Gemini
+      if (!questions) {
+        const geminiKey = geminiApiKey.value();
+        if (!geminiKey) {
+          logger.warn("No AI providers configured, skipping automatic question import");
           return;
         }
 
-        const { generateQuestions } = require('./services/openaiQuestionGenerator');
-        questions = await generateQuestions({ amount: 5 }, openaiKey);
-        usedProvider = 'openai';
-        logger.info("Generated with OpenAI");
+        const { generateQuestions } = require('./services/geminiQuestionGenerator');
+        questions = await generateQuestions({ amount: 20 }, geminiKey);
+        usedProvider = 'gemini';
+        logger.info("Generated with Gemini");
       }
 
       // Spara till Firestore
@@ -315,7 +411,12 @@ exports.questionImport = onSchedule(
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        batch.set(docRef, question);
+        // Lägg till createdAt om det inte finns
+        const questionData = {
+          ...question,
+          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
+        };
+        batch.set(docRef, questionData);
       });
 
       await batch.commit();
@@ -325,11 +426,57 @@ exports.questionImport = onSchedule(
         provider: usedProvider,
         timestamp: event.scheduleTime
       });
+
+      // Skapa notis till superusers
+      try {
+        const notificationRef = db.collection('notifications').doc();
+        await notificationRef.set({
+          type: 'question_import',
+          title: 'Automatisk frågegenerering slutförd',
+          message: `${questions.length} nya frågor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
+          data: {
+            count: questions.length,
+            provider: usedProvider,
+            model: questions[0]?.source || 'ai-generated',
+            timestamp: new Date().toISOString()
+          },
+          targetAudience: 'superusers',
+          read: false,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 dagar
+        });
+        logger.info("Notification created for superusers");
+      } catch (notificationError) {
+        logger.error("Failed to create notification", { error: notificationError.message });
+      }
+
     } catch (error) {
       logger.error("Failed to import questions", {
         error: error.message,
         stack: error.stack
       });
+
+      // Skapa felnotis till superusers
+      try {
+        const db = admin.firestore();
+        const notificationRef = db.collection('notifications').doc();
+        await notificationRef.set({
+          type: 'question_import_error',
+          title: 'Automatisk frågegenerering misslyckades',
+          message: `Kunde inte generera frågor: ${error.message}`,
+          data: {
+            error: error.message,
+            timestamp: new Date().toISOString()
+          },
+          targetAudience: 'superusers',
+          read: false,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        });
+        logger.info("Error notification created for superusers");
+      } catch (notificationError) {
+        logger.error("Failed to create error notification", { error: notificationError.message });
+      }
     }
   }
 );
@@ -403,6 +550,88 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
       res.status(500).json({
         error: "Failed to create payment",
         message: error.message,
+      });
+    }
+  });
+});
+
+/**
+ * One-time function to update all existing questions with createdAt field
+ * Call this once: https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt
+ */
+exports.updateQuestionsCreatedAt = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300, // 5 minutes
+}, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      logger.info('Starting update of questions with createdAt field');
+
+      const db = admin.firestore();
+      const questionsRef = db.collection('questions');
+      const snapshot = await questionsRef.get();
+
+      if (snapshot.empty) {
+        logger.info('No questions found in Firestore');
+        return res.status(200).json({ message: 'No questions found', updated: 0 });
+      }
+
+      logger.info(`Found ${snapshot.size} questions`);
+
+      let updatedCount = 0;
+      let alreadyHasCount = 0;
+      const batch = db.batch();
+      let batchCount = 0;
+      const batches = [];
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+
+        if (data.createdAt) {
+          alreadyHasCount++;
+          continue;
+        }
+
+        // Use generatedAt if it exists, otherwise use current timestamp
+        const createdAt = data.generatedAt
+          ? admin.firestore.Timestamp.fromDate(new Date(data.generatedAt))
+          : admin.firestore.FieldValue.serverTimestamp();
+
+        batch.update(doc.ref, { createdAt });
+        updatedCount++;
+        batchCount++;
+
+        // Firestore batch limit is 500, commit every 400 to be safe
+        if (batchCount >= 400) {
+          batches.push(batch.commit());
+          batchCount = 0;
+        }
+      }
+
+      // Commit any remaining updates
+      if (batchCount > 0) {
+        batches.push(batch.commit());
+      }
+
+      await Promise.all(batches);
+
+      logger.info('Finished updating questions', {
+        updated: updatedCount,
+        alreadyHad: alreadyHasCount,
+        total: snapshot.size
+      });
+
+      res.status(200).json({
+        message: 'Questions updated successfully',
+        updated: updatedCount,
+        alreadyHad: alreadyHasCount,
+        total: snapshot.size
+      });
+    } catch (error) {
+      logger.error('Error updating questions', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to update questions',
+        message: error.message
       });
     }
   });

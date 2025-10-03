@@ -26,7 +26,7 @@ const Header = ({ title = 'RouteQuest' }) => {
   // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
     // Prenumerera på meddelanden i realtid
     const unsubscribe = messageService.subscribeToMessages(userId, deviceId, (messages) => {
@@ -167,6 +167,12 @@ const Header = ({ title = 'RouteQuest' }) => {
                     <>
                       <div className="my-2 border-t border-slate-700" />
                       <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/notifications'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Systemnotiser
+                      </button>
+                      <button
                         onClick={() => { setIsMenuOpen(false); navigate('/superuser/all-runs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
@@ -196,6 +202,35 @@ const Header = ({ title = 'RouteQuest' }) => {
                       >
                         Meddelanden
                       </button>
+
+                      {/* Developer Tools - Endast localhost */}
+                      {window.location.hostname === 'localhost' && (
+                        <>
+                          <div className="my-2 border-t border-slate-700" />
+                          <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                            DEVELOPER TOOLS
+                          </div>
+                          <button
+                            onClick={async () => {
+                              setIsMenuOpen(false);
+                              if (window.confirm('Uppdatera alla frågor med createdAt-fält?\n\nDetta kan ta några sekunder.')) {
+                                try {
+                                  const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt');
+                                  const data = await response.json();
+                                  alert(`✅ Klart!\n\nUppdaterade: ${data.updated}\nHade redan: ${data.alreadyHad}\nTotalt: ${data.total}`);
+                                  // Ladda om sidan för att visa uppdaterade datum
+                                  window.location.reload();
+                                } catch (error) {
+                                  alert(`❌ Fel: ${error.message}`);
+                                }
+                              }
+                            }}
+                            className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-yellow-300 text-sm"
+                          >
+                            🔧 Update Questions createdAt
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
 

@@ -10,18 +10,18 @@ const db = getFirebaseDb();
  * Skicka meddelande från admin
  * @param {Object} messageData - Meddelandedata
  * @param {string} messageData.title - Rubrik
- * @param {string} messageData.body - Meddelandetext
- * @param {string} messageData.type - info, warning, success, error
- * @param {string} messageData.targetType - all, user, device
- * @param {string} messageData.targetId - användar-ID eller device-ID (om targetType inte är all)
- * @param {string} adminId - ID på admin som skickar
+ * @param {string} messageData.message - Meddelandetext
+ * @param {string} messageData.type - info, warning, success, error, system
+ * @param {string} messageData.userId - Användar-ID (optional)
+ * @param {string} messageData.deviceId - Device-ID (optional)
+ * @param {string} messageData.adminId - ID på admin som skickar
+ * @param {Object} messageData.metadata - Extra metadata (optional)
  * @returns {Promise<string>} Meddelande-ID
  */
-export const sendMessage = async (messageData, adminId) => {
+export const sendMessage = async (messageData) => {
   try {
     const message = {
       ...messageData,
-      adminId,
       createdAt: serverTimestamp(),
       read: false,
       deleted: false
@@ -46,23 +46,12 @@ export const getMessages = async (userId = null, deviceId = null) => {
     const messagesRef = collection(db, 'messages');
     let queries = [];
 
-    // Hämta meddelanden till alla
-    queries.push(
-      getDocs(query(
-        messagesRef,
-        where('targetType', '==', 'all'),
-        where('deleted', '==', false),
-        orderBy('createdAt', 'desc')
-      ))
-    );
-
     // Hämta användarspecifika meddelanden
     if (userId) {
       queries.push(
         getDocs(query(
           messagesRef,
-          where('targetType', '==', 'user'),
-          where('targetId', '==', userId),
+          where('userId', '==', userId),
           where('deleted', '==', false),
           orderBy('createdAt', 'desc')
         ))
@@ -74,8 +63,7 @@ export const getMessages = async (userId = null, deviceId = null) => {
       queries.push(
         getDocs(query(
           messagesRef,
-          where('targetType', '==', 'device'),
-          where('targetId', '==', deviceId),
+          where('deviceId', '==', deviceId),
           where('deleted', '==', false),
           orderBy('createdAt', 'desc')
         ))
@@ -133,38 +121,12 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
     callback(messages);
   };
 
-  // Lyssna på meddelanden till alla
-  const unsubAll = onSnapshot(
-    query(
-      messagesRef,
-      where('targetType', '==', 'all'),
-      where('deleted', '==', false),
-      orderBy('createdAt', 'desc')
-    ),
-    (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        const message = { id: change.doc.id, ...change.doc.data() };
-        if (change.type === 'removed' || message.deleted) {
-          messagesMap.delete(change.doc.id);
-        } else {
-          messagesMap.set(change.doc.id, message);
-        }
-      });
-      updateMessages();
-    },
-    (error) => {
-      console.error('Error in messages subscription:', error);
-    }
-  );
-  unsubscribers.push(unsubAll);
-
   // Lyssna på användarspecifika meddelanden
   if (userId) {
     const unsubUser = onSnapshot(
       query(
         messagesRef,
-        where('targetType', '==', 'user'),
-        where('targetId', '==', userId),
+        where('userId', '==', userId),
         where('deleted', '==', false),
         orderBy('createdAt', 'desc')
       ),
@@ -191,8 +153,7 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
     const unsubDevice = onSnapshot(
       query(
         messagesRef,
-        where('targetType', '==', 'device'),
-        where('targetId', '==', deviceId),
+        where('deviceId', '==', deviceId),
         where('deleted', '==', false),
         orderBy('createdAt', 'desc')
       ),
