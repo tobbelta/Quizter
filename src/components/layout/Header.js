@@ -60,8 +60,8 @@ const Header = ({ title = 'RouteQuest' }) => {
   return (
     <>
     <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
-      {/* Service Status Banner - visas endast för inloggade */}
-      {isAuthenticated && <ServiceStatusBanner />}
+      {/* Service Status Banner - visas endast för SuperUser */}
+      {isSuperUser && <ServiceStatusBanner />}
 
       <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
         {/* Vänster: Logotyp */}
@@ -128,8 +128,8 @@ const Header = ({ title = 'RouteQuest' }) => {
 
         {/* Meny */}
         <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] overflow-hidden">
-                {/* Användarinfo */}
-                {isAuthenticated && (
+                {/* Användarinfo - visa bara för riktigt inloggade */}
+                {isAuthenticated && !currentUser?.isAnonymous && (
                   <div className="px-4 py-3 border-b border-slate-700">
                     <p className="text-sm text-gray-400">Inloggad som</p>
                     <p className="font-semibold text-gray-200">{currentUser?.name}</p>
@@ -138,6 +138,13 @@ const Header = ({ title = 'RouteQuest' }) => {
                         SuperUser
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Gäststatus - visa bara för anonyma */}
+                {isAuthenticated && currentUser?.isAnonymous && (
+                  <div className="px-4 py-3 border-b border-slate-700">
+                    <p className="text-sm text-gray-400">Gäst (ej inloggad)</p>
                   </div>
                 )}
 
@@ -252,7 +259,7 @@ const Header = ({ title = 'RouteQuest' }) => {
 
                   {/* Login/Logout */}
                   <div className="my-2 border-t border-slate-700" />
-                  {isAuthenticated ? (
+                  {isAuthenticated && !currentUser?.isAnonymous ? (
                     <button
                       onClick={handleLogout}
                       className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
