@@ -1,5 +1,5 @@
 /**
- * Cloud Functions-skelett för tipspromenadens backend-endpoints.
+ * Cloud Functions-skelett f├╢r tipspromenadens backend-endpoints.
  */
 const {onRequest} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
@@ -7,14 +7,14 @@ const {defineString, defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
-// CORS-konfiguration för att tillåta routequest.se och andra domäner
+// CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
   origin: [
     "https://routequest.se",
     "https://www.routequest.se",
     "https://geoquest2-7e45c.firebaseapp.com",
     "https://geoquest2-7e45c.web.app",
-    "http://localhost:3000" // För lokal utveckling
+    "http://localhost:3000" // F├╢r lokal utveckling
   ],
   credentials: true
 });
@@ -81,7 +81,7 @@ exports.joinRun = createHttpsHandler(async (req, res) => {
 });
 
 exports.submitAnswer = createHttpsHandler(async (req, res) => {
-  // TODO: Uppdatera deltagarens svar och poäng.
+  // TODO: Uppdatera deltagarens svar och po├ñng.
   if (!ensurePost(req, res)) {
     return;
   }
@@ -91,7 +91,7 @@ exports.submitAnswer = createHttpsHandler(async (req, res) => {
 });
 
 exports.closeRun = createHttpsHandler(async (req, res) => {
-  // TODO: Stäng rundan och skriv closedAt i Firestore.
+  // TODO: St├ñng rundan och skriv closedAt i Firestore.
   if (!ensurePost(req, res)) {
     return;
   }
@@ -101,7 +101,7 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
 });
 
 /**
- * Hämta AI-status (krediter och tillgänglighet för alla providers)
+ * H├ñmta AI-status (krediter och tillg├ñnglighet f├╢r alla providers)
  */
 exports.getAIStatus = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
@@ -157,12 +157,12 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
         }
       }
 
-      // Testa Gemini - lista tillgängliga modeller först
+      // Testa Gemini - lista tillg├ñngliga modeller f├╢rst
       const geminiKey = geminiApiKey.value();
       if (geminiKey) {
         providers.gemini.configured = true;
         try {
-          // Lista tillgängliga modeller
+          // Lista tillg├ñngliga modeller
           const listResponse = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`
           );
@@ -171,7 +171,7 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
             const modelData = await listResponse.json();
             const availableModels = modelData.models || [];
 
-            // Hitta första modellen som stöder generateContent
+            // Hitta f├╢rsta modellen som st├╢der generateContent
             const compatibleModel = availableModels.find(m =>
               m.supportedGenerationMethods?.includes('generateContent')
             );
@@ -193,21 +193,21 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
         }
       }
 
-      // Bestäm vilken provider som kommer användas (prioritetsordning)
+      // Best├ñm vilken provider som kommer anv├ñndas (prioritetsordning)
       let primaryProvider = null;
-      let message = "Ingen AI-tjänst konfigurerad";
+      let message = "Ingen AI-tj├ñnst konfigurerad";
 
       if (providers.anthropic.available) {
         primaryProvider = 'anthropic';
-        message = `AI-generering tillgänglig (Anthropic Claude)`;
+        message = `AI-generering tillg├ñnglig (Anthropic Claude)`;
       } else if (providers.openai.available) {
         primaryProvider = 'openai';
-        message = `AI-generering tillgänglig (OpenAI fallback)`;
+        message = `AI-generering tillg├ñnglig (OpenAI fallback)`;
       } else if (providers.gemini.available) {
         primaryProvider = 'gemini';
-        message = `AI-generering tillgänglig (Gemini fallback)`;
+        message = `AI-generering tillg├ñnglig (Gemini fallback)`;
       } else if (providers.anthropic.configured || providers.openai.configured || providers.gemini.configured) {
-        message = "Alla AI-tjänster ej tillgängliga - kontrollera API-nycklar";
+        message = "Alla AI-tj├ñnster ej tillg├ñngliga - kontrollera API-nycklar";
       }
 
       res.status(200).json({
@@ -228,8 +228,8 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
 });
 
 /**
- * Generera frågor manuellt med AI (HTTP endpoint)
- * Använder Anthropic Claude som primär, OpenAI som andra fallback, Gemini som tredje fallback
+ * Generera fr├Ñgor manuellt med AI (HTTP endpoint)
+ * Anv├ñnder Anthropic Claude som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
  */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
@@ -251,7 +251,7 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
       let questions = null;
       let usedProvider = null;
 
-      // Använd den valda providern
+      // Anv├ñnd den valda providern
       if (provider === 'gemini') {
         const geminiKey = geminiApiKey.value();
         if (geminiKey) {
@@ -310,7 +310,7 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        // Lägg till createdAt om det inte finns
+        // L├ñgg till createdAt om det inte finns
         const questionData = {
           ...question,
           createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
@@ -344,8 +344,8 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   });
 });
 
-// Schemalagd funktion som ska hämta fler frågor löpande med AI.
-// Använder Anthropic som primär, OpenAI som andra fallback, Gemini som tredje fallback
+// Schemalagd funktion som ska h├ñmta fler fr├Ñgor l├╢pande med AI.
+// Anv├ñnder Anthropic som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
 exports.questionImport = onSchedule(
   {
     schedule: "every 6 hours",
@@ -359,7 +359,7 @@ exports.questionImport = onSchedule(
       let questions = null;
       let usedProvider = null;
 
-      // Försök med Anthropic först
+      // F├╢rs├╢k med Anthropic f├╢rst
       const anthropicKey = anthropicApiKey.value();
       if (anthropicKey) {
         try {
@@ -411,7 +411,7 @@ exports.questionImport = onSchedule(
 
       questions.forEach(question => {
         const docRef = db.collection('questions').doc(question.id);
-        // Lägg till createdAt om det inte finns
+        // L├ñgg till createdAt om det inte finns
         const questionData = {
           ...question,
           createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
@@ -432,8 +432,8 @@ exports.questionImport = onSchedule(
         const notificationRef = db.collection('notifications').doc();
         await notificationRef.set({
           type: 'question_import',
-          title: 'Automatisk frågegenerering slutförd',
-          message: `${questions.length} nya frågor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
+          title: 'Automatisk fr├Ñgegenerering slutf├╢rd',
+          message: `${questions.length} nya fr├Ñgor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
           data: {
             count: questions.length,
             provider: usedProvider,
@@ -462,8 +462,8 @@ exports.questionImport = onSchedule(
         const notificationRef = db.collection('notifications').doc();
         await notificationRef.set({
           type: 'question_import_error',
-          title: 'Automatisk frågegenerering misslyckades',
-          message: `Kunde inte generera frågor: ${error.message}`,
+          title: 'Automatisk fr├Ñgegenerering misslyckades',
+          message: `Kunde inte generera fr├Ñgor: ${error.message}`,
           data: {
             error: error.message,
             timestamp: new Date().toISOString()
@@ -503,12 +503,12 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
 
       if (amount < 100 || amount > 100000) {
         res.status(400).json({
-          error: "Amount must be between 100 and 100000 öre (1-1000 kr)",
+          error: "Amount must be between 100 and 100000 ├╢re (1-1000 kr)",
         });
         return;
       }
 
-      // Hämta Stripe secret key från environment
+      // H├ñmta Stripe secret key fr├Ñn environment
       const secretKey = stripeSecretKey.value();
       if (!secretKey) {
         logger.error("Stripe secret key not configured");
@@ -546,11 +546,159 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
         payment_intent_id: paymentIntent.id,
       });
     } catch (error) {
-      logger.error("Error creating PaymentIntent", { error: error.message });
+      const stripeMessage = error?.raw?.message || error?.message;
+
+      const errorInfo = {
+        message: stripeMessage,
+        code: error?.code,
+        type: error?.type,
+        statusCode: error?.statusCode,
+        requestId: error?.requestId
+      };
+
+      logger.error("Error creating PaymentIntent", errorInfo);
+
+      const isAuthError = error?.code === 'api_key_expired'
+        || error?.code === 'authentication_error'
+        || error?.type === 'StripeAuthenticationError'
+        || error?.statusCode === 401;
+      const isConnectionError = error?.code === 'api_connection_error'
+        || error?.type === 'StripeAPIError'
+        || error?.type === 'StripeConnectionError';
+      const isRateLimited = error?.code === 'rate_limit_error'
+        || error?.type === 'StripeRateLimitError'
+        || error?.statusCode === 429;
+
+      let status = 500;
+      let errorCode = 'PAYMENT_INTENT_FAILED';
+      let clientMessage = 'Failed to create payment';
+      let retryable = true;
+
+      if (isAuthError) {
+        errorCode = 'STRIPE_AUTH_ERROR';
+        clientMessage = 'Betalningssystemet behöver uppdateras. Kontakta administratören.';
+        retryable = false;
+      } else if (isConnectionError) {
+        errorCode = 'STRIPE_UNAVAILABLE';
+        clientMessage = 'Stripe svarar inte just nu. Försök igen om en liten stund.';
+        status = 503;
+      } else if (isRateLimited) {
+        errorCode = 'STRIPE_RATE_LIMIT';
+        clientMessage = 'För många betalningsförsök på kort tid. Vänta och prova igen.';
+        status = 429;
+      }
+
+      const responsePayload = {
+        error: clientMessage,
+        errorCode,
+        retryable
+      };
+
+      if (process.env.NODE_ENV !== 'production') {
+        responsePayload.debug = {
+          ...errorInfo,
+          rawMessage: stripeMessage
+        };
+      }
+
+      res.status(status).json(responsePayload);
+    }
+  });
+});
+
+/**
+ * Stripe status health-check.
+ * Returnerar kontoinformation och om nyckeln är giltig utan att skapa en betalning.
+ */
+exports.getStripeStatus = createHttpsHandler(async (req, res) => {
+  return cors(req, res, async () => {
+    if (req.method !== "GET") {
+      res.set("Allow", "GET");
+      res.status(405).json({ error: "Method Not Allowed" });
+      return;
+    }
+
+    const secretKey = stripeSecretKey.value();
+    if (!secretKey) {
+      logger.error("Stripe secret key not configured for status check");
       res.status(500).json({
-        error: "Failed to create payment",
-        message: error.message,
+        success: false,
+        error: "Payment system not configured",
+        errorCode: "STRIPE_KEY_MISSING"
       });
+      return;
+    }
+
+    try {
+      const stripe = require("stripe")(secretKey);
+      const account = await stripe.accounts.retrieve();
+
+      res.status(200).json({
+        success: true,
+        accountId: account.id,
+        livemode: account.livemode,
+        defaultCurrency: account.default_currency,
+        payoutsEnabled: account.payouts_enabled
+      });
+    } catch (error) {
+      const stripeMessage = error?.raw?.message || error?.message;
+
+      const errorInfo = {
+        message: stripeMessage,
+        code: error?.code,
+        type: error?.type,
+        statusCode: error?.statusCode,
+        requestId: error?.requestId
+      };
+
+      logger.error("Stripe status check failed", errorInfo);
+
+      const isAuthError = error?.code === 'api_key_expired'
+        || error?.code === 'authentication_error'
+        || error?.type === 'StripeAuthenticationError'
+        || error?.statusCode === 401;
+      const isConnectionError = error?.code === 'api_connection_error'
+        || error?.type === 'StripeAPIError'
+        || error?.type === 'StripeConnectionError';
+      const isRateLimited = error?.code === 'rate_limit_error'
+        || error?.type === 'StripeRateLimitError'
+        || error?.statusCode === 429;
+
+      let status = 500;
+      let errorCode = 'STRIPE_UNAVAILABLE';
+      let clientMessage = 'Kunde inte nå Stripe just nu. Försök igen senare.';
+      let retryable = true;
+
+      if (isAuthError) {
+        status = 500;
+        errorCode = 'STRIPE_AUTH_ERROR';
+        clientMessage = 'Stripe-nyckeln är ogiltig eller har gått ut.';
+        retryable = false;
+      } else if (isConnectionError) {
+        status = 503;
+        errorCode = 'STRIPE_UNAVAILABLE';
+        clientMessage = 'Kunde inte nå Stripe just nu. Försök igen senare.';
+      } else if (isRateLimited) {
+        status = 429;
+        errorCode = 'STRIPE_RATE_LIMIT';
+        clientMessage = 'Stripe begränsar förfrågningarna just nu. Vänta och försök igen.';
+      }
+
+      const payload = {
+        success: false,
+        error: clientMessage,
+        errorCode,
+        retryable
+      };
+
+      if (process.env.NODE_ENV !== 'production') {
+        payload.debug = {
+          ...errorInfo,
+          rawMessage: stripeMessage
+        };
+      }
+
+      res.status(status).json(payload);
     }
   });
 });
@@ -559,6 +707,7 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
  * One-time function to update all existing questions with createdAt field
  * Call this once: https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt
  */
+
 exports.updateQuestionsCreatedAt = onRequest({
   region: "europe-west1",
   timeoutSeconds: 300, // 5 minutes

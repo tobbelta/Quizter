@@ -12,6 +12,7 @@ import { messageService } from '../../services/messageService';
 import { analyticsService } from '../../services/analyticsService';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
+import ServiceStatusBanner from '../shared/ServiceStatusBanner';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
@@ -21,9 +22,7 @@ const Header = ({ title = 'RouteQuest' }) => {
   const [showMessages, setShowMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
-  console.log('Header isSuperUser:', isSuperUser);
-
-  // Lyssna på olästa meddelanden i realtid
+    // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
     const deviceId = analyticsService.getDeviceId();
     const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
@@ -60,8 +59,11 @@ const Header = ({ title = 'RouteQuest' }) => {
 
   return (
     <>
-    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50 safe-area-inset">
-      <div className="w-full px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
+    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
+      {/* Service Status Banner - visas endast för inloggade */}
+      {isAuthenticated && <ServiceStatusBanner />}
+
+      <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
         {/* Vänster: Logotyp */}
         <button
           onClick={() => navigate('/')}
@@ -76,7 +78,7 @@ const Header = ({ title = 'RouteQuest' }) => {
 
         {/* Mitten: Dynamisk titel */}
         <div className="text-center px-2 flex items-center justify-center overflow-hidden">
-          <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
+          <h1 className="text-base sm:text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
             {title}
           </h1>
           {isSuperUser && (
@@ -110,17 +112,22 @@ const Header = ({ title = 'RouteQuest' }) => {
             ) : null}
           </button>
 
-          {/* Dropdown-meny */}
-          {isMenuOpen && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setIsMenuOpen(false)}
-              />
+          {/* Meny trigger placeholder */}
+        </div>
+      </div>
+    </header>
 
-              {/* Meny */}
-              <div className="absolute right-0 mt-2 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-50 overflow-hidden">
+    {/* Dropdown-meny - utanför header */}
+    {isMenuOpen && (
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-[60]"
+          onClick={() => setIsMenuOpen(false)}
+        />
+
+        {/* Meny */}
+        <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] overflow-hidden">
                 {/* Användarinfo */}
                 {isAuthenticated && (
                   <div className="px-4 py-3 border-b border-slate-700">
@@ -138,7 +145,7 @@ const Header = ({ title = 'RouteQuest' }) => {
                 <div className="py-2">
                   {/* Meddelanden */}
                   <button
-                    onClick={() => { setShowMessages(!showMessages); }}
+                    onClick={() => { setIsMenuOpen(false); setShowMessages(!showMessages); }}
                     className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
                   >
                     <span className="text-gray-200">Meddelanden</span>
@@ -261,12 +268,9 @@ const Header = ({ title = 'RouteQuest' }) => {
                     </button>
                   )}
                 </div>
-              </div>
-            </>
-          )}
         </div>
-      </div>
-    </header>
+      </>
+    )}
 
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
@@ -276,11 +280,11 @@ const Header = ({ title = 'RouteQuest' }) => {
       <>
         {/* Backdrop */}
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-[60]"
           onClick={() => setShowMessages(false)}
         />
         {/* Dropdown positioned near hamburger menu */}
-        <div className="fixed top-16 right-4 z-50">
+        <div className="fixed top-16 right-4 z-[70]">
           <MessagesDropdown
             isOpen={showMessages}
             onClose={() => setShowMessages(false)}

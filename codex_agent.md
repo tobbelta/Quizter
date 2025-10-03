@@ -78,3 +78,9 @@ Files Possibly Removable (validate first)
 
 Follow-ups
 - If you want, I can produce a concrete deletion PR after confirming which platform targets and features you want to keep.
+Stripe Drift & Nyckelrotation
+- Prodhemlighet: `STRIPE_SECRET_KEY` (Firebase Functions Secret). Rotera via `firebase functions:secrets:set STRIPE_SECRET_KEY --project geoquest2-7e45c` och därefter `firebase deploy --only functions`.
+- Klientnyckel: `REACT_APP_STRIPE_PUBLISHABLE_KEY` i webbbygget. Uppdatera `.env` / CI-variabler och bygg om (`npm run build`).
+- Hälsokontroll: `https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getStripeStatus` (GET). Returnerar konto-ID, läge (live/test) och felkod (`STRIPE_AUTH_ERROR`, `STRIPE_UNAVAILABLE`, `STRIPE_KEY_MISSING`).
+- Felhantering: `createPaymentIntent` svarar nu med `errorCode` (`STRIPE_AUTH_ERROR`, `STRIPE_UNAVAILABLE`, `STRIPE_RATE_LIMIT`, `PAYMENT_INTENT_FAILED`) och `retryable` flagga. I produktion loggas full Stripe-information men klienten får svensk text.
+- Vid `STRIPE_AUTH_ERROR`: rotera båda nycklarna och kör hälsokontrollen tills svaret är `success: true`.

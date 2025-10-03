@@ -53,8 +53,8 @@ const TestModePaymentForm = ({ runName, amount, onSuccess, onCancel, allowSkip =
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[1100]">
-      <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
+    <div className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-600 bg-slate-900 p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">
             Stöd projektet (valfritt)
@@ -210,8 +210,8 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[1100]">
-      <div className="bg-slate-900 rounded-xl border border-slate-600 p-6 max-w-md w-full">
+    <div className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-600 bg-slate-900 p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="mb-6">
           <h2 className="text-xl font-semibold text-white mb-2">
             Stöd projektet (valfritt)
