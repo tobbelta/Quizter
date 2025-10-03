@@ -2,25 +2,23 @@
 
 Detta är en guide för att konfigurera ditt GitHub-repository så att det automatiskt bygger och publicerar din GeoQuest-app till Firebase varje gång du gör en ändring i `main`-branchen.
 
-Processen använder GitHub Actions och filen `.github/workflows/deploy.yml` som nu finns i ditt projekt.
+## Processen i Två Delar
 
-## Förutsättningar
-
-- Du har ett Firebase-projekt.
-- Du har ett GitHub-repository för ditt projekt.
+1.  **Spara hemligheter:** Du behöver spara olika hemligheter på två ställen: **GitHub Secrets** (för att den automatiska processen ska kunna köra) och **Google Secret Manager** (där dina funktioner hämtar API-nycklar i produktion).
+2.  **Automatisk Deployment:** När hemligheterna är sparade kommer `deploy.yml`-filen i ditt projekt att automatiskt driftsätta ny kod som pushas till `main`.
 
 ---
 
-### Steg 1: Lägg till Secrets på GitHub
+### Steg 1: Spara Hemligheter för GitHub Actions
 
-Hemligheter (Secrets) är ett säkert sätt att lagra känslig information (som dina API-nycklar och konfigurationer) i ditt GitHub-repository utan att de syns i koden. Flödet i `deploy.yml` är beroende av dessa.
+Dessa hemligheter behövs för att GitHub ska kunna autentisera mot Google Cloud och bygga din React-app.
 
 1.  **Gå till ditt repository på GitHub.com.**
 2.  Klicka på fliken **Settings**.
 3.  I menyn till vänster, navigera till **Secrets and variables > Actions**.
-4.  Klicka på knappen **New repository secret** för varje hemlighet nedan.
+4.  Klicka på **New repository secret** för varje hemlighet nedan.
 
-Du ska nu skapa **fem** hemligheter:
+**Du ska skapa TRE hemligheter här:**
 
 **1. Firebase Service Account**
 - **Namn:** `FIREBASE_SERVICE_ACCOUNT_GEOQUEST2`
@@ -40,26 +38,63 @@ Du ska nu skapa **fem** hemligheter:
     3. Välj "Config" för att se din `firebaseConfig`-variabel.
     4. Kopiera **hela JavaScript-objektet** (från `{` till `}`).
 
-**3. Gemini API-nyckel**
-- **Namn:** `GEMINI_API_KEY`
-- **Värde:** Din API-nyckel för Google AI / Gemini.
-
-**4. OpenAI API-nyckel**
-- **Namn:** `OPENAI_API_KEY`
-- **Värde:** Din API-nyckel för OpenAI.
-
-**5. Anthropic API-nyckel**
-- **Namn:** `ANTHROPIC_API_KEY`
-- **Värde:** Din API-nyckel för Anthropic.
+**3. OpenRouteService API-nyckel**
+- **Namn:** `REACT_APP_OPENROUTE_API_KEY`
+- **Värde:** Din API-nyckel från [OpenRouteService](https://openrouteservice.org/). Du hittar den i din lokala `.env`-fil.
 
 ---
 
-### Steg 2: Verifiera och Pusha
+### Steg 2: Spara API-nycklar i Google Secret Manager (Engångsåtgärd)
 
-Nu när du har den nya `deploy.yml`-filen och har lagt till alla hemligheter på GitHub är allt klart.
+Dina funktioner är konfigurerade för att säkert hämta API-nycklar från Google Secret Manager. Du behöver bara ladda upp dem dit **en enda gång** från din lokala terminal.
 
-1.  **Committa och pusha** ändringarna till din `main`-branch. Detta laddar upp `deploy.yml`-filen och aktiverar den automatiska processen.
+Öppna en terminal i projektmappen `c:\Geo\geoquest2` och kör följande kommandon. Ersätt `<DIN_NYCKEL_HÄR>` med dina faktiska API-nycklar.
+
+**VIKTIGT: Undvik att spara dessa kommandon i din terminalhistorik eller i ett skript, då det exponerar din hemlighet.**
+
+**1. Sätt Gemini API-nyckel:**
+```shell
+echo "<DIN_GEMINI_NYCKEL_HÄR>" | firebase functions:secrets:set GEMINI_API_KEY --project geoquest2-7e45c
+```
+
+**2. Sätt OpenAI API-nyckel:**
+```shell
+echo "<DIN_OPENAI_NYCKEL_HÄR>" | firebase functions:secrets:set OPENAI_API_KEY --project geoquest2-7e45c
+```
+
+**3. Sätt Anthropic API-nyckel:**
+```shell
+echo "<DIN_ANTHROPIC_NYCKEL_HÄR>" | firebase functions:secrets:set ANTHROPIC_API_KEY --project geoquest2-7e45c
+```
+
+**4. Sätt Stripe API-nyckel:**
+```shell
+echo "<DIN_STRIPE_NYCKEL_HÄR>" | firebase functions:secrets:set STRIPE_SECRET_KEY --project geoquest2-7e45c
+```
+
+---
 
 ### Steg 3: Klart!
 
-Nästa gång du pushar en ändring till `main` kommer GitHub automatiskt att starta bygg- och deployment-processen. Du kan följa förloppet under "Actions"-fliken i ditt GitHub-repository. Efter några minuter kommer din live-app att vara uppdaterad!
+Nu är allt korrekt konfigurerat. När du committar och pushar den uppdaterade `deploy.yml` och denna guide till `main`-branchen, kommer den automatiska deploymenten att fungera.
+
+---
+
+### Valfritt: Manuell Deployment
+
+Om du snabbt vill driftsätta ändringar utan att gå via GitHub kan du använda följande kommandon från din lokala terminal.
+
+**Driftsätt allt (både frontend och backend):**
+```shell
+npm run build && firebase deploy --project geoquest2-7e45c
+```
+
+**Driftsätt ENDAST funktioner (backend):**
+Om du bara har gjort ändringar i `functions`-mappen kan du köra detta kommando för en snabbare uppdatering av din backend-logik.
+```shell
+firebase deploy --only functions --project geoquest2-7e45c
+```
+
+**Anpassa automatisk deployment:**
+Om du vill att den automatiska processen på GitHub *endast* ska driftsätta funktioner, kan du ändra det sista steget i `.github/workflows/deploy.yml` till:
+`firebase deploy --project geoquest2-7e45c --only functions`
