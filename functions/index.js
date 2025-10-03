@@ -20,7 +20,7 @@ const cors = require("cors")({
 });
 
 // Define Stripe secret key parameter
-const stripeSecretKey = defineString("STRIPE_SECRET_KEY");
+const stripeSecretKey = defineSecret("STRIPE_SECRET_KEY");
 // Define AI API keys as secrets
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 const openaiApiKey = defineSecret("OPENAI_API_KEY");
@@ -35,7 +35,7 @@ const runtimeDefaults = {
   region: REGION,
   memory: "512MB",
   timeoutSeconds: 60,
-  secrets: [anthropicApiKey, openaiApiKey, geminiApiKey]
+  secrets: [anthropicApiKey, openaiApiKey, geminiApiKey, stripeSecretKey]
 };
 
 const createHttpsHandler = (handler) =>

@@ -25,7 +25,9 @@ jobs:
         run: npm install
 
       - name: Create .env file for React App
-        run: echo "${{ secrets.REACT_APP_FIREBASE_CONFIG }}" > .env
+        run: |
+          echo "${{ secrets.REACT_APP_FIREBASE_CONFIG }}" > .env
+          echo "REACT_APP_OPENROUTE_API_KEY=${{ secrets.REACT_APP_OPENROUTE_API_KEY }}" >> .env
 
       - name: Build React App
         run: npm run build
@@ -38,4 +40,4 @@ jobs:
       - name: Deploy to Firebase
         run: |
           npm install -g firebase-tools
-          firebase deploy --project geoquest2-7e45c --only hosting,functions --set-secrets "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+          firebase deploy --project geoquest2-7e45c --only hosting,functions
