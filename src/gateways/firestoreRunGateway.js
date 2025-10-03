@@ -263,7 +263,9 @@ export const firestoreRunGateway = {
 
   /** Registrerar en ny deltagare i Firestore. */
   async registerParticipant(runId, { userId, alias, contact, isAnonymous }) {
-    const now = new Date().toISOString();
+    console.log('🔧 registerParticipant v2.0 - UPDATED VERSION');
+    console.log('registerParticipant called with:', { runId, userId, alias, contact, isAnonymous });
+
     const participant = {
       id: uuidv4(),
       runId,
@@ -271,15 +273,36 @@ export const firestoreRunGateway = {
       alias: alias || 'Gäst',
       contact: contact || null,
       isAnonymous: Boolean(isAnonymous),
-      joinedAt: now,
+      joinedAt: serverTimestamp(),  // Använd Firestore serverTimestamp
       completedAt: null,
       currentOrder: 1,
       score: 0,
       answers: [],
-      lastSeen: now
+      lastSeen: serverTimestamp()   // Använd Firestore serverTimestamp
     };
-    await setDoc(doc(hämtaDeltagarCollection(runId), participant.id), serialiseraFörFirestore(participant));
-    return beräknaDeltagarStatus(participant);
+
+    console.log('Participant object to write:', {
+      ...participant,
+      joinedAt: 'serverTimestamp()',
+      lastSeen: 'serverTimestamp()'
+    });
+
+    try {
+      await setDoc(doc(hämtaDeltagarCollection(runId), participant.id), participant);
+      console.log('✅ Participant created successfully!');
+    } catch (error) {
+      console.error('❌ Failed to create participant:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      throw error;
+    }
+
+    // Returnera med ISO timestamps för frontend
+    return beräknaDeltagarStatus({
+      ...participant,
+      joinedAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString()
+    });
   },
 
   /** Sparar ett svar och håller ordning på poäng i Firestore. */

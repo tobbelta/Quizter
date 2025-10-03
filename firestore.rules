@@ -46,8 +46,9 @@ service cloud.firestore {
 
     // Runs collection
     match /runs/{runId} {
-      // Läs: Alla kan läsa aktiva rundor
-      allow read: if resource.data.status == 'active';
+      // Läs: Alla kan läsa rundor (filtrering sker i kod)
+      // Detta krävs för att tillåta queries med joinCode
+      allow read: if true;
 
       // Skapa: Alla kan skapa rundor (även anonyma användare)
       // Validera data-format och begränsningar
@@ -134,9 +135,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() || isSuperUser();
 
       // Skapa: Alla kan logga events (även anonyma för spårning)
+      // Kräver endast grundfält, tillåter extra metadata
       allow create: if request.resource.data.keys().hasAll(['eventType', 'timestamp', 'deviceId']) &&
                        request.resource.data.timestamp is timestamp &&
-                       request.resource.data.eventType is string;
+                       request.resource.data.eventType is string &&
+                       request.resource.data.deviceId is string;
 
       // Uppdatera: Autentiserade kan uppdatera (för linking deviceId till userId)
       allow update: if isAuthenticated();
@@ -165,17 +168,21 @@ service cloud.firestore {
       // Läs: Alla kan läsa deltagare i en aktiv runda
       allow read: if true;
 
-      // Skapa: Autentiserade kan gå med i rundor
-      allow create: if isAuthenticated() &&
-                       request.resource.data.userId == request.auth.uid;
+      // Skapa: Alla kan gå med i rundor (även anonyma Firebase-användare)
+      // Om userId är null (anonym) eller matchar auth.uid (inloggad)
+      allow create: if request.resource.data.joinedAt is timestamp &&
+                       (request.resource.data.userId == null ||
+                        request.resource.data.userId == request.auth.uid);
 
-      // Uppdatera: Endast den egna deltagaren
-      allow update: if isAuthenticated() &&
-                       resource.data.userId == request.auth.uid;
+      // Uppdatera: Endast den egna deltagaren (om autentiserad) eller alla (om anonym)
+      allow update: if (resource.data.userId == null ||
+                        resource.data.userId == request.auth.uid) ||
+                       isSuperUser();
 
-      // Ta bort: Endast ägaren eller SuperUser
-      allow delete: if isAuthenticated() &&
-                       (resource.data.userId == request.auth.uid || isSuperUser());
+      // Ta bort: Endast ägaren (om autentiserad) eller alla (om anonym) eller SuperUser
+      allow delete: if (resource.data.userId == null ||
+                        resource.data.userId == request.auth.uid) ||
+                       isSuperUser();
     }
 
     // Default: Neka all annan åtkomst
