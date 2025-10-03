@@ -24,6 +24,10 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Install Function Dependencies
+        run: npm install
+        working-directory: ./functions
+
       - name: Create .env file for React App
         run: |
           echo "${{ secrets.REACT_APP_FIREBASE_CONFIG }}" > .env
