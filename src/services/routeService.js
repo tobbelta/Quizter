@@ -2,6 +2,7 @@
  * Tjänst för ruttplanering med OpenRouteService API för gångvägar och stigar.
  * Inkluderar caching för att minska API-anrop och förbättra prestanda.
  */
+import { serviceStatusService } from './serviceStatusService';
 
 // OpenRouteService är gratis men kräver registrering för API-nyckel
 const ORS_API_KEY = process.env.REACT_APP_OPENROUTE_API_KEY;
@@ -314,10 +315,12 @@ const getCompleteWalkingRoute = async (waypoints, lengthMeters = 2000, seed, pre
 
   if (!response.ok) {
     const errorText = await response.text();
+    const errorMessage = `OpenRouteService API fel: ${response.status} - ${errorText}`;
     if (process.env.NODE_ENV !== 'production') {
       console.error('[RouteService] API-fel respons:', errorText);
     }
-    throw new Error(`OpenRouteService API fel: ${response.status} - ${errorText}`);
+    serviceStatusService.reportError('OpenRouteService', errorMessage);
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
