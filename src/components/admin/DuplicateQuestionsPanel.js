@@ -62,6 +62,51 @@ const DuplicateQuestionsPanel = () => {
     }
   };
 
+  const handleAutoCleanDuplicates = async () => {
+    const confirmMessage =
+      `Detta kommer att automatiskt ta bort ${visibleDuplicates.length} dublettfrågor.\n\n` +
+      `För varje par behålls den första frågan och den andra tas bort.\n\n` +
+      `Är du säker på att du vill fortsätta?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setLoading(true);
+    let deletedCount = 0;
+    const errors = [];
+
+    try {
+      // För varje dublett-par, ta bort question2 (behåll question1)
+      for (const dup of visibleDuplicates) {
+        try {
+          console.log(`[AutoClean] Tar bort ${dup.question2.id} (behåller ${dup.question1.id})`);
+          await questionService.delete(dup.question2.id);
+          deletedCount++;
+          setDeletedQuestions(prev => new Set([...prev, dup.question2.id]));
+        } catch (error) {
+          console.error(`[AutoClean] Fel vid borttagning av ${dup.question2.id}:`, error);
+          errors.push(`${dup.question2.id}: ${error.message}`);
+        }
+      }
+
+      // Visa resultat
+      const resultMessage =
+        `✅ Automatisk dublettrensning klar!\n\n` +
+        `Borttagna frågor: ${deletedCount}\n` +
+        (errors.length > 0 ? `Fel: ${errors.length}\n\n${errors.join('\n')}` : '');
+
+      alert(resultMessage);
+
+      // Skanna om
+      setTimeout(scanForDuplicates, 1000);
+    } catch (error) {
+      alert('Fel vid automatisk rensning: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filtrera bort dubletter där en av frågorna redan raderats
   const visibleDuplicates = duplicates.filter(
     dup => !deletedQuestions.has(dup.question1.id) && !deletedQuestions.has(dup.question2.id)
@@ -76,13 +121,24 @@ const DuplicateQuestionsPanel = () => {
             Sök efter liknande frågor i databasen
           </p>
         </div>
-        <button
-          onClick={scanForDuplicates}
-          disabled={loading}
-          className="px-4 py-2 bg-cyan-500 text-black rounded-lg font-semibold hover:bg-cyan-400 disabled:bg-slate-600 disabled:text-gray-400"
-        >
-          {loading ? 'Söker...' : '🔍 Sök dubletter'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={scanForDuplicates}
+            disabled={loading}
+            className="px-4 py-2 bg-cyan-500 text-black rounded-lg font-semibold hover:bg-cyan-400 disabled:bg-slate-600 disabled:text-gray-400"
+          >
+            {loading ? 'Söker...' : '🔍 Sök dubletter'}
+          </button>
+          {visibleDuplicates.length > 0 && (
+            <button
+              onClick={handleAutoCleanDuplicates}
+              disabled={loading}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-400 disabled:bg-slate-600 disabled:text-gray-400"
+            >
+              🧹 Auto-rensa ({visibleDuplicates.length})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Likhetströsk */}
