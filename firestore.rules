@@ -185,6 +185,18 @@ service cloud.firestore {
                        isSuperUser();
     }
 
+    // Error Logs collection
+    match /errorLogs/{logId} {
+      // Läs: Endast SuperUser kan läsa error logs
+      allow read: if isSuperUser();
+
+      // Skapa: Alla kan skapa logs (för error tracking)
+      allow create: if request.resource.data.timestamp is timestamp;
+
+      // Uppdatera/Ta bort: Endast SuperUser
+      allow update, delete: if isSuperUser();
+    }
+
     // Default: Neka all annan åtkomst
     match /{document=**} {
       allow read, write: if false;

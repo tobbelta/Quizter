@@ -262,6 +262,12 @@ const Header = ({ title = 'RouteQuest' }) => {
                       >
                         Meddelanden
                       </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/logs'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        🔴 Error Logs
+                      </button>
 
                       {/* Developer Tools - Endast localhost */}
                       {window.location.hostname === 'localhost' && (

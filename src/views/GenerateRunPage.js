@@ -13,6 +13,7 @@ import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
+import { errorLogService } from '../services/errorLogService';
 import useQRCode from '../hooks/useQRCode';
 import useRunLocation from '../hooks/useRunLocation';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
@@ -42,7 +43,7 @@ const categoryOptions = [
 const GenerateRunPage = () => {
   const { currentUser } = useAuth();
   const { generateRun } = useRun();
-  const { coords } = useRunLocation();
+  const { coords, status: gpsStatus, trackingEnabled } = useRunLocation();
   const [form, setForm] = useState(defaultForm);
   const [error, setError] = useState('');
   const [generatedRun, setGeneratedRun] = useState(null);
@@ -60,6 +61,21 @@ const GenerateRunPage = () => {
   const userPosition = coords && coords.latitude && coords.longitude
     ? { lat: coords.latitude, lng: coords.longitude }
     : null;
+
+  // Logga GPS-status när komponenten laddas
+  React.useEffect(() => {
+    errorLogService.logGPSDebug({
+      message: 'GenerateRunPage loaded',
+      coords: coords ? {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy,
+      } : null,
+      gpsStatus,
+      trackingEnabled,
+      userPosition,
+    });
+  }, [coords, gpsStatus, trackingEnabled, userPosition]);
 
   const handleRegenerate = async () => {
     setError('');
@@ -167,6 +183,26 @@ const GenerateRunPage = () => {
       console.log('🗺️ Genererar runda från position:', originPosition);
       console.log('📍 GPS aktiv:', !!userPosition);
 
+      // Logga ruttgenerering med all GPS-info
+      await errorLogService.logRouteGeneration({
+        message: 'Route generation started',
+        originPosition,
+        hasGPS: !!userPosition,
+        gpsStatus,
+        trackingEnabled,
+        coords: coords ? {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+        } : null,
+        formData: {
+          name: form.name,
+          difficulty: form.difficulty,
+          lengthMeters: form.lengthMeters,
+          questionCount: form.questionCount,
+        },
+      });
+
       const run = await generateRun({
         name: form.name,
         difficulty: form.difficulty,
@@ -189,10 +225,27 @@ const GenerateRunPage = () => {
           categories: form.categories,
           questionCount: form.questionCount,
         });
+
+        // Logga lyckad generering
+        await errorLogService.logInfo('Route generated successfully', {
+          runId: run.id,
+          usedGPS: !!userPosition,
+          originPosition,
+        });
       }
     } catch (generationError) {
       console.error('❌ Fel vid generering:', generationError);
       setError(`Kunde inte generera runda: ${generationError.message}`);
+
+      // Logga fel
+      await errorLogService.logError({
+        type: 'route_generation_failed',
+        message: generationError.message,
+        stack: generationError.stack,
+        gpsStatus,
+        trackingEnabled,
+        userPosition,
+      });
     }
   };
 
