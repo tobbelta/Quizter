@@ -91,8 +91,11 @@ const Header = ({ title = 'RouteQuest' }) => {
 
   return (
     <>
-    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50 safe-area-inset">
-      <div className="w-full px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
+    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
+      {/* Service Status Banner - visas endast för SuperUser */}
+      {isSuperUser && <ServiceStatusBanner />}
+
+      <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
         {/* Vänster: Logotyp med GPS-status */}
         <div className="flex items-center gap-2">
           <button
@@ -116,7 +119,7 @@ const Header = ({ title = 'RouteQuest' }) => {
         {/* Mitten: Dynamisk titel */}
         <div className="text-center px-2 flex flex-col items-center justify-center overflow-hidden">
           <div className="flex items-center">
-            <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
+            <h1 className="text-base sm:text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
               {title}
             </h1>
             {isSuperUser && (
@@ -129,33 +132,6 @@ const Header = ({ title = 'RouteQuest' }) => {
           <span className="text-[10px] text-gray-500 mt-0.5">
             v{VERSION}
           </span>
-    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
-      {/* Service Status Banner - visas endast för SuperUser */}
-      {isSuperUser && <ServiceStatusBanner />}
-
-      <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
-        {/* Vänster: Logotyp */}
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center hover:opacity-80 transition-opacity justify-start"
-        >
-          <img
-            src="/logo-compass.svg"
-            alt="RouteQuest"
-            className="w-10 h-10 flex-shrink-0"
-          />
-        </button>
-
-        {/* Mitten: Dynamisk titel */}
-        <div className="text-center px-2 flex items-center justify-center overflow-hidden">
-          <h1 className="text-base sm:text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
-            {title}
-          </h1>
-          {isSuperUser && (
-            <span className="ml-2 px-2 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-300">
-              SuperUser
-            </span>
-          )}
         </div>
 
         {/* Höger: Hamburger-meny */}
