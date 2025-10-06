@@ -15,16 +15,27 @@ const DuplicateQuestionsPanel = () => {
     try {
       const found = questionService.findDuplicates('sv', threshold / 100);
 
+      console.log('[DuplicateQuestionsPanel] Råa dubletter:', found.map(d => ({
+        pairId: d.pairId,
+        q1: d.question1.id,
+        q2: d.question2.id,
+        text: d.text1.substring(0, 30)
+      })));
+
       // Filtrera bort dubbletter av dubletter (samma pairId)
       const uniqueDuplicates = [];
       const seenPairs = new Set();
 
       for (const dup of found) {
         const pairId = dup.pairId || [dup.question1.id, dup.question2.id].sort().join('-');
-        if (!seenPairs.has(pairId)) {
-          seenPairs.add(pairId);
-          uniqueDuplicates.push(dup);
+
+        if (seenPairs.has(pairId)) {
+          console.warn('[DuplicateQuestionsPanel] Skippar dublett av dublett:', pairId);
+          continue;
         }
+
+        seenPairs.add(pairId);
+        uniqueDuplicates.push(dup);
       }
 
       console.log(`[DuplicateQuestionsPanel] Hittade ${found.length} dubletter, ${uniqueDuplicates.length} unika par`);
@@ -124,9 +135,14 @@ const DuplicateQuestionsPanel = () => {
               <div className="mb-3 pb-3 border-b border-slate-700">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
-                    <div className="text-xs text-gray-400 mb-1">Fråga 1:</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="text-xs text-gray-400">Fråga 1:</div>
+                      <code className="text-xs px-1.5 py-0.5 bg-slate-800 text-cyan-400 rounded font-mono">
+                        {dup.question1.id}
+                      </code>
+                    </div>
                     <div className="text-sm text-white">{dup.text1}</div>
-                    <div className="mt-1 flex gap-2">
+                    <div className="mt-1 flex gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded">
                         {dup.question1.difficulty}
                       </span>
@@ -140,7 +156,7 @@ const DuplicateQuestionsPanel = () => {
                   </div>
                   <button
                     onClick={() => handleDeleteQuestion(dup.question1.id)}
-                    className="ml-4 px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs hover:bg-red-500/30"
+                    className="ml-4 px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs hover:bg-red-500/30 flex-shrink-0"
                   >
                     Ta bort
                   </button>
@@ -151,9 +167,14 @@ const DuplicateQuestionsPanel = () => {
               <div>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="text-xs text-gray-400 mb-1">Fråga 2:</div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="text-xs text-gray-400">Fråga 2:</div>
+                      <code className="text-xs px-1.5 py-0.5 bg-slate-800 text-cyan-400 rounded font-mono">
+                        {dup.question2.id}
+                      </code>
+                    </div>
                     <div className="text-sm text-white">{dup.text2}</div>
-                    <div className="mt-1 flex gap-2">
+                    <div className="mt-1 flex gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded">
                         {dup.question2.difficulty}
                       </span>
@@ -167,7 +188,7 @@ const DuplicateQuestionsPanel = () => {
                   </div>
                   <button
                     onClick={() => handleDeleteQuestion(dup.question2.id)}
-                    className="ml-4 px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs hover:bg-red-500/30"
+                    className="ml-4 px-3 py-1 bg-red-500/20 text-red-300 rounded text-xs hover:bg-red-500/30 flex-shrink-0"
                   >
                     Ta bort
                   </button>
