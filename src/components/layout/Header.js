@@ -10,12 +10,14 @@ import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
 import { messageService } from '../../services/messageService';
 import { analyticsService } from '../../services/analyticsService';
+import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
+  const { status: gpsStatus, coords, trackingEnabled } = useRunLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -58,20 +60,55 @@ const Header = ({ title = 'RouteQuest' }) => {
   const localJoinedCount = !isAuthenticated ? localStorageService.getJoinedRuns().length : 0;
   const hasLocalRuns = localCreatedCount > 0 || localJoinedCount > 0;
 
+  // GPS-status visuella indikatorer
+  const getGPSIndicator = () => {
+    if (!trackingEnabled) {
+      return { color: 'opacity-40', spin: false, title: 'GPS avstängd' };
+    }
+
+    switch (gpsStatus) {
+      case 'idle':
+      case 'pending':
+        return { color: 'opacity-60', spin: true, title: 'Söker GPS...' };
+      case 'active':
+        const accuracy = coords?.accuracy ? Math.round(coords.accuracy) : null;
+        if (accuracy && accuracy < 20) {
+          return { color: 'drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]', spin: false, title: `GPS aktiv (±${accuracy}m)` };
+        } else if (accuracy && accuracy < 50) {
+          return { color: 'drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]', spin: false, title: `GPS aktiv (±${accuracy}m)` };
+        }
+        return { color: 'drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]', spin: false, title: accuracy ? `GPS aktiv (±${accuracy}m)` : 'GPS aktiv' };
+      case 'denied':
+        return { color: 'opacity-40 saturate-0', spin: false, title: 'GPS-åtkomst nekad' };
+      case 'unsupported':
+        return { color: 'opacity-30', spin: false, title: 'GPS stöds ej' };
+      default:
+        return { color: 'opacity-60', spin: false, title: 'GPS ej tillgänglig' };
+    }
+  };
+
+  const gpsIndicator = getGPSIndicator();
+
   return (
     <>
     <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50 safe-area-inset">
       <div className="w-full px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
-        {/* Vänster: Logotyp */}
+        {/* Vänster: Logotyp med GPS-status */}
         <button
           onClick={() => navigate('/')}
-          className="flex items-center hover:opacity-80 transition-opacity justify-start"
+          className="flex items-center hover:opacity-80 transition-opacity justify-start relative group"
+          title={gpsIndicator.title}
         >
           <img
             src="/logo-compass.svg"
             alt="RouteQuest"
-            className="w-10 h-10 flex-shrink-0"
+            className={`w-10 h-10 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
+            style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}
           />
+          {/* Tooltip vid hover */}
+          <span className="absolute left-12 top-1/2 -translate-y-1/2 bg-slate-800 text-xs text-gray-200 px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+            {gpsIndicator.title}
+          </span>
         </button>
 
         {/* Mitten: Dynamisk titel */}

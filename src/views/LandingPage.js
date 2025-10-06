@@ -5,6 +5,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
+import GPSPrompt from '../components/shared/GPSPrompt';
 
 const LandingPage = () => {
   const navigate = useNavigate();
@@ -113,6 +114,9 @@ const LandingPage = () => {
           </p>
         </div>
       </div>
+
+      {/* GPS-aktiverings prompt */}
+      <GPSPrompt />
     </div>
   );
 };
