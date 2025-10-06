@@ -344,6 +344,72 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   });
 });
 
+// AI-validering av frågor - kontrollerar att rätt svar är korrekt
+exports.validateQuestionWithAI = createHttpsHandler(async (req, res) => {
+  return cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { question, options, correctOption, explanation, provider = 'anthropic' } = req.body;
+
+      // Validera input
+      if (!question || !options || correctOption === undefined || !explanation) {
+        res.status(400).json({
+          error: "Missing required fields: question, options, correctOption, explanation"
+        });
+        return;
+      }
+
+      if (!Array.isArray(options) || options.length !== 4) {
+        res.status(400).json({
+          error: "Options must be an array of 4 strings"
+        });
+        return;
+      }
+
+      let validationResult = null;
+
+      // Använd vald provider (bara Anthropic för nu)
+      if (provider === 'anthropic') {
+        const anthropicKey = anthropicApiKey.value();
+        if (anthropicKey) {
+          try {
+            const { validateQuestion } = require('./services/aiQuestionValidator');
+            logger.info("Validating question with Anthropic", { question: question.substring(0, 50) });
+            validationResult = await validateQuestion({
+              question,
+              options,
+              correctOption,
+              explanation
+            }, anthropicKey);
+            logger.info("Validation complete", { valid: validationResult.valid });
+          } catch (error) {
+            logger.error("Anthropic validation failed", { error: error.message });
+            throw error;
+          }
+        } else {
+          throw new Error('Anthropic API key not configured');
+        }
+      } else {
+        res.status(400).json({
+          error: "Only 'anthropic' provider is supported for validation"
+        });
+        return;
+      }
+
+      res.status(200).json(validationResult);
+    } catch (error) {
+      logger.error("Error validating question", { error: error.message });
+      res.status(500).json({
+        error: "Failed to validate question",
+        message: error.message
+      });
+    }
+  });
+});
+
 // Schemalagd funktion som ska h├ñmta fler fr├Ñgor l├╢pande med AI.
 // Anv├ñnder Anthropic som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
 exports.questionImport = onSchedule(

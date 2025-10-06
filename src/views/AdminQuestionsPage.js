@@ -10,6 +10,7 @@ import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
 import ValidationPanel from '../components/admin/ValidationPanel';
+import AIValidationPanel from '../components/admin/AIValidationPanel';
 
 const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, isSelected, onSelect }) => {
   const [currentLang, setCurrentLang] = useState('sv');
@@ -394,10 +395,22 @@ const AdminQuestionsPage = () => {
           >
             ✓ Validering
           </button>
+          <button
+            onClick={() => setActiveTab('ai-validation')}
+            className={`px-4 py-2 font-semibold transition-colors ${
+              activeTab === 'ai-validation'
+                ? 'text-purple-400 border-b-2 border-purple-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            🤖 AI-Validering
+          </button>
         </div>
 
         {/* Innehåll baserat på aktiv flik */}
-        {activeTab === 'validation' ? (
+        {activeTab === 'ai-validation' ? (
+          <AIValidationPanel />
+        ) : activeTab === 'validation' ? (
           <ValidationPanel />
         ) : activeTab === 'duplicates' ? (
           <DuplicateQuestionsPanel />

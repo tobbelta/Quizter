@@ -11,12 +11,21 @@
 export const validateQuestion = (question, language = 'sv') => {
   const errors = [];
 
-  // Hämta språkdata
-  const langData = question.languages?.[language];
-
-  if (!langData) {
-    errors.push(`Frågan saknar ${language === 'sv' ? 'svensk' : 'engelsk'} översättning`);
-    return { valid: false, errors };
+  // Hämta språkdata - hantera både languages-struktur och flat struktur
+  let langData;
+  if (question.languages) {
+    langData = question.languages[language];
+    if (!langData) {
+      errors.push(`Frågan saknar ${language === 'sv' ? 'svensk' : 'engelsk'} översättning`);
+      return { valid: false, errors };
+    }
+  } else {
+    // Fallback för gamla frågor med flat struktur
+    langData = {
+      text: question.text,
+      options: question.options,
+      explanation: question.explanation
+    };
   }
 
   const { text, options, explanation } = langData;
