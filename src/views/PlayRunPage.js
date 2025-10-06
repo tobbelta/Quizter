@@ -9,7 +9,6 @@ import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
 
@@ -326,8 +325,6 @@ const PlayRunPage = () => {
           </div>
         )}
       </main>
-
-      <Footer />
     </div>
   );
 };
