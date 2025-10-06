@@ -14,7 +14,21 @@ const DuplicateQuestionsPanel = () => {
     setLoading(true);
     try {
       const found = questionService.findDuplicates('sv', threshold / 100);
-      setDuplicates(found);
+
+      // Filtrera bort dubbletter av dubletter (samma pairId)
+      const uniqueDuplicates = [];
+      const seenPairs = new Set();
+
+      for (const dup of found) {
+        const pairId = dup.pairId || [dup.question1.id, dup.question2.id].sort().join('-');
+        if (!seenPairs.has(pairId)) {
+          seenPairs.add(pairId);
+          uniqueDuplicates.push(dup);
+        }
+      }
+
+      console.log(`[DuplicateQuestionsPanel] Hittade ${found.length} dubletter, ${uniqueDuplicates.length} unika par`);
+      setDuplicates(uniqueDuplicates);
     } catch (error) {
       console.error('Fel vid dublettsökning:', error);
     } finally {

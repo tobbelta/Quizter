@@ -156,11 +156,19 @@ const levenshteinDistance = (str1, str2) => {
  */
 export const findDuplicates = (questions, language = 'sv', threshold = 0.85) => {
   const duplicates = [];
+  const seenPairs = new Set(); // Håll koll på par vi redan jämfört
 
   for (let i = 0; i < questions.length; i++) {
     for (let j = i + 1; j < questions.length; j++) {
       const q1 = questions[i];
       const q2 = questions[j];
+
+      // Skapa unikt par-ID (sortera ID:n så ordningen inte spelar roll)
+      const pairId = [q1.id, q2.id].sort().join('-');
+
+      // Skippa om vi redan jämfört detta par
+      if (seenPairs.has(pairId)) continue;
+      seenPairs.add(pairId);
 
       const text1 = q1.languages?.[language]?.text || '';
       const text2 = q2.languages?.[language]?.text || '';
@@ -175,7 +183,8 @@ export const findDuplicates = (questions, language = 'sv', threshold = 0.85) => 
           question2: q2,
           similarity: Math.round(similarity * 100),
           text1,
-          text2
+          text2,
+          pairId // Lägg till för debugging
         });
       }
     }
