@@ -62,10 +62,22 @@ const GenerateRunPage = () => {
     ? { lat: coords.latitude, lng: coords.longitude }
     : null;
 
-  // Logga GPS-status när komponenten laddas
+  // Logga GPS-status när komponenten laddas OCH när coords ändras
   React.useEffect(() => {
+    console.log('🔍 GPS STATUS CHECK:', {
+      coords,
+      gpsStatus,
+      trackingEnabled,
+      userPosition,
+      rawCoords: coords ? {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracy: coords.accuracy,
+      } : null,
+    });
+
     errorLogService.logGPSDebug({
-      message: 'GenerateRunPage loaded',
+      message: 'GenerateRunPage GPS update',
       coords: coords ? {
         latitude: coords.latitude,
         longitude: coords.longitude,
@@ -74,6 +86,9 @@ const GenerateRunPage = () => {
       gpsStatus,
       trackingEnabled,
       userPosition,
+      hasCoords: !!coords,
+      hasLatitude: coords?.latitude !== undefined,
+      hasLongitude: coords?.longitude !== undefined,
     });
   }, [coords, gpsStatus, trackingEnabled, userPosition]);
 
@@ -88,7 +103,27 @@ const GenerateRunPage = () => {
         ? { lat: userPosition.lat, lng: userPosition.lng }
         : FALLBACK_POSITION;
 
-      console.log('🔄 Regenererar runda från position:', originPosition);
+      console.log('🔄 REGENERERAR RUNDA - DETALJERAD INFO:');
+      console.log('  📱 coords raw:', coords);
+      console.log('  📍 userPosition:', userPosition);
+      console.log('  🎯 originPosition (används):', originPosition);
+      console.log('  🔄 GPS aktiv:', !!userPosition);
+
+      await errorLogService.logRouteGeneration({
+        message: 'Route REGENERATION - DETAILED',
+        originPosition,
+        hasGPS: !!userPosition,
+        gpsStatus,
+        trackingEnabled,
+        coords: coords ? {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.accuracy,
+        } : null,
+        userPosition,
+        fallbackPosition: FALLBACK_POSITION,
+        willUseFallback: !userPosition,
+      });
 
       const run = await generateRun({
         name: form.name,
@@ -180,12 +215,18 @@ const GenerateRunPage = () => {
         ? { lat: userPosition.lat, lng: userPosition.lng }
         : FALLBACK_POSITION;
 
-      console.log('🗺️ Genererar runda från position:', originPosition);
-      console.log('📍 GPS aktiv:', !!userPosition);
+      console.log('🗺️ GENERERAR RUNDA - DETALJERAD INFO:');
+      console.log('  📱 coords raw:', coords);
+      console.log('  📍 userPosition:', userPosition);
+      console.log('  🎯 originPosition (används):', originPosition);
+      console.log('  🔄 GPS aktiv:', !!userPosition);
+      console.log('  📊 gpsStatus:', gpsStatus);
+      console.log('  🔘 trackingEnabled:', trackingEnabled);
+      console.log('  🌍 FALLBACK_POSITION:', FALLBACK_POSITION);
 
       // Logga ruttgenerering med all GPS-info
       await errorLogService.logRouteGeneration({
-        message: 'Route generation started',
+        message: 'Route generation started - DETAILED',
         originPosition,
         hasGPS: !!userPosition,
         gpsStatus,
@@ -195,6 +236,9 @@ const GenerateRunPage = () => {
           longitude: coords.longitude,
           accuracy: coords.accuracy,
         } : null,
+        userPosition,
+        fallbackPosition: FALLBACK_POSITION,
+        willUseFallback: !userPosition,
         formData: {
           name: form.name,
           difficulty: form.difficulty,
@@ -299,8 +343,16 @@ const GenerateRunPage = () => {
                 <span className="font-semibold">GPS aktiv</span>
               </div>
               <p className="mt-1 text-xs text-gray-300">
-                Rundan kommer genereras från din nuvarande position ({userPosition.lat.toFixed(4)}, {userPosition.lng.toFixed(4)})
+                <strong>Position identifierad:</strong> {userPosition.lat.toFixed(6)}, {userPosition.lng.toFixed(6)}
               </p>
+              <p className="mt-1 text-xs text-emerald-200 font-semibold">
+                ✓ Rundan kommer genereras från DIN POSITION
+              </p>
+              {coords?.accuracy && (
+                <p className="mt-1 text-xs text-gray-400">
+                  Noggrannhet: ±{Math.round(coords.accuracy)}m
+                </p>
+              )}
             </div>
           )}
 
@@ -311,7 +363,13 @@ const GenerateRunPage = () => {
                 <span className="font-semibold">GPS inte aktiv</span>
               </div>
               <p className="mt-1 text-xs text-gray-300">
-                Rundan kommer genereras från standardposition (Göteborg). Aktivera GPS för att skapa runda från din position.
+                <strong>GPS-status:</strong> {gpsStatus} {trackingEnabled ? '(tracking påslagen)' : '(tracking avstängd)'}
+              </p>
+              <p className="mt-1 text-xs text-amber-200 font-semibold">
+                ⚠ Rundan kommer genereras från STANDARDPOSITION (Göteborg: {FALLBACK_POSITION.lat.toFixed(4)}, {FALLBACK_POSITION.lng.toFixed(4)})
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Aktivera GPS för att skapa runda från din position.
               </p>
             </div>
           )}
