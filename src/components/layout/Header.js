@@ -13,6 +13,7 @@ import { analyticsService } from '../../services/analyticsService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
+import { VERSION, BUILD_DATE } from '../../version';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
@@ -63,27 +64,27 @@ const Header = ({ title = 'RouteQuest' }) => {
   // GPS-status visuella indikatorer
   const getGPSIndicator = () => {
     if (!trackingEnabled) {
-      return { color: 'opacity-40', spin: false, title: 'GPS avstängd' };
+      return { color: 'opacity-40', spin: false, title: 'GPS avstängd', textColor: 'text-gray-400' };
     }
 
     switch (gpsStatus) {
       case 'idle':
       case 'pending':
-        return { color: 'opacity-60', spin: true, title: 'Söker GPS...' };
+        return { color: 'opacity-60', spin: true, title: 'Söker GPS...', textColor: 'text-gray-400' };
       case 'active':
         const accuracy = coords?.accuracy ? Math.round(coords.accuracy) : null;
         if (accuracy && accuracy < 20) {
-          return { color: 'drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]', spin: false, title: `GPS aktiv (±${accuracy}m)` };
+          return { color: 'drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]', spin: false, title: `±${accuracy}m`, textColor: 'text-emerald-400' };
         } else if (accuracy && accuracy < 50) {
-          return { color: 'drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]', spin: false, title: `GPS aktiv (±${accuracy}m)` };
+          return { color: 'drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]', spin: false, title: `±${accuracy}m`, textColor: 'text-cyan-400' };
         }
-        return { color: 'drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]', spin: false, title: accuracy ? `GPS aktiv (±${accuracy}m)` : 'GPS aktiv' };
+        return { color: 'drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]', spin: false, title: accuracy ? `±${accuracy}m` : 'GPS aktiv', textColor: 'text-amber-400' };
       case 'denied':
-        return { color: 'opacity-40 saturate-0', spin: false, title: 'GPS-åtkomst nekad' };
+        return { color: 'opacity-40 saturate-0', spin: false, title: 'GPS nekad', textColor: 'text-red-400' };
       case 'unsupported':
-        return { color: 'opacity-30', spin: false, title: 'GPS stöds ej' };
+        return { color: 'opacity-30', spin: false, title: 'GPS stöds ej', textColor: 'text-gray-400' };
       default:
-        return { color: 'opacity-60', spin: false, title: 'GPS ej tillgänglig' };
+        return { color: 'opacity-60', spin: false, title: 'GPS ej tillgänglig', textColor: 'text-gray-400' };
     }
   };
 
@@ -94,33 +95,41 @@ const Header = ({ title = 'RouteQuest' }) => {
     <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50 safe-area-inset">
       <div className="w-full px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
         {/* Vänster: Logotyp med GPS-status */}
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center hover:opacity-80 transition-opacity justify-start relative group"
-          title={gpsIndicator.title}
-        >
-          <img
-            src="/logo-compass.svg"
-            alt="RouteQuest"
-            className={`w-10 h-10 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
-            style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}
-          />
-          {/* Tooltip vid hover */}
-          <span className="absolute left-12 top-1/2 -translate-y-1/2 bg-slate-800 text-xs text-gray-200 px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/')}
+            className="hover:opacity-80 transition-opacity"
+            aria-label="Gå till startsidan"
+          >
+            <img
+              src="/logo-compass.svg"
+              alt="RouteQuest"
+              className={`w-10 h-10 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
+              style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}
+            />
+          </button>
+          {/* GPS-status text - synlig på mobil */}
+          <span className={`text-xs font-medium whitespace-nowrap ${gpsIndicator.textColor}`}>
             {gpsIndicator.title}
           </span>
-        </button>
+        </div>
 
         {/* Mitten: Dynamisk titel */}
-        <div className="text-center px-2 flex items-center justify-center overflow-hidden">
-          <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
-            {title}
-          </h1>
-          {isSuperUser && (
-            <span className="ml-2 px-2 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-300">
-              SuperUser
-            </span>
-          )}
+        <div className="text-center px-2 flex flex-col items-center justify-center overflow-hidden">
+          <div className="flex items-center">
+            <h1 className="text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
+              {title}
+            </h1>
+            {isSuperUser && (
+              <span className="ml-2 px-2 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-300">
+                SuperUser
+              </span>
+            )}
+          </div>
+          {/* Version info - diskret */}
+          <span className="text-[10px] text-gray-500 mt-0.5">
+            v{VERSION}
+          </span>
         </div>
 
         {/* Höger: Hamburger-meny */}
