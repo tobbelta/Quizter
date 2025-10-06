@@ -23,6 +23,10 @@ const listQuestions = async () => {
   return firestoreQuestionGateway.listQuestions();
 };
 
+const subscribeToQuestions = (callback) => {
+  return firestoreQuestionGateway.subscribeToQuestions(callback);
+};
+
 const addManyQuestions = async (questions) => {
   await firestoreQuestionGateway.addManyQuestions(questions);
 };
@@ -31,10 +35,16 @@ const updateQuestion = async (questionId, updateData) => {
   await firestoreQuestionGateway.updateQuestion(questionId, updateData);
 };
 
+const updateManyQuestions = async (updates) => {
+  await firestoreQuestionGateway.updateManyQuestions(updates);
+};
+
 export const questionRepository = {
   deleteQuestion,
   deleteQuestions,
   listQuestions,
+  subscribeToQuestions,
   addManyQuestions,
   updateQuestion,
+  updateManyQuestions,
 };

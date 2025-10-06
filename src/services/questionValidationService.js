@@ -76,16 +76,31 @@ export const validateQuestion = (question, language = 'sv') => {
   }
 
   // 8. Kontrollera metadata
-  if (!question.difficulty || !['easy', 'medium', 'hard'].includes(question.difficulty)) {
-    errors.push('Frågan måste ha en giltig svårighetsgrad (easy/medium/hard)');
+  const validDifficulties = ['easy', 'medium', 'hard', 'kid', 'family', 'adult'];
+  if (!question.difficulty || !validDifficulties.includes(question.difficulty)) {
+    errors.push(`Frågan måste ha en giltig svårighetsgrad (${validDifficulties.join('/')})`);
   }
 
-  if (!question.audience || !['barn', 'vuxen', 'familj'].includes(question.audience)) {
-    errors.push('Frågan måste ha en giltig målgrupp (barn/vuxen/familj)');
+  const validAudiences = ['barn', 'vuxen', 'familj', 'kid', 'family', 'adult'];
+  if (!question.audience && !validAudiences.includes(question.difficulty)) {
+    // Om audience saknas men difficulty är kid/family/adult, acceptera det
+    if (!question.difficulty || !['kid', 'family', 'adult'].includes(question.difficulty)) {
+      errors.push(`Frågan måste ha en giltig målgrupp (${validAudiences.join('/')})`);
+    }
   }
 
-  if (!question.categories || !Array.isArray(question.categories) || question.categories.length === 0) {
+  if (!question.category && (!question.categories || !Array.isArray(question.categories) || question.categories.length === 0)) {
     errors.push('Frågan måste ha minst en kategori');
+  }
+
+  // 9. Kontrollera att båda språken finns (om frågan använder languages-struktur)
+  if (question.languages) {
+    if (!question.languages.sv) {
+      errors.push('Frågan saknar svensk översättning');
+    }
+    if (!question.languages.en) {
+      errors.push('Frågan saknar engelsk översättning');
+    }
   }
 
   return {

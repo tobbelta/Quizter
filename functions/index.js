@@ -369,37 +369,91 @@ exports.validateQuestionWithAI = createHttpsHandler(async (req, res) => {
         return;
       }
 
-      let validationResult = null;
+      // Validera med ALLA tillgängliga providers
+      const validationResults = {};
+      let allValid = true;
+      const allIssues = [];
+      let combinedReasoning = '';
 
-      // Använd vald provider (bara Anthropic för nu)
-      if (provider === 'anthropic') {
-        const anthropicKey = anthropicApiKey.value();
-        if (anthropicKey) {
-          try {
-            const { validateQuestion } = require('./services/aiQuestionValidator');
-            logger.info("Validating question with Anthropic", { question: question.substring(0, 50) });
-            validationResult = await validateQuestion({
-              question,
-              options,
-              correctOption,
-              explanation
-            }, anthropicKey);
-            logger.info("Validation complete", { valid: validationResult.valid });
-          } catch (error) {
-            logger.error("Anthropic validation failed", { error: error.message });
-            throw error;
+      // Testa Anthropic
+      const anthropicKey = anthropicApiKey.value();
+      if (anthropicKey) {
+        try {
+          const { validateQuestion } = require('./services/aiQuestionValidator');
+          logger.info("Validating question with Anthropic", { question: question.substring(0, 50) });
+          const result = await validateQuestion({
+            question,
+            options,
+            correctOption,
+            explanation
+          }, anthropicKey);
+          validationResults.anthropic = result;
+
+          if (!result.valid) {
+            allValid = false;
+            allIssues.push(...result.issues.map(issue => `[Anthropic] ${issue}`));
           }
-        } else {
-          throw new Error('Anthropic API key not configured');
+          combinedReasoning += `**Anthropic:** ${result.reasoning}\n\n`;
+          logger.info("Anthropic validation complete", { valid: result.valid });
+        } catch (error) {
+          logger.error("Anthropic validation failed", { error: error.message });
+          validationResults.anthropic = { valid: false, error: error.message };
+          allValid = false;
+          allIssues.push(`[Anthropic] Valideringsfel: ${error.message}`);
         }
-      } else {
-        res.status(400).json({
-          error: "Only 'anthropic' provider is supported for validation"
+      }
+
+      // Testa Gemini
+      const geminiKey = geminiApiKey.value();
+      if (geminiKey) {
+        try {
+          const { validateQuestion } = require('./services/geminiQuestionValidator');
+          logger.info("Validating question with Gemini", { question: question.substring(0, 50) });
+          const result = await validateQuestion({
+            question,
+            options,
+            correctOption,
+            explanation
+          }, geminiKey);
+          validationResults.gemini = result;
+
+          if (!result.valid) {
+            allValid = false;
+            allIssues.push(...result.issues.map(issue => `[Gemini] ${issue}`));
+          }
+          combinedReasoning += `**Gemini:** ${result.reasoning}\n\n`;
+          logger.info("Gemini validation complete", { valid: result.valid });
+        } catch (error) {
+          logger.error("Gemini validation failed", { error: error.message });
+          validationResults.gemini = { valid: false, error: error.message };
+          allValid = false;
+          allIssues.push(`[Gemini] Valideringsfel: ${error.message}`);
+        }
+      }
+
+      // Om inga providers är konfigurerade
+      if (!anthropicKey && !geminiKey) {
+        res.status(500).json({
+          error: "No AI providers configured for validation"
         });
         return;
       }
 
-      res.status(200).json(validationResult);
+      // Sammanställ resultat - alla måste godkänna
+      const finalResult = {
+        valid: allValid,
+        issues: allIssues,
+        reasoning: combinedReasoning.trim(),
+        providerResults: validationResults,
+        providersChecked: Object.keys(validationResults).length
+      };
+
+      logger.info("Multi-provider validation complete", {
+        valid: finalResult.valid,
+        providers: Object.keys(validationResults).join(', ')
+      });
+
+      res.status(200).json(finalResult);
     } catch (error) {
       logger.error("Error validating question", { error: error.message });
       res.status(500).json({

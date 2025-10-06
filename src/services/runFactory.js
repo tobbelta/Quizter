@@ -31,8 +31,48 @@ const resolveQuestionPool = () => {
 };
 
 /**
+ * Räknar antalet godkända frågor som matchar givna kriterier.
+ * Används för att varna användaren om det inte finns tillräckligt med frågor.
+ */
+export const countAvailableQuestions = ({ audience, difficulty, categories = [] }) => {
+  const pool = resolveQuestionPool();
+
+  const filtered = pool.filter((question) => {
+    // Exkludera underkända och rapporterade frågor
+    const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+    if (isRejected) {
+      return false;
+    }
+
+    // Filtrera efter svårighetsgrad/målgrupp
+    let matchesDifficulty = false;
+
+    if (difficulty === 'family') {
+      matchesDifficulty = question.audience === 'kid' ||
+                          question.difficulty === 'kid' ||
+                          question.audience === 'adult' ||
+                          question.difficulty === 'adult';
+    } else if (difficulty === 'kid') {
+      matchesDifficulty = question.audience === 'kid' || question.difficulty === 'kid';
+    } else if (difficulty === 'adult') {
+      matchesDifficulty = question.audience === 'adult' || question.difficulty === 'adult';
+    } else {
+      matchesDifficulty = true;
+    }
+
+    // Filtrera efter kategorier
+    const matchesCategory = categories.length === 0 ||
+                           categories.includes(question.category);
+
+    return matchesDifficulty && matchesCategory;
+  });
+
+  return filtered.length;
+};
+
+/**
  * Filtrerar och väljer ut rätt antal frågor baserat på målgrupp, svårighet och kategorier.
- * Tillåter återanvändning av frågor om det inte finns tillräckligt många.
+ * Exkluderar underkända frågor och förhindrar duplicerade frågor i samma runda.
  */
 const pickQuestions = ({ audience, difficulty, questionCount, categories = [] }) => {
   const pool = resolveQuestionPool();
@@ -46,6 +86,16 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
   }
 
   const filtered = pool.filter((question) => {
+    // VIKTIGT: Exkludera alla underkända och rapporterade frågor
+    // En fråga är underkänd om:
+    // 1. aiValidated === false (AI-validering misslyckades eller strukturfel)
+    // 2. manuallyRejected === true (manuellt underkänd)
+    // 3. reported === true (rapporterad och i karantän)
+    const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+    if (isRejected) {
+      return false; // Skippa denna fråga
+    }
+
     // Filtrera efter svårighetsgrad/målgrupp
     let matchesDifficulty = false;
 
@@ -72,24 +122,22 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
 
   const shuffled = [...filtered].sort(() => Math.random() - 0.5);
 
-  // Om vi inte har tillräckligt många frågor, återanvänd dem genom att loopa
+  // Om vi inte har tillräckligt många frågor, kasta fel (inga duplicerade)
   if (shuffled.length === 0) {
     const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
-    throw new Error(`Inga frågor matchar vald svårighetsgrad (${difficulty})${categoryText}. Prova en annan kombination.`);
+    throw new Error(`Inga godkända frågor matchar vald svårighetsgrad (${difficulty})${categoryText}. Prova en annan kombination eller validera fler frågor.`);
   }
 
   if (shuffled.length < questionCount) {
-    // Återanvänd frågor men blanda om dem varje gång
-    const result = [];
-    while (result.length < questionCount) {
-      const reShuffled = [...shuffled].sort(() => Math.random() - 0.5);
-      // Create new question objects with unique IDs to avoid key collisions in React
-      const uniqueQuestions = reShuffled.map(q => ({ ...q, id: `${q.id}-${uuidv4()}` }));
-      result.push(...uniqueQuestions);
-    }
-    return result.slice(0, questionCount);
+    // NYTT: Kasta fel istället för att återanvända frågor
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(
+      `Det finns endast ${shuffled.length} godkända frågor som matchar vald svårighetsgrad (${difficulty})${categoryText}, men du behöver ${questionCount} frågor.\n\n` +
+      `Välj ett lägre antal frågor eller validera fler frågor i frågebanken.`
+    );
   }
 
+  // Returnera unika frågor (inga duplicerade ID:n)
   return shuffled.slice(0, questionCount);
 };
 

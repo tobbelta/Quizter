@@ -9,6 +9,7 @@ import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
+import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
 
@@ -34,6 +35,8 @@ const PlayRunPage = () => {
   const [questionVisible, setQuestionVisible] = useState(true);
   const [distanceToCheckpoint, setDistanceToCheckpoint] = useState(null);
   const [distanceToStart, setDistanceToStart] = useState(null);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [questionToReport, setQuestionToReport] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Använd användarens språkval från localStorage
     if (typeof window !== 'undefined') {
@@ -232,18 +235,33 @@ const PlayRunPage = () => {
         {currentQuestion && (
           <div className="absolute inset-x-4 bottom-4 z-30">
             <form onSubmit={handleSubmit} className="bg-slate-900/95 backdrop-blur-sm rounded-xl border border-cyan-400/40 p-4 shadow-xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-white flex-1">{currentQuestion.text}</h2>
-                <div className="ml-3 flex items-center gap-2">
-                  {currentQuestion.category && (
-                    <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
-                      {currentQuestion.category}
+              <div className="mb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-semibold text-white flex-1">{currentQuestion.text}</h2>
+                  <div className="ml-3 flex items-center gap-2">
+                    {currentQuestion.category && (
+                      <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
+                        {currentQuestion.category}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                      {selectedLanguage.toUpperCase()}
                     </span>
-                  )}
-                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
-                    {selectedLanguage.toUpperCase()}
-                  </span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuestionToReport({
+                      id: currentQuestion.id,
+                      text: currentQuestion.text
+                    });
+                    setReportDialogOpen(true);
+                  }}
+                  className="text-xs text-yellow-400 hover:text-yellow-300 underline"
+                >
+                  ⚠️ Rapportera problem med frågan
+                </button>
               </div>
               <div className="space-y-2 mb-4">
                 {currentQuestion.options.map((option, index) => (
@@ -325,6 +343,21 @@ const PlayRunPage = () => {
           </div>
         )}
       </main>
+
+      {/* Rapportera fråga dialog */}
+      {reportDialogOpen && questionToReport && (
+        <ReportQuestionDialog
+          questionId={questionToReport.id}
+          questionText={questionToReport.text}
+          onClose={() => {
+            setReportDialogOpen(false);
+            setQuestionToReport(null);
+          }}
+          onReported={() => {
+            console.log('Fråga rapporterad:', questionToReport.id);
+          }}
+        />
+      )}
     </div>
   );
 };

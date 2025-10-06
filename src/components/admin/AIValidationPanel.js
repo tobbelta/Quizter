@@ -8,7 +8,6 @@ import { questionService } from '../../services/questionService';
 const AIValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState('anthropic');
 
   const runAIValidation = async () => {
     setLoading(true);
@@ -38,8 +37,7 @@ const AIValidationPanel = () => {
                 question: langData.text,
                 options: langData.options,
                 correctOption: question.correctOption,
-                explanation: langData.explanation,
-                provider: provider
+                explanation: langData.explanation
               })
             }
           );
@@ -80,27 +78,16 @@ const AIValidationPanel = () => {
         <div>
           <h2 className="text-xl font-bold text-white">AI-validering av frågor</h2>
           <p className="text-sm text-gray-400 mt-1">
-            Kontrollerar att rätt svar är korrekt och att inga andra alternativ också kan vara rätt
+            Validerar med alla tillgängliga AI-providers (Anthropic, Gemini)
           </p>
         </div>
-        <div className="flex gap-2 items-center">
-          <select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className="px-3 py-2 bg-slate-700 text-white rounded border border-slate-600"
-          >
-            <option value="anthropic">Anthropic Claude</option>
-            <option value="openai">OpenAI GPT-4</option>
-            <option value="gemini">Google Gemini</option>
-          </select>
-          <button
-            onClick={runAIValidation}
-            disabled={loading}
-            className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400"
-          >
-            {loading ? '🤖 Validerar...' : '🤖 AI-Validera frågor'}
-          </button>
-        </div>
+        <button
+          onClick={runAIValidation}
+          disabled={loading}
+          className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400"
+        >
+          {loading ? '🤖 Validerar...' : '🤖 AI-Validera frågor'}
+        </button>
       </div>
 
       {/* Varning om kostnad */}

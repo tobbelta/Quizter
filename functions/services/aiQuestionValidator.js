@@ -32,13 +32,8 @@ Analysera frågan och svarsalternativen noggrant och kontrollera:
 3. Är något av alternativen tvetydigt eller felaktigt?
 4. Stämmer förklaringen med det korrekta svaret?
 
-Svara i JSON-format:
-{
-  "valid": true/false,
-  "issues": ["lista med problem om några finns"],
-  "suggestedCorrectOption": 0-3 (om rätt svar är fel),
-  "reasoning": "förklaring av bedömningen"
-}`;
+Svara ENDAST med giltig JSON (ingen markdown, inga kommentarer):
+{"valid": true/false, "issues": ["lista med problem om några finns"], "suggestedCorrectOption": 0-3 (om rätt svar är fel), "reasoning": "förklaring av bedömningen"}`;
 
   const userPrompt = `Validera denna quizfråga:
 
@@ -58,19 +53,26 @@ Svara i JSON-format:
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 1024,
+      system: systemPrompt,
       messages: [{
         role: 'user',
-        content: systemPrompt + '\n\n' + userPrompt
+        content: userPrompt
       }]
     });
 
     const responseText = message.content[0].text;
     logger.info('AI validation response', { responseText });
 
-    // Parse JSON-svaret
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    // Rensa bort markdown och hitta JSON
+    let jsonText = responseText.trim();
+
+    // Ta bort markdown code blocks om de finns
+    jsonText = jsonText.replace(/^```json?\s*/i, '').replace(/```\s*$/, '');
+
+    // Hitta JSON-objektet
+    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error('Could not parse JSON from AI response');
     }

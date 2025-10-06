@@ -8,13 +8,27 @@ const ValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const runValidation = () => {
+  const runValidation = async () => {
     setLoading(true);
     try {
       const allQuestions = questionService.listAll();
       const results = questionService.validateQuestions(allQuestions, 'sv');
 
       console.log('[ValidationPanel] Valideringsresultat:', results);
+
+      // Spara valideringsresultat på varje fråga
+      for (const result of results.results) {
+        if (!result.valid) {
+          // Frågan är ogiltig - markera den
+          await questionService.markAsInvalid(result.questionId, {
+            valid: false,
+            issues: result.errors,
+            reasoning: 'Strukturvalidering: ' + result.errors.join(', '),
+            validationType: 'structure'
+          });
+        }
+      }
+
       setValidationResults(results);
     } catch (error) {
       console.error('Fel vid validering:', error);
