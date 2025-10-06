@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 
 const QUESTIONS_COLLECTION = 'questions';
@@ -65,11 +65,23 @@ const addManyQuestions = async (questions) => {
   await batch.commit();
 };
 
+/**
+ * Updates a question in Firestore.
+ * @param {string} questionId - The ID of the question to update.
+ * @param {Object} updateData - The data to update.
+ */
+const updateQuestion = async (questionId, updateData) => {
+  const db = getFirebaseDb();
+  const questionRef = doc(db, QUESTIONS_COLLECTION, questionId);
+  await updateDoc(questionRef, updateData);
+};
+
 const firestoreQuestionGateway = {
   listQuestions,
   deleteQuestion,
   deleteQuestions,
   addManyQuestions,
+  updateQuestion,
 };
 
 export default firestoreQuestionGateway;

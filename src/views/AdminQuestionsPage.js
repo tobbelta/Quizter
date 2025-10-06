@@ -12,7 +12,7 @@ import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel
 import ValidationPanel from '../components/admin/ValidationPanel';
 import AIValidationPanel from '../components/admin/AIValidationPanel';
 
-const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, isSelected, onSelect }) => {
+const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, handleValidateQuestion, validatingQuestion, isSelected, onSelect }) => {
   const [currentLang, setCurrentLang] = useState('sv');
 
   // Hämta data för valt språk
@@ -38,6 +38,12 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
                 <span className="text-sm font-mono text-gray-400">#{index + 1}</span>
+                {/* AI-Valideringsstatus */}
+                {question.aiValidated && (
+                  <span className="inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-300" title="AI-validerad">
+                    ✓ AI-OK
+                  </span>
+                )}
                 {question.createdAt && (
                   <span className="text-xs text-gray-500">
                     {question.createdAt.toDate ?
@@ -82,12 +88,22 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                 {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
               </button>
             </div>
-            <button
-              onClick={() => handleDeleteQuestion(question.id)}
-              className="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white hover:bg-red-500"
-            >
-              Ta bort
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleValidateQuestion(question)}
+                disabled={validatingQuestion === question.id}
+                className="rounded bg-purple-600 px-3 py-1 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-600 disabled:text-gray-400"
+                title="AI-validera fråga"
+              >
+                {validatingQuestion === question.id ? '🤖 Validerar...' : '🤖 Validera'}
+              </button>
+              <button
+                onClick={() => handleDeleteQuestion(question.id)}
+                className="rounded bg-red-600 px-3 py-1 text-sm font-semibold text-white hover:bg-red-500"
+              >
+                Ta bort
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -156,6 +172,8 @@ const AdminQuestionsPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'duplicates'
+  const [validatingQuestion, setValidatingQuestion] = useState(null); // ID av fråga som valideras
+  const [validatingBatch, setValidatingBatch] = useState(false);
 
   useEffect(() => {
     const loadQuestions = () => {
@@ -294,6 +312,121 @@ const AdminQuestionsPage = () => {
       alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att API-nyckeln för ${aiProvider} är konfigurerad i Firebase.`);
     } finally {
       setIsGeneratingAI(false);
+    }
+  };
+
+  const handleValidateQuestion = async (question, silent = false) => {
+    setValidatingQuestion(question.id);
+
+    try {
+      const langData = question.languages?.sv || {
+        text: question.text,
+        options: question.options,
+        explanation: question.explanation
+      };
+
+      const response = await fetch(
+        'https://europe-west1-geoquest2-7e45c.cloudfunctions.net/validateQuestionWithAI',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: langData.text,
+            options: langData.options,
+            correctOption: question.correctOption,
+            explanation: langData.explanation,
+            provider: 'anthropic'
+          })
+        }
+      );
+
+      const result = await response.json();
+
+      // Spara valideringsresultatet
+      await questionService.markAsValidated(question.id, result);
+
+      if (!silent) {
+        if (result.valid) {
+          alert('✅ Frågan är validerad!\n\nAI:n bekräftar att det markerade svaret är korrekt.');
+        } else {
+          let message = '⚠️ AI hittade problem:\n\n';
+          result.issues.forEach(issue => {
+            message += `• ${issue}\n`;
+          });
+          if (result.suggestedCorrectOption !== undefined && result.suggestedCorrectOption !== question.correctOption) {
+            message += `\n💡 AI föreslår: Alternativ ${result.suggestedCorrectOption + 1}`;
+          }
+          alert(message);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Fel vid AI-validering:', error);
+      if (!silent) {
+        alert('❌ Kunde inte validera fråga: ' + error.message);
+      }
+      throw error;
+    } finally {
+      setValidatingQuestion(null);
+    }
+  };
+
+  const handleValidateAllUnvalidated = async () => {
+    const unvalidatedQuestions = questions.filter(q => !q.aiValidated);
+
+    if (unvalidatedQuestions.length === 0) {
+      alert('✅ Alla frågor är redan validerade!');
+      return;
+    }
+
+    if (!window.confirm(`Detta kommer att AI-validera ${unvalidatedQuestions.length} ovaliderade frågor.\n\nDetta kostar API-anrop och kan ta några minuter.\n\nVill du fortsätta?`)) {
+      return;
+    }
+
+    setValidatingBatch(true);
+    let validated = 0;
+    let failed = 0;
+    const issues = [];
+
+    try {
+      for (const question of unvalidatedQuestions) {
+        try {
+          const result = await handleValidateQuestion(question, true);
+          validated++;
+
+          if (!result.valid) {
+            issues.push({
+              id: question.id,
+              text: question.languages?.sv?.text || question.text,
+              issues: result.issues
+            });
+          }
+        } catch (error) {
+          failed++;
+          console.error(`Fel vid validering av ${question.id}:`, error);
+        }
+      }
+
+      let message = `✅ Batch-validering klar!\n\n`;
+      message += `Validerade: ${validated}\n`;
+      message += `Misslyckades: ${failed}\n`;
+      message += `Problem hittade: ${issues.length}\n`;
+
+      if (issues.length > 0) {
+        message += `\n⚠️ Frågor med problem:\n`;
+        issues.slice(0, 5).forEach(issue => {
+          message += `\n• ${issue.text.substring(0, 50)}...\n`;
+          issue.issues.forEach(i => message += `  - ${i}\n`);
+        });
+        if (issues.length > 5) {
+          message += `\n...och ${issues.length - 5} fler.`;
+        }
+      }
+
+      alert(message);
+    } finally {
+      setValidatingBatch(false);
     }
   };
 
@@ -444,6 +577,13 @@ const AdminQuestionsPage = () => {
           </div>
           <div className="flex gap-2 items-center">
             <button
+              onClick={handleValidateAllUnvalidated}
+              disabled={validatingBatch}
+              className="rounded bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-400"
+            >
+              {validatingBatch ? '🤖 Validerar...' : `🤖 Validera ovaliderade (${questions.filter(q => !q.aiValidated).length})`}
+            </button>
+            <button
               onClick={() => setShowAIDialog(true)}
               disabled={isGeneratingAI}
               className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
@@ -507,6 +647,8 @@ const AdminQuestionsPage = () => {
                       expandedQuestion={expandedQuestion}
                       setExpandedQuestion={setExpandedQuestion}
                       handleDeleteQuestion={handleDeleteQuestion}
+                      handleValidateQuestion={handleValidateQuestion}
+                      validatingQuestion={validatingQuestion}
                       isSelected={selectedQuestions.has(question.id)}
                       onSelect={handleToggleSelect}
                     />

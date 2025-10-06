@@ -175,5 +175,33 @@ export const questionService = {
   // Nya valideringsfunktioner
   validateQuestion: (question, language = 'sv') => validateQuestion(question, language),
   validateQuestions: (questions, language = 'sv') => validateQuestions(questions, language),
-  findDuplicates: (language = 'sv', threshold = 0.85) => findDuplicates(cachedQuestions, language, threshold)
+  findDuplicates: (language = 'sv', threshold = 0.85) => findDuplicates(cachedQuestions, language, threshold),
+
+  // Markera fråga som AI-validerad
+  markAsValidated: async (questionId, validationData) => {
+    try {
+      await questionRepository.updateQuestion(questionId, {
+        aiValidated: true,
+        aiValidatedAt: new Date(),
+        aiValidationResult: validationData
+      });
+
+      // Uppdatera cache
+      const questionIndex = cachedQuestions.findIndex(q => q.id === questionId);
+      if (questionIndex !== -1) {
+        cachedQuestions[questionIndex] = {
+          ...cachedQuestions[questionIndex],
+          aiValidated: true,
+          aiValidatedAt: new Date(),
+          aiValidationResult: validationData
+        };
+        notify();
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Kunde inte markera fråga som validerad:', error);
+      throw error;
+    }
+  }
 };

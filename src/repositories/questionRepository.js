@@ -27,9 +27,14 @@ const addManyQuestions = async (questions) => {
   await firestoreQuestionGateway.addManyQuestions(questions);
 };
 
+const updateQuestion = async (questionId, updateData) => {
+  await firestoreQuestionGateway.updateQuestion(questionId, updateData);
+};
+
 export const questionRepository = {
   deleteQuestion,
   deleteQuestions,
   listQuestions,
   addManyQuestions,
+  updateQuestion,
 };
