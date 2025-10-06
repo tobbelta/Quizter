@@ -445,14 +445,11 @@ const GenerateRunPage = () => {
               </div>
             )}
           </aside>
-        )}
-      </div>
+        </section>
+      )}
 
       {/* GPS-aktiverings prompt */}
       <GPSPrompt />
-    </div>
-        </section>
-      )}
     </PageLayout>
   );
 };
