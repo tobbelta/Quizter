@@ -58,8 +58,9 @@ const GenerateRunPage = () => {
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
 
   // Användarens GPS-position (om tillgänglig)
-  const userPosition = coords && coords.latitude && coords.longitude
-    ? { lat: coords.latitude, lng: coords.longitude }
+  // OBS: coords från useRunLocation har redan lat/lng format (inte latitude/longitude)
+  const userPosition = coords && coords.lat && coords.lng
+    ? { lat: coords.lat, lng: coords.lng }
     : null;
 
   // Logga GPS-status när komponenten laddas OCH när coords ändras
@@ -70,8 +71,8 @@ const GenerateRunPage = () => {
       trackingEnabled,
       userPosition,
       rawCoords: coords ? {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
+        lat: coords.lat,
+        lng: coords.lng,
         accuracy: coords.accuracy,
       } : null,
     });
@@ -79,16 +80,16 @@ const GenerateRunPage = () => {
     errorLogService.logGPSDebug({
       message: 'GenerateRunPage GPS update',
       coords: coords ? {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
+        latitude: coords.lat, // Konvertera till latitude för loggning
+        longitude: coords.lng,
         accuracy: coords.accuracy,
       } : null,
       gpsStatus,
       trackingEnabled,
       userPosition,
       hasCoords: !!coords,
-      hasLatitude: coords?.latitude !== undefined,
-      hasLongitude: coords?.longitude !== undefined,
+      hasLat: coords?.lat !== undefined,
+      hasLng: coords?.lng !== undefined,
     });
   }, [coords, gpsStatus, trackingEnabled, userPosition]);
 
@@ -116,8 +117,8 @@ const GenerateRunPage = () => {
         gpsStatus,
         trackingEnabled,
         coords: coords ? {
-          latitude: coords.latitude,
-          longitude: coords.longitude,
+          latitude: coords.lat,
+          longitude: coords.lng,
           accuracy: coords.accuracy,
         } : null,
         userPosition,
@@ -232,8 +233,8 @@ const GenerateRunPage = () => {
         gpsStatus,
         trackingEnabled,
         coords: coords ? {
-          latitude: coords.latitude,
-          longitude: coords.longitude,
+          latitude: coords.lat,
+          longitude: coords.lng,
           accuracy: coords.accuracy,
         } : null,
         userPosition,
