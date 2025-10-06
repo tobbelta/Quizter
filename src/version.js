@@ -7,8 +7,8 @@
  * - PATCH: Buggfixar, bakåtkompatibelt
  */
 
-export const VERSION = '2.0.0';
-export const BUILD_DATE = '2025-09-30';
+export const VERSION = '2.1.0';
+export const BUILD_DATE = new Date().toISOString();
 export const FEATURES = {
   localStorage: true,
   migration: true,

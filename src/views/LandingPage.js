@@ -5,6 +5,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import Header from '../components/layout/Header';
+import GPSPrompt from '../components/shared/GPSPrompt';
 import PageLayout from '../components/layout/PageLayout';
 
 const LandingPage = () => {
@@ -140,6 +142,11 @@ const LandingPage = () => {
             en promenad mer engagerande. Ingen installation behövs – allt fungerar direkt i webbläsaren.
           </p>
         </div>
+      </div>
+
+      {/* GPS-aktiverings prompt */}
+      <GPSPrompt />
+    </div>
         {!isAuthenticated && (
           <p className="text-sm text-gray-400">
             Kör som gäst eller skapa konto för att spara rundor mellan enheter

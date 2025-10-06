@@ -8,6 +8,7 @@ import PageLayout from '../components/layout/PageLayout';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import RunMap from '../components/run/RunMap';
 import PaymentModal from '../components/payment/PaymentModal';
+import GPSPrompt from '../components/shared/GPSPrompt';
 import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
@@ -444,6 +445,12 @@ const GenerateRunPage = () => {
               </div>
             )}
           </aside>
+        )}
+      </div>
+
+      {/* GPS-aktiverings prompt */}
+      <GPSPrompt />
+    </div>
         </section>
       )}
     </PageLayout>

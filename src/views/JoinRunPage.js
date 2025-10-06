@@ -6,6 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import PaymentModal from '../components/payment/PaymentModal';
+import GPSPrompt from '../components/shared/GPSPrompt';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
 import PageLayout from '../components/layout/PageLayout';
@@ -213,6 +214,11 @@ const JoinRunPage = () => {
         participantId={participantData?.userId}
         allowSkip
       />
+
+      {/* GPS-aktiverings prompt */}
+      <GPSPrompt />
+      </div>
+    </div>
     </PageLayout>
   );
 };
