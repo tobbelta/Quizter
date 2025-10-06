@@ -1,62 +1,84 @@
 # Guide: Sätt upp Automatisk Deployment till Firebase
 
-Detta är en guide för att konfigurera ditt GitHub-repository så att det automatiskt bygger och publicerar din GeoQuest-app till Firebase Hosting varje gång du slår ihop en branch med `main`.
+Detta är en guide för att konfigurera ditt GitHub-repository så att det automatiskt bygger och publicerar din GeoQuest-app till Firebase varje gång du gör en ändring i `main`-branchen.
 
-## Förutsättningar
+## Processen i Två Delar
 
-- Du har ett Firebase-projekt och har installerat Firebase CLI (`npm install -g firebase-tools`).
-- Du har ett GitHub-repository för ditt projekt.
-
----
-
-### Steg 1: Hämta din "Service Account"-nyckel
-
-Detta är en säkerhetsnyckel som låter GitHub agera på uppdrag av dig i ditt Firebase-projekt.
-
-1.  **Gå till Firebase Console:** [https://console.firebase.google.com/](https://console.firebase.google.com/)
-2.  **Välj ditt projekt.**
-3.  Klicka på **kugghjulsikonen** (⚙️) bredvid "Project Overview" och välj **Project settings**.
-4.  Klicka på fliken **Service accounts**.
-5.  Klicka på knappen **Generate new private key**. En JSON-fil kommer att laddas ner.
-6.  **Öppna JSON-filen** i en textredigerare. Du kommer att behöva hela innehållet i nästa steg.
+1.  **Spara hemligheter:** Du behöver spara olika hemligheter på två ställen: **GitHub Secrets** (för att den automatiska processen ska kunna köra) och **Google Secret Manager** (där dina funktioner hämtar API-nycklar i produktion).
+2.  **Automatisk Deployment:** När hemligheterna är sparade kommer `deploy.yml`-filen i ditt projekt att automatiskt driftsätta ny kod som pushas till `main`.
 
 ---
 
-### Steg 2: Lägg till "Secrets" på GitHub
+### Steg 1: Spara Hemligheter för GitHub Actions
 
-Hemligheter (Secrets) är ett säkert sätt att lagra känslig information (som dina API-nycklar) i ditt GitHub-repository utan att de syns i koden.
+Dessa hemligheter behövs för att GitHub ska kunna autentisera mot Google Cloud och bygga din React-app. Värdena för alla `REACT_APP_`-variabler hittar du i din lokala `.env`-fil.
 
 1.  **Gå till ditt repository på GitHub.com.**
 2.  Klicka på fliken **Settings**.
 3.  I menyn till vänster, navigera till **Secrets and variables > Actions**.
-4.  Klicka på knappen **New repository secret**.
+4.  Klicka på **New repository secret** för varje hemlighet nedan.
 
-Du ska nu skapa **två** hemligheter:
+**Du ska skapa följande hemligheter här:**
 
-**Hemlighet 1: Firebase Service Account**
-- **Namn:** `FIREBASE_SERVICE_ACCOUNT_GEOQUEST2`
-- **Värde (Secret):** Klistra in **hela innehållet** från JSON-filen du laddade ner i Steg 1.
+*   `FIREBASE_SERVICE_ACCOUNT_GEOQUEST2`
+    *   **Värde:** Klistra in **hela innehållet** från din `.json`-servicekontofil.
 
-**Hemlighet 2: Firebase Config för din app**
-- **Namn:** `REACT_APP_FIREBASE_CONFIG`
-- **Värde (Secret):** Gå till din lokala fil `src/firebase.js.local`. Kopiera **hela innehållet** i den filen och klistra in det här.
-
----
-
-### Steg 3: Ladda upp den nya filen
-
-Nu när du har kört PowerShell-skriptet har du en ny mapp `.github` i ditt projekt.
-
-1.  **Committa och pusha** ändringarna till din `main`-branch. Detta laddar upp `deploy.yml`-filen, vilket aktiverar den automatiska processen.
+*   `REACT_APP_FIREBASE_API_KEY`
+*   `REACT_APP_FIREBASE_AUTH_DOMAIN`
+*   `REACT_APP_FIREBASE_PROJECT_ID`
+*   `REACT_APP_FIREBASE_STORAGE_BUCKET`
+*   `REACT_APP_FIREBASE_MESSAGING_SENDER_ID`
+*   `REACT_APP_FIREBASE_APP_ID`
+*   `REACT_APP_FIREBASE_MEASUREMENT_ID`
+*   `REACT_APP_OPENROUTE_API_KEY`
+*   `REACT_APP_STRIPE_PUBLISHABLE_KEY`
 
 ---
 
-### Steg 4: Testa flödet
+### Steg 2: Spara API-nycklar i Google Secret Manager (Engångsåtgärd)
 
-Nu är allt klart! Nästa gång du:
-1. Skapar en feature branch.
-2. Gör ändringar och pushar dem.
-3. Slår ihop din feature branch med `main` via en Pull Request.
+Dina funktioner är konfigurerade för att säkert hämta API-nycklar från Google Secret Manager. Du behöver bara ladda upp dem dit **en enda gång** från din lokala terminal.
 
-...så kommer GitHub automatiskt att starta processen. Du kan följa förloppet under "Actions"-fliken i ditt GitHub-repository. Efter några minuter kommer din live-app att vara uppdaterad!
+Öppna en terminal i projektmappen `c:\Geo\geoquest2` och kör följande kommandon.
 
+**1. Sätt Gemini API-nyckel:**
+```shell
+firebase functions:secrets:set GEMINI_API_KEY --project geoquest2-7e45c
+```
+
+**2. Sätt OpenAI API-nyckel:**
+```shell
+firebase functions:secrets:set OPENAI_API_KEY --project geoquest2-7e45c
+```
+
+**3. Sätt Anthropic API-nyckel:**
+```shell
+firebase functions:secrets:set ANTHROPIC_API_KEY --project geoquest2-7e45c
+```
+
+**4. Sätt Stripe API-nyckel:**
+```shell
+firebase functions:secrets:set STRIPE_SECRET_KEY --project geoquest2-7e45c
+```
+
+---
+
+### Steg 3: Klart!
+
+Nu är allt korrekt konfigurerat. När du committar och pushar den uppdaterade `deploy.yml` och denna guide till `main`-branchen, kommer den automatiska deploymenten att fungera.
+
+---
+
+### Valfritt: Manuell Deployment
+
+Om du snabbt vill driftsätta ändringar utan att gå via GitHub kan du använda följande kommandon från din lokala terminal.
+
+**Driftsätt allt (både frontend och backend):**
+```shell
+npm run build && firebase deploy --project geoquest2-7e45c
+```
+
+**Driftsätt ENDAST funktioner (backend):**
+```shell
+firebase deploy --only functions --project geoquest2-7e45c
+```

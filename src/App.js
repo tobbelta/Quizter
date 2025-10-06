@@ -22,6 +22,7 @@ import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
 import SuperUserMessagesPage from './views/SuperUserMessagesPage';
+import SuperUserNotificationsPage from './views/SuperUserNotificationsPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
@@ -102,6 +103,14 @@ const AppRoutes = () => (
       element={(
         <RequireSuperUser>
           <SuperUserMessagesPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/superuser/notifications"
+      element={(
+        <RequireSuperUser>
+          <SuperUserNotificationsPage />
         </RequireSuperUser>
       )}
     />

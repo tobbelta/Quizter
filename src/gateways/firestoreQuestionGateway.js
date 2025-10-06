@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 
 const QUESTIONS_COLLECTION = 'questions';
@@ -54,7 +54,12 @@ const addManyQuestions = async (questions) => {
 
   questions.forEach(question => {
     const questionRef = doc(db, QUESTIONS_COLLECTION, question.id);
-    batch.set(questionRef, question, { merge: true });
+    // Lägg till createdAt om det inte finns
+    const questionData = {
+      ...question,
+      createdAt: question.createdAt || serverTimestamp()
+    };
+    batch.set(questionRef, questionData, { merge: true });
   });
 
   await batch.commit();

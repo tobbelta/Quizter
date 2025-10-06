@@ -1,5 +1,5 @@
 /**
- * Vy där spelare ansluter med en join-kod eller QR-länk.
+ * Vy där spelare ansluter med en kod eller via QR-länk.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -9,7 +9,7 @@ import PaymentModal from '../components/payment/PaymentModal';
 import GPSPrompt from '../components/shared/GPSPrompt';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
-import Header from '../components/layout/Header';
+import PageLayout from '../components/layout/PageLayout';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
@@ -27,7 +27,6 @@ const JoinRunPage = () => {
   const [participantData, setParticipantData] = useState(null);
 
   const handleJoin = useCallback(async (code) => {
-    console.log('handleJoin called with code:', code);
     setError('');
     setSuccess('');
 
@@ -43,32 +42,27 @@ const JoinRunPage = () => {
         setError('Ange ett alias för att delta.');
         return;
       }
-      console.log('Calling loginAsGuest');
       participantUser = await loginAsGuest({ alias, contact });
-      console.log('loginAsGuest returned:', participantUser);
     }
 
     try {
-      console.log('Calling joinRunByCode with code:', upperCode);
       const { run } = await joinRunByCode(upperCode, {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
-        isAnonymous: participantUser?.isAnonymous
+        isAnonymous: participantUser?.isAnonymous,
       });
-      console.log('joinRunByCode returned run:', run);
 
       setRunToJoin(run);
       setParticipantData({
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
-        isAnonymous: participantUser?.isAnonymous
+        isAnonymous: participantUser?.isAnonymous,
       });
 
       setShowPayment(true);
     } catch (joinError) {
-      console.error('Error in handleJoin:', joinError);
       setError(joinError.message);
     }
   }, [currentUser, alias, contact, loginAsGuest, joinRunByCode]);
@@ -88,7 +82,7 @@ const JoinRunPage = () => {
   const handleSubmit = (event) => {
     event.preventDefault();
     handleJoin(joinCode);
-  }
+  };
 
   const handlePaymentSuccess = (paymentResult) => {
     setShowPayment(false);
@@ -103,17 +97,15 @@ const JoinRunPage = () => {
       localStorageService.addJoinedRun(runToJoin, participantData);
     }
 
-    // Logga join analytics
     analyticsService.logVisit('join_run', {
       runId: runToJoin.id,
-      runName: runToJoin.name
+      runName: runToJoin.name,
     });
 
-    // Logga donation om det inte hoppades över
     if (!paymentResult.skipped && paymentResult.paymentIntentId) {
       analyticsService.logDonation(1000, paymentResult.paymentIntentId, {
         runId: runToJoin.id,
-        context: 'join_run'
+        context: 'join_run',
       });
     }
 
@@ -122,7 +114,7 @@ const JoinRunPage = () => {
         paymentIntentId: paymentResult.paymentIntentId,
         testMode: paymentResult.testMode,
         skipped: paymentResult.skipped || false,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       }));
     }
 
@@ -136,39 +128,59 @@ const JoinRunPage = () => {
     setError('Du kan fortfarande ansluta utan att donera.');
   };
 
+  const localInfo = !currentUser ? localStorageService.getJoinedRuns() : [];
+
   return (
-    <div className="min-h-screen bg-slate-950">
-      <Header />
-      <div className="mx-auto max-w-xl px-4 py-8 space-y-6">
-      <header>
-        <h1 className="text-3xl font-bold mb-2">Anslut till runda</h1>
-        <p className="text-gray-300">Ange anslutningskod från QR eller inbjudan.</p>
-      </header>
+    <PageLayout headerTitle="Anslut till runda" maxWidth="max-w-2xl" className="space-y-8">
+      <section className="space-y-3 text-center">
+        <h1 className="text-3xl font-semibold text-slate-100">Skriv in din kod</h1>
+        <p className="text-sm text-gray-300 sm:text-base">
+          Koden finns i QR-länken eller på kortet som delades med dig. Skanna gärna QR:n direkt om du har den.
+        </p>
+      </section>
 
-      {error && <div className="rounded border border-red-500 bg-red-900/40 px-4 py-3 text-red-200">{error}</div>}
-      {success && <div className="rounded border border-emerald-500 bg-emerald-900/40 px-4 py-3 text-emerald-100">{success}</div>}
+      {localInfo.length > 0 && (
+        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">
+          Du har sparade rundor på denna enhet. Du hittar dem under <span className="font-semibold">Mina rundor</span> i menyn.
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="rounded-2xl border border-red-500/40 bg-red-900/40 px-4 py-3 text-red-100">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/40 px-4 py-3 text-emerald-100">
+          {success}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 sm:p-6">
         <div>
           <label className="mb-1 block text-sm font-semibold text-cyan-200">Anslutningskod</label>
           <input
             value={joinCode}
             onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-            className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 font-mono text-lg tracking-widest"
+            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 font-mono text-lg tracking-[0.4em] text-center text-slate-100 focus:border-cyan-400 focus:outline-none"
             placeholder="ABC123"
+            inputMode="text"
           />
         </div>
 
         {!currentUser && (
-          <div className="rounded border border-slate-600 bg-slate-900/60 p-4 space-y-3">
-            <h2 className="text-lg font-semibold text-cyan-200">Delta som gäst</h2>
-            <p className="text-sm text-gray-400">Ange ett alias (och valfri kontakt) för att delta anonymt.</p>
+          <div className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div>
+              <h2 className="text-base font-semibold text-cyan-200">Spela som gäst</h2>
+              <p className="text-xs text-gray-400">Ange ett alias (och valfri kontaktuppgift) så registrerar vi dig som anonym spelare.</p>
+            </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-200">Alias</label>
               <input
                 value={alias}
                 onChange={(event) => setAlias(event.target.value)}
-                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
                 placeholder="Spelare 1"
               />
             </div>
@@ -177,7 +189,7 @@ const JoinRunPage = () => {
               <input
                 value={contact}
                 onChange={(event) => setContact(event.target.value)}
-                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
                 placeholder="E-post eller telefon"
               />
             </div>
@@ -186,28 +198,28 @@ const JoinRunPage = () => {
 
         <button
           type="submit"
-          className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+          className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-cyan-400"
         >
           Anslut till runda
         </button>
       </form>
 
-      {/* Betalningsmodal */}
       <PaymentModal
         isOpen={showPayment}
         runName={runToJoin?.name || ''}
-        amount={500} // 5 kr donation för att ansluta
+        amount={500}
         onSuccess={handlePaymentSuccess}
         onCancel={handlePaymentCancel}
         runId={runToJoin?.id}
         participantId={participantData?.userId}
-        allowSkip={true}
+        allowSkip
       />
 
       {/* GPS-aktiverings prompt */}
       <GPSPrompt />
       </div>
     </div>
+    </PageLayout>
   );
 };
 

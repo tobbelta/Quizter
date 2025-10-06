@@ -107,22 +107,6 @@ const CreateRunPage = () => {
     });
   };
 
-  /** Hämtar fler frågor från OpenTDB med aktuell profil. */
-  const handleImportQuestions = async () => {
-    setError('');
-        setIsImporting(true);
-    try {
-      await questionService.fetchAndAddFromOpenTDB({
-        amount: 10,
-        difficulty: form.difficulty,
-        audience: form.audience
-      });
-    } catch (importError) {
-      setError(importError.message);
-    } finally {
-      setIsImporting(false);
-    }
-  };
 
   /** Skapar rundan och nollställer feedback. */
   const handleSubmit = async (event) => {
@@ -192,14 +176,6 @@ const CreateRunPage = () => {
             Startposition: <strong>{coords ? '📍 Din GPS-position' : '📍 Kalmar (standard)'}</strong>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleImportQuestions}
-          disabled={isImporting}
-          className="rounded bg-purple-500 px-4 py-2 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700 disabled:text-gray-400"
-        >
-          {isImporting ? 'Importerar...' : 'Hämta frågor från OpenTDB'}
-        </button>
       </div>
 
 

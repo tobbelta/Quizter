@@ -3,10 +3,9 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
-import { opentdbService } from './opentdbService';
 import { questionRepository } from '../repositories/questionRepository';
 
-let cachedQuestions = [...QUESTION_BANK];
+let cachedQuestions = []; // Använd bara Firestore-frågor
 let isInitialized = false;
 
 const listeners = new Set();
@@ -19,18 +18,19 @@ const initialize = async () => {
   if (isInitialized) return;
   try {
     const firestoreQuestions = await questionRepository.listQuestions(); // Use repository
-    // Kombinera och ta bort duplicerade frågor
-    const allQuestions = [...QUESTION_BANK, ...firestoreQuestions];
-    const uniqueQuestions = allQuestions.filter((q, index, self) => 
-        index === self.findIndex((t) => t.id === q.id)
-    );
-    cachedQuestions = uniqueQuestions;
+    // Använd BARA frågor från Firestore (ta bort inbyggda frågor)
+    // Sortera efter createdAt, nyaste först
+    cachedQuestions = firestoreQuestions.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA; // Nyaste först
+    });
     isInitialized = true;
     notify();
   } catch (error) {
     console.error("Kunde inte initialisera frågebanken från Firestore:", error);
-    // Fallback till bara inbyggda frågor
-    cachedQuestions = [...QUESTION_BANK];
+    // Fallback till tom lista
+    cachedQuestions = [];
   }
 };
 
@@ -44,7 +44,15 @@ const addQuestions = async (questions) => {
   try {
     const questionsWithIds = incoming.map(q => ({ ...q, id: q.id || uuidv4() }));
     await questionRepository.addManyQuestions(questionsWithIds);
-    cachedQuestions = [...cachedQuestions, ...incoming];
+
+    // Ladda om från Firestore för att få korrekta createdAt timestamps
+    const firestoreQuestions = await questionRepository.listQuestions();
+    cachedQuestions = firestoreQuestions.sort((a, b) => {
+      const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return timeB - timeA; // Nyaste först
+    });
+
     notify();
   } catch (error) {
     console.error("Kunde inte spara nya frågor till Firestore:", error);
@@ -88,11 +96,7 @@ export const questionService = {
   },
   getManyByIds: (ids) => ids.map(id => questionService.getById(id)).filter(Boolean),
   getManyByIdsForLanguage: (ids, language = 'sv') => ids.map(id => questionService.getByIdForLanguage(id, language)).filter(Boolean),
-  async fetchAndAddFromOpenTDB({ amount = 10, audience = 'family', difficulty = 'family' } = {}) {
-    const fetched = await opentdbService.fetchQuestions({ amount, difficulty, audience });
-    await addQuestions(fetched);
-    return fetched;
-  },
+  addQuestions: async (questions) => await addQuestions(questions),
   delete: async (questionId) => {
     const questionIndex = cachedQuestions.findIndex(q => q.id === questionId);
     if (questionIndex === -1) {

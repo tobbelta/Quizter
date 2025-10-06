@@ -16,8 +16,6 @@ const RunAdminPage = () => {
   const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('sv');
-  const [isFetchingQuestions, setIsFetchingQuestions] = useState(false);
-  const [fetchQuestionsError, setFetchQuestionsError] = useState('');
 
   const joinLink = currentRun ? buildJoinLink(currentRun.joinCode) : '';
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
@@ -67,21 +65,6 @@ const RunAdminPage = () => {
     }
   };
 
-  const handleFetchQuestions = async () => {
-    setFetchQuestionsError('');
-    setIsFetchingQuestions(true);
-    try {
-      await questionService.fetchAndAddFromOpenTDB({
-        amount: 10,
-        difficulty: currentRun.difficulty,
-        audience: currentRun.audience
-      });
-    } catch (error) {
-      setFetchQuestionsError(error.message);
-    } finally {
-      setIsFetchingQuestions(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -182,12 +165,6 @@ const RunAdminPage = () => {
                   </div>
                 );
               })}
-            </div>
-            <div className="mt-4">
-                <button onClick={handleFetchQuestions} disabled={isFetchingQuestions} className="w-full rounded-lg bg-purple-500 px-4 py-3 font-semibold text-black hover:bg-purple-400 disabled:bg-slate-700">
-                    {isFetchingQuestions ? 'Hämtar frågor...' : 'Hämta nya frågor'}
-                </button>
-                {fetchQuestionsError && <p className="text-red-500 text-sm mt-2">{fetchQuestionsError}</p>}
             </div>
         </div>
 

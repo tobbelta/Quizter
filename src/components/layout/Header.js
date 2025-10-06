@@ -14,6 +14,7 @@ import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
 import { VERSION, BUILD_DATE } from '../../version';
+import ServiceStatusBanner from '../shared/ServiceStatusBanner';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
@@ -24,12 +25,10 @@ const Header = ({ title = 'RouteQuest' }) => {
   const [showMessages, setShowMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
-  console.log('Header isSuperUser:', isSuperUser);
-
-  // Lyssna på olästa meddelanden i realtid
+    // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
     // Prenumerera på meddelanden i realtid
     const unsubscribe = messageService.subscribeToMessages(userId, deviceId, (messages) => {
@@ -130,6 +129,33 @@ const Header = ({ title = 'RouteQuest' }) => {
           <span className="text-[10px] text-gray-500 mt-0.5">
             v{VERSION}
           </span>
+    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
+      {/* Service Status Banner - visas endast för SuperUser */}
+      {isSuperUser && <ServiceStatusBanner />}
+
+      <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
+        {/* Vänster: Logotyp */}
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center hover:opacity-80 transition-opacity justify-start"
+        >
+          <img
+            src="/logo-compass.svg"
+            alt="RouteQuest"
+            className="w-10 h-10 flex-shrink-0"
+          />
+        </button>
+
+        {/* Mitten: Dynamisk titel */}
+        <div className="text-center px-2 flex items-center justify-center overflow-hidden">
+          <h1 className="text-base sm:text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
+            {title}
+          </h1>
+          {isSuperUser && (
+            <span className="ml-2 px-2 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-300">
+              SuperUser
+            </span>
+          )}
         </div>
 
         {/* Höger: Hamburger-meny */}
@@ -156,19 +182,24 @@ const Header = ({ title = 'RouteQuest' }) => {
             ) : null}
           </button>
 
-          {/* Dropdown-meny */}
-          {isMenuOpen && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setIsMenuOpen(false)}
-              />
+          {/* Meny trigger placeholder */}
+        </div>
+      </div>
+    </header>
 
-              {/* Meny */}
-              <div className="absolute right-0 mt-2 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-50 overflow-hidden">
-                {/* Användarinfo */}
-                {isAuthenticated && (
+    {/* Dropdown-meny - utanför header */}
+    {isMenuOpen && (
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-[60]"
+          onClick={() => setIsMenuOpen(false)}
+        />
+
+        {/* Meny */}
+        <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] overflow-hidden">
+                {/* Användarinfo - visa bara för riktigt inloggade */}
+                {isAuthenticated && !currentUser?.isAnonymous && (
                   <div className="px-4 py-3 border-b border-slate-700">
                     <p className="text-sm text-gray-400">Inloggad som</p>
                     <p className="font-semibold text-gray-200">{currentUser?.name}</p>
@@ -180,11 +211,18 @@ const Header = ({ title = 'RouteQuest' }) => {
                   </div>
                 )}
 
+                {/* Gäststatus - visa bara för anonyma */}
+                {isAuthenticated && currentUser?.isAnonymous && (
+                  <div className="px-4 py-3 border-b border-slate-700">
+                    <p className="text-sm text-gray-400">Gäst (ej inloggad)</p>
+                  </div>
+                )}
+
                 {/* Menyalternativ */}
                 <div className="py-2">
                   {/* Meddelanden */}
                   <button
-                    onClick={() => { setShowMessages(!showMessages); }}
+                    onClick={() => { setIsMenuOpen(false); setShowMessages(!showMessages); }}
                     className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
                   >
                     <span className="text-gray-200">Meddelanden</span>
@@ -212,6 +250,12 @@ const Header = ({ title = 'RouteQuest' }) => {
                   {isSuperUser && (
                     <>
                       <div className="my-2 border-t border-slate-700" />
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/notifications'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Systemnotiser
+                      </button>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/superuser/all-runs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
@@ -242,6 +286,35 @@ const Header = ({ title = 'RouteQuest' }) => {
                       >
                         Meddelanden
                       </button>
+
+                      {/* Developer Tools - Endast localhost */}
+                      {window.location.hostname === 'localhost' && (
+                        <>
+                          <div className="my-2 border-t border-slate-700" />
+                          <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                            DEVELOPER TOOLS
+                          </div>
+                          <button
+                            onClick={async () => {
+                              setIsMenuOpen(false);
+                              if (window.confirm('Uppdatera alla frågor med createdAt-fält?\n\nDetta kan ta några sekunder.')) {
+                                try {
+                                  const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt');
+                                  const data = await response.json();
+                                  alert(`✅ Klart!\n\nUppdaterade: ${data.updated}\nHade redan: ${data.alreadyHad}\nTotalt: ${data.total}`);
+                                  // Ladda om sidan för att visa uppdaterade datum
+                                  window.location.reload();
+                                } catch (error) {
+                                  alert(`❌ Fel: ${error.message}`);
+                                }
+                              }
+                            }}
+                            className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-yellow-300 text-sm"
+                          >
+                            🔧 Update Questions createdAt
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -256,7 +329,7 @@ const Header = ({ title = 'RouteQuest' }) => {
 
                   {/* Login/Logout */}
                   <div className="my-2 border-t border-slate-700" />
-                  {isAuthenticated ? (
+                  {isAuthenticated && !currentUser?.isAnonymous ? (
                     <button
                       onClick={handleLogout}
                       className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
@@ -272,12 +345,9 @@ const Header = ({ title = 'RouteQuest' }) => {
                     </button>
                   )}
                 </div>
-              </div>
-            </>
-          )}
         </div>
-      </div>
-    </header>
+      </>
+    )}
 
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
@@ -287,11 +357,11 @@ const Header = ({ title = 'RouteQuest' }) => {
       <>
         {/* Backdrop */}
         <div
-          className="fixed inset-0 z-40"
+          className="fixed inset-0 z-[60]"
           onClick={() => setShowMessages(false)}
         />
         {/* Dropdown positioned near hamburger menu */}
-        <div className="fixed top-16 right-4 z-50">
+        <div className="fixed top-16 right-4 z-[70]">
           <MessagesDropdown
             isOpen={showMessages}
             onClose={() => setShowMessages(false)}
