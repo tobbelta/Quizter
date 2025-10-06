@@ -57,7 +57,9 @@ const GenerateRunPage = () => {
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
 
   // Användarens GPS-position (om tillgänglig)
-  const userPosition = coords ? { lat: coords.latitude, lng: coords.longitude } : null;
+  const userPosition = coords && coords.latitude && coords.longitude
+    ? { lat: coords.latitude, lng: coords.longitude }
+    : null;
 
   const handleRegenerate = async () => {
     setError('');
@@ -237,7 +239,7 @@ const GenerateRunPage = () => {
           </div>
 
           {/* GPS Debug Info - hjälper mobilanvändare */}
-          {userPosition && (
+          {userPosition && userPosition.lat && userPosition.lng && (
             <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/20 px-4 py-3 text-sm">
               <div className="flex items-center gap-2 text-emerald-300">
                 <span>📍</span>
