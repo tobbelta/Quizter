@@ -217,8 +217,6 @@ const JoinRunPage = () => {
 
       {/* GPS-aktiverings prompt */}
       <GPSPrompt />
-      </div>
-    </div>
     </PageLayout>
   );
 };
