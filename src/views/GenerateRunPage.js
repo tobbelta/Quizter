@@ -14,6 +14,7 @@ import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
 import useQRCode from '../hooks/useQRCode';
+import useRunLocation from '../hooks/useRunLocation';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 import FullscreenMap from '../components/shared/FullscreenMap';
 
@@ -41,6 +42,7 @@ const categoryOptions = [
 const GenerateRunPage = () => {
   const { currentUser } = useAuth();
   const { generateRun } = useRun();
+  const { coords } = useRunLocation();
   const [form, setForm] = useState(defaultForm);
   const [error, setError] = useState('');
   const [generatedRun, setGeneratedRun] = useState(null);
@@ -53,6 +55,9 @@ const GenerateRunPage = () => {
 
   const joinLink = generatedRun ? buildJoinLink(generatedRun.joinCode) : '';
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
+
+  // Användarens GPS-position (om tillgänglig)
+  const userPosition = coords ? { lat: coords.latitude, lng: coords.longitude } : null;
 
   const handleRegenerate = async () => {
     setError('');
@@ -187,6 +192,7 @@ const GenerateRunPage = () => {
         <FullscreenMap
           checkpoints={generatedRun?.checkpoints || []}
           route={generatedRun?.route}
+          userPosition={userPosition}
           onClose={() => setIsMapFullscreen(false)}
         />
       )}
@@ -352,7 +358,7 @@ const GenerateRunPage = () => {
                 <div className="h-[22rem] rounded-xl border border-slate-700 bg-slate-900/70">
                   <RunMap
                     checkpoints={generatedRun.checkpoints || []}
-                    userPosition={null}
+                    userPosition={userPosition}
                     activeOrder={0}
                     answeredCount={0}
                     route={generatedRun.route}
