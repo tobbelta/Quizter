@@ -9,6 +9,7 @@ import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
+import ValidationPanel from '../components/admin/ValidationPanel';
 
 const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, isSelected, onSelect }) => {
   const [currentLang, setCurrentLang] = useState('sv');
@@ -278,9 +279,16 @@ const AdminQuestionsPage = () => {
       }
 
       // Lägg till frågor (subscription i useEffect kommer uppdatera UI automatiskt)
-      await questionService.addQuestions(data.questions || []);
+      const importResult = await questionService.addQuestions(data.questions || []);
 
-      alert(`🎉 ${data.count} nya AI-genererade frågor skapades med ${aiProvider}!\n\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`);
+      let message = `🎉 AI-generering med ${aiProvider} klar!\n\n`;
+      message += `✓ ${importResult.added} nya frågor importerades\n`;
+      if (importResult.duplicatesBlocked > 0) {
+        message += `⚠️ ${importResult.duplicatesBlocked} dubletter blockerades\n`;
+      }
+      message += `\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`;
+
+      alert(message);
     } catch (error) {
       alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att API-nyckeln för ${aiProvider} är konfigurerad i Firebase.`);
     } finally {
@@ -376,10 +384,22 @@ const AdminQuestionsPage = () => {
           >
             🔍 Dubletter
           </button>
+          <button
+            onClick={() => setActiveTab('validation')}
+            className={`px-4 py-2 font-semibold transition-colors ${
+              activeTab === 'validation'
+                ? 'text-green-400 border-b-2 border-green-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            ✓ Validering
+          </button>
         </div>
 
         {/* Innehåll baserat på aktiv flik */}
-        {activeTab === 'duplicates' ? (
+        {activeTab === 'validation' ? (
+          <ValidationPanel />
+        ) : activeTab === 'duplicates' ? (
           <DuplicateQuestionsPanel />
         ) : (
           <>

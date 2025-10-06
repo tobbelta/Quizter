@@ -58,12 +58,38 @@ const addQuestions = async (questions) => {
     const allQuestions = [...cachedQuestions, ...incoming];
     const duplicates = findDuplicates(allQuestions, 'sv', 0.85);
 
-    if (duplicates.length > 0) {
-      console.warn('[questionService] Hittade potentiella dubletter:', duplicates);
-      // Logga varning men tillåt för nu - användaren kan välja att ta bort manuellt
+    // Filtrera bort dubletter från incoming - behåll bara nya frågor som INTE är dubletter
+    const duplicateQuestionIds = new Set();
+    duplicates.forEach(dup => {
+      // Om question2 är en incoming-fråga, markera den som dublett
+      if (incoming.some(q => q.id === dup.question2.id)) {
+        duplicateQuestionIds.add(dup.question2.id);
+      }
+      // Om question1 är en incoming-fråga och question2 redan finns, markera question1
+      if (incoming.some(q => q.id === dup.question1.id) && cachedQuestions.some(q => q.id === dup.question2.id)) {
+        duplicateQuestionIds.add(dup.question1.id);
+      }
+    });
+
+    const uniqueIncoming = incoming.filter(q => !duplicateQuestionIds.has(q.id));
+
+    if (duplicateQuestionIds.size > 0) {
+      console.warn(`[questionService] Blockerar ${duplicateQuestionIds.size} dubletter vid import:`,
+        Array.from(duplicateQuestionIds));
+
+      // Om ALLA frågor är dubletter, kasta fel
+      if (uniqueIncoming.length === 0) {
+        throw new Error(
+          `Alla ${incoming.length} frågor är dubletter av befintliga frågor. ` +
+          `Ingen ny fråga importerades.`
+        );
+      }
+
+      // Annars fortsätt med de unika frågorna
+      console.log(`[questionService] Importerar ${uniqueIncoming.length} unika frågor (blockerade ${duplicateQuestionIds.size} dubletter)`);
     }
 
-    const questionsWithIds = incoming.map(q => ({ ...q, id: q.id || uuidv4() }));
+    const questionsWithIds = uniqueIncoming.map(q => ({ ...q, id: q.id || uuidv4() }));
     await questionRepository.addManyQuestions(questionsWithIds);
 
     // Ladda om från Firestore för att få korrekta createdAt timestamps
@@ -75,11 +101,17 @@ const addQuestions = async (questions) => {
     });
 
     notify();
+
+    // Returnera statistik om importen
+    return {
+      added: questionsWithIds.length,
+      duplicatesBlocked: duplicateQuestionIds.size,
+      total: incoming.length
+    };
   } catch (error) {
     console.error("Kunde inte spara nya frågor till Firestore:", error);
     throw error; // Kasta vidare så anroparen ser felet
   }
-  return cachedQuestions;
 };
 
 const normalizeQuestion = (question) => {
