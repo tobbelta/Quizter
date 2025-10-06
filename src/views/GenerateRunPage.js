@@ -65,6 +65,13 @@ const GenerateRunPage = () => {
     const newSeed = Math.floor(Math.random() * 100000);
     setSeed(newSeed);
     try {
+      // Använd GPS-position om tillgänglig, annars fallback
+      const originPosition = userPosition
+        ? { lat: userPosition.lat, lng: userPosition.lng }
+        : FALLBACK_POSITION;
+
+      console.log('🔄 Regenererar runda från position:', originPosition);
+
       const run = await generateRun({
         name: form.name,
         difficulty: form.difficulty,
@@ -73,7 +80,7 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
-        origin: FALLBACK_POSITION,
+        origin: originPosition,
         seed: newSeed,
         preferGreenAreas: form.preferGreenAreas,
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
@@ -82,7 +89,8 @@ const GenerateRunPage = () => {
         setIsRunSaved(false);
       }
     } catch (generationError) {
-      setError(generationError.message);
+      console.error('❌ Fel vid regenerering:', generationError);
+      setError(`Kunde inte regenerera runda: ${generationError.message}`);
     } finally {
       setIsRegenerating(false);
     }
@@ -148,6 +156,15 @@ const GenerateRunPage = () => {
         setError('Ange ett namn på rundan.');
         return;
       }
+
+      // Använd GPS-position om tillgänglig, annars fallback
+      const originPosition = userPosition
+        ? { lat: userPosition.lat, lng: userPosition.lng }
+        : FALLBACK_POSITION;
+
+      console.log('🗺️ Genererar runda från position:', originPosition);
+      console.log('📍 GPS aktiv:', !!userPosition);
+
       const run = await generateRun({
         name: form.name,
         difficulty: form.difficulty,
@@ -156,10 +173,11 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
-        origin: FALLBACK_POSITION,
+        origin: originPosition,
         seed,
         preferGreenAreas: form.preferGreenAreas,
       }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
+
       if (run) {
         setGeneratedRun(run);
         setIsRunSaved(false);
@@ -171,7 +189,8 @@ const GenerateRunPage = () => {
         });
       }
     } catch (generationError) {
-      setError(generationError.message);
+      console.error('❌ Fel vid generering:', generationError);
+      setError(`Kunde inte generera runda: ${generationError.message}`);
     }
   };
 
@@ -216,6 +235,31 @@ const GenerateRunPage = () => {
               Ange namn, svårighetsgrad och önskad längd. RouteQuest skapar en rutt och väljer frågor åt dig.
             </p>
           </div>
+
+          {/* GPS Debug Info - hjälper mobilanvändare */}
+          {userPosition && (
+            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/20 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2 text-emerald-300">
+                <span>📍</span>
+                <span className="font-semibold">GPS aktiv</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-300">
+                Rundan kommer genereras från din nuvarande position ({userPosition.lat.toFixed(4)}, {userPosition.lng.toFixed(4)})
+              </p>
+            </div>
+          )}
+
+          {!userPosition && (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm">
+              <div className="flex items-center gap-2 text-amber-300">
+                <span>⚠️</span>
+                <span className="font-semibold">GPS inte aktiv</span>
+              </div>
+              <p className="mt-1 text-xs text-gray-300">
+                Rundan kommer genereras från standardposition (Göteborg). Aktivera GPS för att skapa runda från din position.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-2xl border border-red-500/40 bg-red-900/40 px-4 py-3 text-red-100">
