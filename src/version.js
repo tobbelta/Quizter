@@ -7,7 +7,7 @@
  * - PATCH: Buggfixar, bakåtkompatibelt
  */
 
-export const VERSION = '0.2.1';
+export const VERSION = '0.2.2';
 export const BUILD_DATE = new Date().toISOString();
 export const FEATURES = {
   localStorage: true,
@@ -16,10 +16,22 @@ export const FEATURES = {
   superuser: true,
   simplifiedUI: true,
   gpsStatus: true,
-  cacheControl: true
+  cacheControl: true,
+  mapImprovements: true
 };
 
 export const CHANGELOG = [
+  {
+    version: '0.2.2',
+    date: '2025-10-06',
+    changes: [
+      'Tydlig blå 📍-ikon för användarens position på kartan',
+      'Checkpointnummer visas på alla checkpoints (1, 2, 3, etc)',
+      'Användarens GPS-position visas nu när man skapar runda',
+      'Pulsande animation på användarens position för enkel identifiering',
+      'Förbättrad kartvisning med numrerade markers istället för cirklar'
+    ]
+  },
   {
     version: '0.2.1',
     date: '2025-10-06',

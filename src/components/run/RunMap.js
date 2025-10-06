@@ -2,7 +2,7 @@
  * Visar rundans checkpoints på en Leaflet-karta, följer spelaren och visar ruttens riktning.
  */
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-polylinedecorator'; // Importera för att rita pilar
 import L from 'leaflet'; // Behövs för PolylineDecorator
@@ -30,6 +30,65 @@ const createStartFinishIcon = () => {
     className: 'custom-start-finish-icon',
     iconSize: [32, 32],
     iconAnchor: [16, 16]
+  });
+};
+
+// Skapa en tydlig ikon för användarens position
+const createUserPositionIcon = () => {
+  return L.divIcon({
+    html: `
+      <div style="
+        background: #3b82f6;
+        color: white;
+        border: 4px solid white;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.6), 0 0 0 4px rgba(59, 130, 246, 0.2);
+        animation: pulse 2s ease-in-out infinite;
+      ">📍</div>
+      <style>
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+      </style>
+    `,
+    className: 'custom-user-position-icon',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
+};
+
+// Skapa en numrerad checkpoint-ikon
+const createCheckpointIcon = (number, color, isActive) => {
+  const size = isActive ? 36 : 32;
+  return L.divIcon({
+    html: `
+      <div style="
+        background: ${color};
+        color: white;
+        border: 3px solid white;
+        border-radius: 50%;
+        width: ${size}px;
+        height: ${size}px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: ${isActive ? '16px' : '14px'};
+        font-weight: bold;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        ${isActive ? 'box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);' : ''}
+      ">${number}</div>
+    `,
+    className: 'custom-checkpoint-icon',
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2]
   });
 };
 
@@ -177,20 +236,13 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, 
           const isCompleted = index < answeredCount;
           const isActive = index === activeOrder;
           const color = isCompleted ? '#10b981' : isActive ? '#f59e0b' : '#6366f1';
-          const radius = isActive ? 14 : 10;
           const key = checkpoints[index].questionId || checkpoints[index].order || index;
+          const checkpointNumber = index + 1;
           return (
-            <CircleMarker
+            <Marker
               key={key}
-              center={position}
-              radius={radius}
-              pathOptions={{
-                color: '#ffffff',
-                fillColor: color,
-                fillOpacity: 0.9,
-                weight: 3,
-                opacity: 1.0
-              }}
+              position={position}
+              icon={createCheckpointIcon(checkpointNumber, color, isActive)}
             />
           );
         })}
@@ -202,15 +254,9 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, 
           />
         )}
         {userPosition && (
-          <CircleMarker
-            center={[userPosition.lat, userPosition.lng]}
-            radius={10}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: '#ef4444',
-              fillOpacity: 1.0,
-              weight: 3
-            }}
+          <Marker
+            position={[userPosition.lat, userPosition.lng]}
+            icon={createUserPositionIcon()}
           />
         )}
       </MapContainer>
