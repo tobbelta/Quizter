@@ -35,5 +35,10 @@ firebase-debug.log
 .vscode
 .idea
 
-# Markdown-filer
+# Markdown-filer (tillåt viktiga dokumentationsfiler)
 *.md
+!README.md
+!docs/*.md
+!scripts/README.md
+!.github/PULL_REQUEST_TEMPLATE.md
+!.github/ISSUE_TEMPLATE/*.md

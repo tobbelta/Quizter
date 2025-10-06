@@ -1,0 +1,90 @@
+name: Auto Version Bump
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  bump-version:
+    # Kör bara om PR:en mergades (inte stängdes utan merge)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine version bump type from labels
+        id: version-type
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          LABELS=$(gh pr view $PR_NUMBER --json labels --jq '.labels[].name')
+
+          if echo "$LABELS" | grep -q "version:major"; then
+            echo "type=major" >> $GITHUB_OUTPUT
+            echo "📦 Detekterade label: version:major"
+          elif echo "$LABELS" | grep -q "version:minor"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+            echo "📦 Detekterade label: version:minor"
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "📦 Ingen version-label, använder patch som standard"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump version
+        run: |
+          node scripts/bump-version.js ${{ steps.version-type.outputs.type }}
+
+      - name: Read new version
+        id: new-version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🎉 Ny version: $VERSION"
+
+      - name: Commit version bump
+        run: |
+          git add src/version.js public/index.html public/version-check.js package.json
+          git commit -m "chore: bump version to ${{ steps.new-version.outputs.version }} [skip ci]"
+          git tag "v${{ steps.new-version.outputs.version }}"
+
+      - name: Push changes
+        run: |
+          git push origin main
+          git push origin "v${{ steps.new-version.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.new-version.outputs.version }}
+          release_name: Release v${{ steps.new-version.outputs.version }}
+          body: |
+            🎉 Automatisk release för version ${{ steps.new-version.outputs.version }}
+
+            **Merged PR:** #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+
+            Se [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/src/version.js) för detaljer.
+          draft: false
+          prerelease: false
