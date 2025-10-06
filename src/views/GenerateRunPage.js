@@ -59,9 +59,11 @@ const GenerateRunPage = () => {
 
   // Användarens GPS-position (om tillgänglig)
   // OBS: coords från useRunLocation har redan lat/lng format (inte latitude/longitude)
-  const userPosition = coords && coords.lat && coords.lng
-    ? { lat: coords.lat, lng: coords.lng }
-    : null;
+  const userPosition = React.useMemo(() => {
+    return coords && coords.lat && coords.lng
+      ? { lat: coords.lat, lng: coords.lng }
+      : null;
+  }, [coords]);
 
   // Logga GPS-status när komponenten laddas OCH när coords ändras
   React.useEffect(() => {

@@ -7,7 +7,7 @@
  * - PATCH: Buggfixar, bakåtkompatibelt
  */
 
-export const VERSION = '0.2.2';
+export const VERSION = '0.2.3';
 export const BUILD_DATE = new Date().toISOString();
 export const FEATURES = {
   localStorage: true,
@@ -21,6 +21,19 @@ export const FEATURES = {
 };
 
 export const CHANGELOG = [
+  {
+    version: '0.2.3',
+    date: '2025-10-06',
+    changes: [
+      'Kompaktare header-design med bättre mobilanpassning',
+      'GPS-status och version flyttad till hamburger-menyn',
+      'Klickbara checkpoints på kartan när GPS är avstängd',
+      'Borttagen betalningskontroll - alla rundor är gratis',
+      'URL-baserad versionskontroll för att undvika cache-problem',
+      'Fixad layout-problem i PlayRunPage med fixed header',
+      'Förbättrad cache-rensning vid versionsändringar'
+    ]
+  },
   {
     version: '0.2.2',
     date: '2025-10-06',

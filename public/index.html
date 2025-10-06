@@ -58,24 +58,41 @@
 
     <title>RouteQuest - Skapa & Gå Tipspromenader</title>
 
-    <!-- Version check and cache busting -->
+    <!-- Version check - MUST load first, with cache busting -->
+    <script>
+      // Ladda version-check med timestamp för att undvika cache
+      (function() {
+        const script = document.createElement('script');
+        script.src = '%PUBLIC_URL%/version-check.js?t=' + Date.now();
+        script.async = false; // Måste köras synkront FÖRST
+        document.head.appendChild(script);
+      })();
+    </script>
+
+    <!-- Cache busting and version logging -->
     <script>
       // App version
-      const APP_VERSION = '0.2.2';
+      const APP_VERSION = '0.2.3';
       const BUILD_TIMESTAMP = Date.now();
 
       // Log version for debugging
       console.log('%c🚀 RouteQuest v' + APP_VERSION, 'color: #06b6d4; font-size: 16px; font-weight: bold;');
       console.log('%c⏰ Build: ' + new Date(BUILD_TIMESTAMP).toLocaleString(), 'color: #8b5cf6;');
 
-      // Check for version updates
+      // Aggressive cache clearing och version check
       if (typeof window !== 'undefined' && window.localStorage) {
         const storedVersion = localStorage.getItem('routequest:version');
+        const needsReload = storedVersion && storedVersion !== APP_VERSION;
 
-        if (storedVersion && storedVersion !== APP_VERSION) {
+        if (needsReload) {
           console.log('%c🔄 Ny version upptäckt! Uppdaterar från ' + storedVersion + ' till ' + APP_VERSION, 'color: #10b981; font-weight: bold;');
 
-          // Clear all caches on version change
+          // Sätt ny version FÖRST
+          localStorage.setItem('routequest:version', APP_VERSION);
+          localStorage.setItem('routequest:build_timestamp', BUILD_TIMESTAMP);
+
+          // Rensa ALLT
+          // 1. Service Worker Caches
           if ('caches' in window) {
             caches.keys().then(function(names) {
               names.forEach(function(name) {
@@ -84,7 +101,7 @@
             });
           }
 
-          // Unregister service workers
+          // 2. Service Workers
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function(registrations) {
               registrations.forEach(function(registration) {
@@ -93,23 +110,16 @@
             });
           }
 
-          localStorage.setItem('routequest:version', APP_VERSION);
-          localStorage.setItem('routequest:build_timestamp', BUILD_TIMESTAMP);
+          // 3. Tvinga hård omladdning DIREKT (utan sessionStorage check)
+          console.log('%c⚡ Tvingar hård omladdning för att rensa cache...', 'color: #fbbf24; font-weight: bold;');
+          window.location.reload(true);
 
-          // Force reload after cache clear (only once)
-          if (!sessionStorage.getItem('routequest:reloaded')) {
-            sessionStorage.setItem('routequest:reloaded', 'true');
-            window.location.reload(true);
-          }
+          // Stoppa all vidare körning
+          throw new Error('Reloading for version update');
         } else if (!storedVersion) {
+          // Första gången - sätt version
           localStorage.setItem('routequest:version', APP_VERSION);
           localStorage.setItem('routequest:build_timestamp', BUILD_TIMESTAMP);
-        }
-
-        // Clear reload flag on fresh session
-        if (!sessionStorage.getItem('routequest:session_started')) {
-          sessionStorage.removeItem('routequest:reloaded');
-          sessionStorage.setItem('routequest:session_started', 'true');
         }
 
         // Rensa gamla test-läge localStorage efter rebranding

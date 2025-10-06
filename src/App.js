@@ -2,11 +2,12 @@
  * Router-konfiguration för tipspromenaden samt auth-/run-provider.
  */
 import React, { useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
 import { localStorageService } from './services/localStorageService';
 import { analyticsService } from './services/analyticsService';
+import { VERSION } from './version';
 
 import LandingPage from './views/LandingPage';
 import LoginPage from './views/LoginPage';
@@ -129,6 +130,73 @@ const AppRoutes = () => (
 );
 
 /**
+ * Kontrollerar version från URL query parameter
+ * Blockerar hela appen om versionen inte matchar
+ */
+const VersionChecker = ({ children }) => {
+  const [searchParams] = useSearchParams();
+  const versionParam = searchParams.get('ver') || searchParams.get('version');
+  const hasVersionMismatch = versionParam && versionParam !== VERSION;
+
+  useEffect(() => {
+    if (hasVersionMismatch) {
+      console.error(`❌ Version mismatch! URL expects: ${versionParam}, Running: ${VERSION}`);
+    }
+  }, [hasVersionMismatch, versionParam]);
+
+  // Om version mismatch, visa bara felmeddelande och ladda inte appen
+  if (hasVersionMismatch) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-slate-900 border-2 border-red-500 rounded-2xl p-8 shadow-2xl">
+          <div className="text-center space-y-6">
+            <div className="text-6xl">⚠️</div>
+            <h1 className="text-3xl font-bold text-red-400">Felaktig version!</h1>
+            <div className="bg-slate-800 rounded-lg p-6 space-y-3">
+              <p className="text-gray-300">
+                URL:en förväntar sig version <span className="font-mono font-bold text-cyan-400">{versionParam}</span>
+              </p>
+              <p className="text-gray-300">
+                Men du kör version <span className="font-mono font-bold text-amber-400">{VERSION}</span>
+              </p>
+            </div>
+            <div className="space-y-3">
+              <p className="text-gray-400 text-sm">
+                Detta beror troligen på att din webbläsare har cachat en gammal version av sidan.
+              </p>
+              <button
+                onClick={() => {
+                  // Ta bort version-parametern från URL:en
+                  const newUrl = new URL(window.location.href);
+                  newUrl.searchParams.delete('ver');
+                  newUrl.searchParams.delete('version');
+                  window.location.href = newUrl.toString();
+                }}
+                className="w-full px-6 py-3 bg-cyan-500 text-black rounded-lg font-bold text-lg hover:bg-cyan-400 transition-colors"
+              >
+                Ladda utan versionskontroll
+              </button>
+              <button
+                onClick={() => {
+                  // Hård omladdning (Ctrl+Shift+R)
+                  window.location.reload(true);
+                }}
+                className="w-full px-6 py-3 bg-slate-700 text-white rounded-lg font-semibold hover:bg-slate-600 transition-colors"
+              >
+                Tvinga omladdning (Ctrl+Shift+R)
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Version OK eller ingen version angiven - rendera barnen
+  return <>{children}</>;
+};
+
+/**
  * Spårar sidvisningar och länkar device till användare
  */
 const AnalyticsTracker = () => {
@@ -208,13 +276,15 @@ function App() {
   return (
     <AuthProvider>
       <RunProvider>
-        <div className="min-h-screen bg-slate-950 text-gray-100">
-          <AnalyticsTracker />
-          <MigrationHandler />
-          <LocalRunsImportHandler />
-          <InstallPrompt />
-          <AppRoutes />
-        </div>
+        <VersionChecker>
+          <div className="min-h-screen bg-slate-950 text-gray-100">
+            <AnalyticsTracker />
+            <MigrationHandler />
+            <LocalRunsImportHandler />
+            <InstallPrompt />
+            <AppRoutes />
+          </div>
+        </VersionChecker>
       </RunProvider>
     </AuthProvider>
   );

@@ -13,8 +13,8 @@ import { analyticsService } from '../../services/analyticsService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
-import { VERSION } from '../../version';
 import ServiceStatusBanner from '../shared/ServiceStatusBanner';
+import { VERSION } from '../../version';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
@@ -63,8 +63,9 @@ const Header = ({ title = 'RouteQuest' }) => {
     setLanguage(lang);
     if (typeof window !== 'undefined') {
       localStorage.setItem('routequest:language', lang);
+      // Skicka custom event så andra komponenter kan reagera
+      window.dispatchEvent(new Event('languageChange'));
     }
-    // TODO: Implementera faktisk språkväxling i appen
   };
 
   const handleToggleGPS = () => {
@@ -115,7 +116,7 @@ const Header = ({ title = 'RouteQuest' }) => {
       {/* Service Status Banner - visas endast för SuperUser */}
       {isSuperUser && <ServiceStatusBanner />}
 
-      <div className="mx-auto w-full max-w-6xl px-4 py-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 sm:gap-4">
+      <div className="mx-auto w-full max-w-6xl px-3 py-2 grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3">
         {/* Vänster: Logotyp med GPS-status */}
         <div className="flex items-center gap-2">
           <button
@@ -126,45 +127,35 @@ const Header = ({ title = 'RouteQuest' }) => {
             <img
               src="/logo-compass.svg"
               alt="RouteQuest"
-              className={`w-10 h-10 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
+              className={`w-8 h-8 sm:w-9 sm:h-9 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
               style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}
             />
           </button>
-          {/* GPS-status text - synlig på mobil */}
-          <span className={`text-xs font-medium whitespace-nowrap ${gpsIndicator.textColor}`}>
-            {gpsIndicator.title}
-          </span>
         </div>
 
         {/* Mitten: Dynamisk titel */}
-        <div className="text-center px-2 flex flex-col items-center justify-center overflow-hidden">
-          <div className="flex items-center">
-            <h1 className="text-base sm:text-lg md:text-xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
-              {title}
-            </h1>
-            {isSuperUser && (
-              <span className="ml-2 px-2 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-300">
-                SuperUser
-              </span>
-            )}
-          </div>
-          {/* Version info - diskret */}
-          <span className="text-[10px] text-gray-500 mt-0.5">
-            v{VERSION}
-          </span>
+        <div className="text-center px-1 flex items-center justify-center overflow-hidden gap-1.5">
+          <h1 className="text-sm sm:text-base md:text-lg font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent whitespace-nowrap">
+            {title}
+          </h1>
+          {isSuperUser && (
+            <span className="px-1.5 py-0.5 bg-red-500/20 border border-red-500/50 rounded text-[10px] text-red-300">
+              SU
+            </span>
+          )}
         </div>
 
         {/* Höger: Hamburger-meny */}
         <div className="relative flex justify-end">
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="p-2 rounded-lg hover:bg-slate-800 transition-colors relative"
+            className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors relative"
             aria-label="Meny"
           >
-            <div className="w-6 h-6 flex flex-col justify-center gap-1.5">
-              <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'rotate-45 translate-y-2' : ''}`} />
+            <div className="w-5 h-5 flex flex-col justify-center gap-1">
+              <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'opacity-0' : ''}`} />
-              <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-2' : ''}`} />
+              <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
             </div>
             {/* Badge för olästa meddelanden (prioritet) eller lokala rundor */}
             {unreadMessageCount > 0 ? (
@@ -265,29 +256,18 @@ const Header = ({ title = 'RouteQuest' }) => {
                         />
                       </button>
                     </div>
-                    {trackingEnabled && coords && (
-                      <div className="text-xs text-gray-400 space-y-0.5">
-                        <div className="flex items-center gap-1">
-                          <span className={gpsIndicator.textColor}>●</span>
-                          <span>{gpsIndicator.title}</span>
+                    {/* Visa alltid GPS-status */}
+                    <div className="text-xs space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={gpsIndicator.textColor}>●</span>
+                        <span className={gpsIndicator.textColor + ' font-medium'}>{gpsIndicator.title}</span>
+                      </div>
+                      {trackingEnabled && coords && coords.lat && coords.lng && (
+                        <div className="font-mono text-[10px] text-gray-400 pl-4">
+                          {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
                         </div>
-                        {coords.lat && coords.lng && (
-                          <div className="font-mono text-[10px]">
-                            {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {trackingEnabled && !coords && (
-                      <div className="text-xs text-gray-400">
-                        <span className="text-amber-400">●</span> Söker position...
-                      </div>
-                    )}
-                    {!trackingEnabled && (
-                      <div className="text-xs text-gray-500">
-                        GPS avstängd
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {/* Språkval */}
@@ -403,6 +383,11 @@ const Header = ({ title = 'RouteQuest' }) => {
                   >
                     Om RouteQuest
                   </button>
+
+                  {/* Version */}
+                  <div className="px-4 py-2 text-xs text-gray-500">
+                    Version {VERSION}
+                  </div>
 
                   {/* Login/Logout */}
                   <div className="my-2 border-t border-slate-700" />

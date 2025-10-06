@@ -4,27 +4,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
-import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
-import { paymentService } from '../services/paymentService';
+import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
-
-/**
- * Karttext för att visa status kring GPS och manuellt läge.
- */
-const locationStatusLabels = {
-  idle: 'GPS är avstängd.',
-  pending: 'Försöker hämta din position…',
-  active: 'GPS-spårning är aktiv.',
-  denied: 'Åtkomst till GPS nekades – du kan starta frågorna manuellt.',
-  unsupported: 'Din enhet eller webbläsare stöder inte geolokalisering.',
-  unavailable: 'Positionen är tillfälligt otillgänglig.',
-  timeout: 'Positionen kunde inte hämtas i tid.',
-  error: 'Ett okänt fel uppstod i geolokaliseringen.'
-};
 
 const PROXIMITY_THRESHOLD_METERS = 25;
 
@@ -39,37 +24,44 @@ const PlayRunPage = () => {
     completeRunForParticipant,
     refreshParticipants
   } = useRun();
-  const { currentUser } = useAuth();
   const {
     trackingEnabled,
-    status: locationStatus,
-    coords,
-    enableTracking,
-    disableTracking
+    coords
   } = useRunLocation();
 
   const [selectedOption, setSelectedOption] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [error, setError] = useState('');
-  const [paymentVerified, setPaymentVerified] = useState(false);
   const [questionVisible, setQuestionVisible] = useState(true);
   const [distanceToCheckpoint, setDistanceToCheckpoint] = useState(null);
   const [distanceToStart, setDistanceToStart] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
-    // Använd rundans språk som default, sedan localStorage, sedan svenska
+    // Använd användarens språkval från localStorage
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('geoquest:language') || currentRun?.language || 'sv';
+      return localStorage.getItem('routequest:language') || 'sv';
     }
-    return currentRun?.language || 'sv';
+    return 'sv';
   });
 
-  // Uppdatera språk när rundan laddas
+  // Lyssna på ändringar i localStorage (när användaren byter språk i menyn)
   useEffect(() => {
-    if (currentRun && currentRun.language && !localStorage.getItem('geoquest:language')) {
-      setSelectedLanguage(currentRun.language);
-    }
-  }, [currentRun]);
+    const handleStorageChange = () => {
+      const newLanguage = localStorage.getItem('routequest:language') || 'sv';
+      console.log('[PlayRunPage] Språk ändrat till:', newLanguage);
+      setSelectedLanguage(newLanguage);
+    };
+
+    // Lyssna på storage events (fungerar mellan flikar)
+    window.addEventListener('storage', handleStorageChange);
+
+    // Lyssna på custom event (för samma flik)
+    window.addEventListener('languageChange', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('languageChange', handleStorageChange);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -85,48 +77,7 @@ const PlayRunPage = () => {
     refreshParticipants().catch((err) => console.warn('Kunde inte uppdatera deltagare', err));
   }, [refreshParticipants]);
 
-  // Verifiera betalning
-  useEffect(() => {
-    if (!currentRun) return;
-
-    const verifyPayment = () => {
-      // I test-läge: betalning alltid verifierad
-      if (paymentService.getTestMode()) {
-        setPaymentVerified(true);
-        return;
-      }
-
-      // Kontrollera localStorage för betalningsstatus
-      if (typeof window !== 'undefined') {
-        const paymentData = localStorage.getItem(`geoquest:payment:${currentRun.id}`);
-        if (paymentData) {
-          try {
-            const payment = JSON.parse(paymentData);
-            // Kontrollera att betalning inte är för gammal (24 timmar)
-            const paymentTime = new Date(payment.timestamp);
-            const now = new Date();
-            const hoursDiff = (now - paymentTime) / (1000 * 60 * 60);
-
-            // Acceptera betalning, test-läge eller överhoppad betalning inom 24 timmar
-            if (hoursDiff < 24 && (payment.paymentIntentId || payment.testMode || payment.skipped)) {
-              setPaymentVerified(true);
-              return;
-            }
-          } catch (err) {
-            console.warn('Kunde inte läsa betalningsdata:', err);
-          }
-        }
-      }
-
-      // Ingen giltig betalning hittad
-      setPaymentVerified(false);
-      setError('Du måste betala för att delta i denna runda. Gå tillbaka och anslut igen.');
-    };
-
-    verifyPayment();
-  }, [currentRun]);
-
-  const manualMode = !trackingEnabled || locationStatus === 'denied' || locationStatus === 'unsupported';
+  const manualMode = !trackingEnabled;
 
   useEffect(() => {
     setSelectedOption(null);
@@ -137,8 +88,9 @@ const PlayRunPage = () => {
 
   const orderedQuestions = useMemo(() => {
     if (!currentRun) return [];
+    console.log('[PlayRunPage] Hämtar frågor med språk:', selectedLanguage);
     return currentRun.questionIds.map((id) => {
-      const question = questionService.getById(id);
+      const question = questionService.getByIdForLanguage(id, selectedLanguage);
       if (!question) {
         console.warn(`[PlayRunPage] Fråga med ID ${id} hittades inte i questionService`);
         return {
@@ -149,44 +101,8 @@ const PlayRunPage = () => {
           correctOption: 0
         };
       }
-
-      // Säkrare språkhantering - försök olika fallbacks
-      let langData = null;
-
-      if (question.languages) {
-        // Försök önskat språk först
-        langData = question.languages[selectedLanguage];
-
-        // Fallback till svenska
-        if (!langData) {
-          langData = question.languages.sv;
-        }
-
-        // Fallback till första tillgängliga språk
-        if (!langData) {
-          const availableLanguages = Object.keys(question.languages);
-          if (availableLanguages.length > 0) {
-            langData = question.languages[availableLanguages[0]];
-          }
-        }
-      }
-
-      // Fallback till gamla formatet om inget språk finns
-      if (!langData) {
-        langData = {
-          text: question.text || `Fråga ${id}`,
-          options: question.options || ['Alternativ 1', 'Alternativ 2', 'Alternativ 3', 'Alternativ 4'],
-          explanation: question.explanation || 'Ingen förklaring tillgänglig'
-        };
-      }
-
-      return {
-        ...question,
-        text: langData.text,
-        options: langData.options,
-        explanation: langData.explanation
-      };
-    }); // Ta bort .filter(Boolean) så inga frågor försvinner
+      return question;
+    });
   }, [currentRun, selectedLanguage]);
 
   const currentOrderIndex = useMemo(() => {
@@ -262,57 +178,11 @@ const PlayRunPage = () => {
     navigate(`/run/${currentRun.id}/results`);
   };
 
-  /** Startar nästa fråga manuellt när GPS är avstängd. */
-  const handleStartManualQuestion = () => {
-    setQuestionVisible(true);
-  };
-
-  /** Växlar mellan GPS-läge och manuellt läge. */
-  const handleToggleTracking = () => {
-    if (trackingEnabled) {
-      disableTracking();
-    } else {
-      enableTracking();
-    }
-  };
-
-  /** Ändrar språk och sparar valet. */
-  const handleLanguageChange = (language) => {
-    setSelectedLanguage(language);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('geoquest:language', language);
-    }
-  };
-
-  if (error || !paymentVerified) {
+  if (error) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
-        <h1 className="text-2xl font-semibold mb-4">
-          {!paymentVerified ? 'Betalning krävs' : 'Något gick fel'}
-        </h1>
-        <p className="text-red-300 mb-4">
-          {!paymentVerified
-            ? 'Du måste betala för att delta i denna runda.'
-            : error
-          }
-        </p>
-        {!paymentVerified && (
-          <div className="space-y-3">
-            <button
-              onClick={() => navigate('/join')}
-              className="w-full rounded bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
-            >
-              Gå tillbaka för att betala
-            </button>
-            {paymentService.getTestMode() && (
-              <div className="bg-emerald-900/30 border border-emerald-500/50 rounded p-3 text-center">
-                <p className="text-emerald-200 text-sm">
-                  🧪 Test-läge är aktiverat - betalning hoppas över automatiskt
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+        <h1 className="text-2xl font-semibold mb-4">Något gick fel</h1>
+        <p className="text-red-300 mb-4">{error}</p>
       </div>
     );
   }
@@ -325,10 +195,8 @@ const PlayRunPage = () => {
     );
   }
 
-  const statusMessage = locationStatusLabels[locationStatus] || locationStatusLabels.idle;
-
   return (
-    <div className="h-dvh grid grid-rows-[auto_1fr_auto]">
+    <div className="h-dvh flex flex-col">
       {/*
         Aggressiv CSS-override för att tvinga kartan till full höjd på mobila enheter.
         Detta är nödvändigt för att vinna över en !important-regel i den globala CSS:en.
@@ -339,147 +207,14 @@ const PlayRunPage = () => {
         `}
       </style>
 
-      {/* Header med hamburgermeny - ultracompakt */}
-      <header className="bg-slate-900 border-b border-slate-700 px-2 py-1.5 flex items-center relative z-50">
-        <h1 className="text-sm font-semibold text-white truncate flex-1 mr-2">{currentRun.name}</h1>
-        <div className="text-xs text-gray-300 font-medium px-2">
-          {Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}/{orderedQuestions.length}
-        </div>
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="p-1 rounded hover:bg-slate-700 transition-colors ml-2"
-        >
-          <div className="w-4 h-4 flex flex-col justify-around">
-            <span className={`bg-cyan-400 h-0.5 w-full transition-all ${menuOpen ? 'rotate-45 translate-y-1.5' : ''}`}></span>
-            <span className={`bg-cyan-400 h-0.5 w-full transition-all ${menuOpen ? 'opacity-0' : ''}`}></span>
-            <span className={`bg-cyan-400 h-0.5 w-full transition-all ${menuOpen ? '-rotate-45 -translate-y-1.5' : ''}`}></span>
-          </div>
-        </button>
-      </header>
+      {/* Gemensam Header-komponent */}
+      <Header title={`${currentRun.name} (${Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}/${orderedQuestions.length})`} />
 
-      {/* Hamburgermeny - overlay */}
-      {menuOpen && (
-        <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMenuOpen(false)}></div>
-          <div className="absolute top-0 left-0 w-80 max-w-full h-full bg-slate-900 shadow-xl">
-            <div className="p-4 space-y-6 mt-10">
-              {/* Spelinformation */}
-              <section>
-                <h2 className="text-lg font-semibold text-cyan-200 mb-3">Spelinformation</h2>
-                <div className="space-y-2 text-sm">
-                  <p className="text-gray-300">Deltagare: {currentParticipant?.alias || currentUser?.name}</p>
-                  <p className="text-gray-300">Fråga: {Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)} av {orderedQuestions.length}</p>
-                  <p className="text-gray-300">Poäng: {currentParticipant?.score || 0}</p>
-                </div>
-              </section>
-
-              {/* GPS Kontroller */}
-              <section>
-                <h2 className="text-lg font-semibold text-cyan-200 mb-3">GPS och läge</h2>
-                <div className="space-y-3">
-                  <p className="text-sm text-gray-300">{statusMessage}</p>
-                  <button
-                    type="button"
-                    onClick={handleToggleTracking}
-                    className={trackingEnabled
-                      ? 'w-full rounded-lg bg-slate-700 px-4 py-3 font-semibold text-gray-200 hover:bg-slate-600 border border-slate-600'
-                      : 'w-full rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400 border border-cyan-400'}
-                    disabled={locationStatus === 'unsupported'}
-                  >
-                    {trackingEnabled ? '📍 Stäng av GPS' : '🌐 Slå på GPS'}
-                  </button>
-
-                  {!trackingEnabled && !questionVisible && !hasCompleted && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleStartManualQuestion();
-                        setMenuOpen(false);
-                      }}
-                      className="w-full rounded-lg bg-amber-400 px-4 py-3 font-semibold text-black hover:bg-amber-300"
-                    >
-                      📝 Starta fråga {Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}
-                    </button>
-                  )}
-
-                  {!trackingEnabled && (
-                    <p className="text-xs text-cyan-200">💡 Med GPS av kan du svara på frågor manuellt utan att gå till platsen</p>
-                  )}
-                </div>
-              </section>
-
-              {/* Språkinställningar */}
-              <section>
-                <h2 className="text-lg font-semibold text-cyan-200 mb-3">Språk</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleLanguageChange('sv')}
-                    className={`rounded-lg px-3 py-2 font-semibold text-sm ${
-                      selectedLanguage === 'sv'
-                        ? 'bg-cyan-500 text-black'
-                        : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
-                    }`}
-                  >
-                    🇸🇪 Svenska
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLanguageChange('en')}
-                    className={`rounded-lg px-3 py-2 font-semibold text-sm ${
-                      selectedLanguage === 'en'
-                        ? 'bg-cyan-500 text-black'
-                        : 'bg-slate-700 text-gray-200 hover:bg-slate-600'
-                    }`}
-                  >
-                    🇬🇧 English
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Frågor visas på valt språk (om tillgängligt)
-                </p>
-              </section>
-
-              {/* Position info */}
-              {(nextCheckpoint || currentRun?.startPoint) && (distanceToCheckpoint !== null || distanceToStart !== null) && (
-                <section>
-                  <h2 className="text-lg font-semibold text-cyan-200 mb-3">Position</h2>
-                  {nextCheckpoint && distanceToCheckpoint !== null && (
-                    <p className="text-sm text-gray-300">
-                      Avstånd till nästa checkpoint: <span className="font-semibold">{formatDistance(distanceToCheckpoint)}</span>
-                    </p>
-                  )}
-                  {distanceToStart !== null && (
-                    <p className="text-sm text-gray-300">
-                      Avstånd till startpunkt: <span className="font-semibold">{formatDistance(distanceToStart)}</span>
-                    </p>
-                  )}
-                  {trackingEnabled && nearCheckpoint && (
-                    <p className="text-sm text-emerald-300 mt-2">Du är nästan framme vid nästa checkpoint!</p>
-                  )}
-                  {trackingEnabled && hasAnsweredAll && nearStartPoint && (
-                    <p className="text-sm text-emerald-300 mt-2">Du är tillbaka vid startpunkten! Klicka för att se resultat.</p>
-                  )}
-                </section>
-              )}
-
-              {/* Avsluta runda */}
-              <section className="pt-4 border-t border-slate-700">
-                <button
-                  type="button"
-                  onClick={handleFinish}
-                  className="w-full rounded-lg bg-slate-700 px-4 py-3 font-semibold text-gray-200 hover:bg-slate-600"
-                >
-                  Avsluta runda
-                </button>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Spacer för fixed header */}
+      <div className="h-16"></div>
 
       {/* Huvudinnehåll - karta */}
-      <main className="relative overflow-hidden min-h-0">
+      <main className="flex-1 relative overflow-hidden">
         <RunMap
           checkpoints={currentRun.checkpoints || []}
           userPosition={coords}
@@ -487,6 +222,11 @@ const PlayRunPage = () => {
           answeredCount={answeredCount}
           route={currentRun.route}
           startPoint={currentRun.startPoint}
+          manualMode={!trackingEnabled}
+          onCheckpointClick={(order) => {
+            console.log(`🗺️ Användare klickade på checkpoint ${order + 1}`);
+            setQuestionVisible(true);
+          }}
         />
 
         {/* Frågeoverlay över kartan */}

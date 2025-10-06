@@ -66,7 +66,7 @@ const createUserPositionIcon = () => {
 };
 
 // Skapa en numrerad checkpoint-ikon
-const createCheckpointIcon = (number, color, isActive) => {
+const createCheckpointIcon = (number, color, isActive, isClickable = false) => {
   const size = isActive ? 36 : 32;
   return L.divIcon({
     html: `
@@ -84,7 +84,17 @@ const createCheckpointIcon = (number, color, isActive) => {
         font-weight: bold;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         ${isActive ? 'box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);' : ''}
-      ">${number}</div>
+        ${isClickable ? 'cursor: pointer; transition: transform 0.2s;' : ''}
+      "
+      ${isClickable ? 'class="clickable-checkpoint"' : ''}
+      >${number}</div>
+      ${isClickable ? `
+        <style>
+          .clickable-checkpoint:hover {
+            transform: scale(1.15);
+          }
+        </style>
+      ` : ''}
     `,
     className: 'custom-checkpoint-icon',
     iconSize: [size, size],
@@ -153,7 +163,17 @@ const RouteArrowDecorator = ({ route }) => {
 /**
  * Renderar hela kartkomponenten inklusive polyline, checkpoints och spelarmarkör.
  */
-const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, startPoint, className = 'h-full' }) => {
+const RunMap = ({
+  checkpoints,
+  userPosition,
+  activeOrder,
+  answeredCount,
+  route,
+  startPoint,
+  className = 'h-full',
+  onCheckpointClick = null,  // Callback för klick på checkpoint (när GPS är av)
+  manualMode = false         // Om true, gör checkpoints klickbara
+}) => {
   const positions = useMemo(() => checkpoints.map((checkpoint) => [checkpoint.location.lat, checkpoint.location.lng]), [checkpoints]);
 
   // Använd faktisk rutt om tillgänglig, annars fallback till raka linjer mellan checkpoints
@@ -238,13 +258,24 @@ const RunMap = ({ checkpoints, userPosition, activeOrder, answeredCount, route, 
           const color = isCompleted ? '#10b981' : isActive ? '#f59e0b' : '#6366f1';
           const key = checkpoints[index].questionId || checkpoints[index].order || index;
           const checkpointNumber = index + 1;
-          return (
-            <Marker
-              key={key}
-              position={position}
-              icon={createCheckpointIcon(checkpointNumber, color, isActive)}
-            />
-          );
+          const isClickable = manualMode && !isCompleted;
+
+          const markerProps = {
+            position,
+            icon: createCheckpointIcon(checkpointNumber, color, isActive, isClickable)
+          };
+
+          // Lägg till eventHandlers om checkpoint är klickbar
+          if (isClickable && onCheckpointClick) {
+            markerProps.eventHandlers = {
+              click: () => {
+                console.log(`📍 Checkpoint ${checkpointNumber} klickad (order: ${index})`);
+                onCheckpointClick(index);
+              }
+            };
+          }
+
+          return <Marker key={key} {...markerProps} />;
         })}
         {/* Startpunkt/Målpunkt - visas med flagg-ikon */}
         {startPoint && (
