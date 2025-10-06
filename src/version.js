@@ -7,19 +7,33 @@
  * - PATCH: Buggfixar, bakåtkompatibelt
  */
 
-export const VERSION = '2.1.0';
+export const VERSION = '0.2.1';
 export const BUILD_DATE = new Date().toISOString();
 export const FEATURES = {
   localStorage: true,
   migration: true,
   donations: true,
   superuser: true,
-  simplifiedUI: true
+  simplifiedUI: true,
+  gpsStatus: true,
+  cacheControl: true
 };
 
 export const CHANGELOG = [
   {
-    version: '2.0.0',
+    version: '0.2.1',
+    date: '2025-10-06',
+    changes: [
+      'GPS-status i header med snurrande kompass',
+      'Visar GPS-noggrannhet (±m) bredvid logotyp',
+      'GPS-aktiverings prompt efter 2 sekunder',
+      'Version-visning i header',
+      'Aggressiv cache-busting för uppdateringar',
+      'Automatisk cache-rensning vid versionsändring'
+    ]
+  },
+  {
+    version: '0.2.0',
     date: '2025-09-30',
     changes: [
       'Förenklad användarupplevelse med 2 huvudknappar',
@@ -34,7 +48,7 @@ export const CHANGELOG = [
     ]
   },
   {
-    version: '1.0.0',
+    version: '0.1.0',
     date: '2025-01-01',
     changes: [
       'Initial release',
