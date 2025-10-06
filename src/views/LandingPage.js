@@ -142,17 +142,15 @@ const LandingPage = () => {
             en promenad mer engagerande. Ingen installation behövs – allt fungerar direkt i webbläsaren.
           </p>
         </div>
-      </div>
-
-      {/* GPS-aktiverings prompt */}
-      <GPSPrompt />
-    </div>
         {!isAuthenticated && (
           <p className="text-sm text-gray-400">
             Kör som gäst eller skapa konto för att spara rundor mellan enheter
           </p>
         )}
       </section>
+
+      {/* GPS-aktiverings prompt */}
+      <GPSPrompt />
     </PageLayout>
   );
 };
