@@ -13,7 +13,7 @@ import { analyticsService } from '../../services/analyticsService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
-import { VERSION, BUILD_DATE } from '../../version';
+import { VERSION } from '../../version';
 import ServiceStatusBanner from '../shared/ServiceStatusBanner';
 
 const Header = ({ title = 'RouteQuest' }) => {

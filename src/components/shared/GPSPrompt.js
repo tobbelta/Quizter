@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import useRunLocation from '../../hooks/useRunLocation';
 
 const GPSPrompt = ({ className = '' }) => {
-  const { trackingEnabled, status, enableTracking } = useRunLocation();
+  const { trackingEnabled, enableTracking } = useRunLocation();
   const [dismissed, setDismissed] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
 

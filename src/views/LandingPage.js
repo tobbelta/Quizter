@@ -5,7 +5,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import Header from '../components/layout/Header';
 import GPSPrompt from '../components/shared/GPSPrompt';
 import PageLayout from '../components/layout/PageLayout';
 
