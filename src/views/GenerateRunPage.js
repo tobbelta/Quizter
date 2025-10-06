@@ -336,45 +336,6 @@ const GenerateRunPage = () => {
             </p>
           </div>
 
-          {/* GPS Debug Info - hjälper mobilanvändare */}
-          {userPosition && userPosition.lat && userPosition.lng && (
-            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/20 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2 text-emerald-300">
-                <span>📍</span>
-                <span className="font-semibold">GPS aktiv</span>
-              </div>
-              <p className="mt-1 text-xs text-gray-300">
-                <strong>Position identifierad:</strong> {userPosition.lat.toFixed(6)}, {userPosition.lng.toFixed(6)}
-              </p>
-              <p className="mt-1 text-xs text-emerald-200 font-semibold">
-                ✓ Rundan kommer genereras från DIN POSITION
-              </p>
-              {coords?.accuracy && (
-                <p className="mt-1 text-xs text-gray-400">
-                  Noggrannhet: ±{Math.round(coords.accuracy)}m
-                </p>
-              )}
-            </div>
-          )}
-
-          {!userPosition && (
-            <div className="rounded-2xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm">
-              <div className="flex items-center gap-2 text-amber-300">
-                <span>⚠️</span>
-                <span className="font-semibold">GPS inte aktiv</span>
-              </div>
-              <p className="mt-1 text-xs text-gray-300">
-                <strong>GPS-status:</strong> {gpsStatus} {trackingEnabled ? '(tracking påslagen)' : '(tracking avstängd)'}
-              </p>
-              <p className="mt-1 text-xs text-amber-200 font-semibold">
-                ⚠ Rundan kommer genereras från STANDARDPOSITION (Göteborg: {FALLBACK_POSITION.lat.toFixed(4)}, {FALLBACK_POSITION.lng.toFixed(4)})
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                Aktivera GPS för att skapa runda från din position.
-              </p>
-            </div>
-          )}
-
           {error && (
             <div className="rounded-2xl border border-red-500/40 bg-red-900/40 px-4 py-3 text-red-100">
               {error}

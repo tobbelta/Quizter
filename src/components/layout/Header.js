@@ -19,11 +19,15 @@ import ServiceStatusBanner from '../shared/ServiceStatusBanner';
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
-  const { status: gpsStatus, coords, trackingEnabled } = useRunLocation();
+  const { status: gpsStatus, coords, trackingEnabled, enableTracking, disableTracking } = useRunLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [language, setLanguage] = useState(() => {
+    if (typeof window === 'undefined') return 'sv';
+    return localStorage.getItem('routequest:language') || 'sv';
+  });
 
     // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
@@ -53,6 +57,22 @@ const Header = ({ title = 'RouteQuest' }) => {
   const handleMyRuns = () => {
     setIsMenuOpen(false);
     navigate('/my-runs');
+  };
+
+  const handleLanguageChange = (lang) => {
+    setLanguage(lang);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('routequest:language', lang);
+    }
+    // TODO: Implementera faktisk språkväxling i appen
+  };
+
+  const handleToggleGPS = () => {
+    if (trackingEnabled) {
+      disableTracking();
+    } else {
+      enableTracking();
+    }
   };
 
   // Räkna lokala rundor för oinloggade
@@ -221,6 +241,81 @@ const Header = ({ title = 'RouteQuest' }) => {
                       </span>
                     )}
                   </button>
+
+                  {/* Inställningar */}
+                  <div className="my-2 border-t border-slate-700" />
+                  <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                    INSTÄLLNINGAR
+                  </div>
+
+                  {/* GPS-status och toggle */}
+                  <div className="px-4 py-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-300">GPS-spårning</span>
+                      <button
+                        onClick={handleToggleGPS}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          trackingEnabled ? 'bg-emerald-500' : 'bg-slate-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            trackingEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {trackingEnabled && coords && (
+                      <div className="text-xs text-gray-400 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className={gpsIndicator.textColor}>●</span>
+                          <span>{gpsIndicator.title}</span>
+                        </div>
+                        {coords.lat && coords.lng && (
+                          <div className="font-mono text-[10px]">
+                            {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {trackingEnabled && !coords && (
+                      <div className="text-xs text-gray-400">
+                        <span className="text-amber-400">●</span> Söker position...
+                      </div>
+                    )}
+                    {!trackingEnabled && (
+                      <div className="text-xs text-gray-500">
+                        GPS avstängd
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Språkval */}
+                  <div className="px-4 py-2">
+                    <div className="text-sm text-gray-300 mb-2">Språk</div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleLanguageChange('sv')}
+                        className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                          language === 'sv'
+                            ? 'bg-cyan-500 text-black'
+                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        Svenska
+                      </button>
+                      <button
+                        onClick={() => handleLanguageChange('en')}
+                        className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                          language === 'en'
+                            ? 'bg-cyan-500 text-black'
+                            : 'bg-slate-700 text-gray-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        English
+                      </button>
+                    </div>
+                  </div>
 
                   {/* SuperUser-funktioner */}
                   {isSuperUser && (
