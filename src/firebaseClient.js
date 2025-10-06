@@ -172,6 +172,12 @@ export {
 };
 
 /**
+ * Convenience exports för direktåtkomst till db och auth
+ */
+export const db = hämtaFirebaseDb();
+export const auth = hämtaFirebaseAuth();
+
+/**
  * Default export med alla funktioner samlade (för bakåtkompatibilitet)
  */
 const firebaseClient = {

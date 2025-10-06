@@ -2,7 +2,7 @@
  * SuperUser Error Logs Page
  * Visar felloggar och debug-information från Firestore
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebaseClient';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import PageLayout from '../components/layout/PageLayout';
@@ -11,13 +11,9 @@ const SuperUserErrorLogsPage = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, error, debug, info
-  const [limit State, setLimitState] = useState(50);
+  const [limitState, setLimitState] = useState(50);
 
-  useEffect(() => {
-    loadLogs();
-  }, [filter, limitState]);
-
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     setLoading(true);
     try {
       const logsRef = collection(db, 'errorLogs');
@@ -40,7 +36,11 @@ const SuperUserErrorLogsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, limitState]);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
 
   const getLevelColor = (level) => {
     switch (level) {
