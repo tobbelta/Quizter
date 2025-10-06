@@ -342,25 +342,47 @@ const AdminQuestionsPage = () => {
 
       const result = await response.json();
 
+      console.log('[AI-Validering] Raw response:', result);
+
+      // Kontrollera om det finns ett felmeddelande
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      // Kontrollera att svaret har rätt format
+      if (!result || typeof result !== 'object') {
+        throw new Error('Ogiltigt svar från AI-validering: ' + JSON.stringify(result));
+      }
+
+      // Sätt default-värden om de saknas
+      const validationResult = {
+        valid: result.valid !== false,
+        issues: Array.isArray(result.issues) ? result.issues : [],
+        suggestedCorrectOption: result.suggestedCorrectOption,
+        reasoning: result.reasoning || ''
+      };
+
+      console.log('[AI-Validering] Result:', validationResult);
+
       // Spara valideringsresultatet
-      await questionService.markAsValidated(question.id, result);
+      await questionService.markAsValidated(question.id, validationResult);
 
       if (!silent) {
-        if (result.valid) {
+        if (validationResult.valid) {
           alert('✅ Frågan är validerad!\n\nAI:n bekräftar att det markerade svaret är korrekt.');
         } else {
           let message = '⚠️ AI hittade problem:\n\n';
-          result.issues.forEach(issue => {
+          validationResult.issues.forEach(issue => {
             message += `• ${issue}\n`;
           });
-          if (result.suggestedCorrectOption !== undefined && result.suggestedCorrectOption !== question.correctOption) {
-            message += `\n💡 AI föreslår: Alternativ ${result.suggestedCorrectOption + 1}`;
+          if (validationResult.suggestedCorrectOption !== undefined && validationResult.suggestedCorrectOption !== question.correctOption) {
+            message += `\n💡 AI föreslår: Alternativ ${validationResult.suggestedCorrectOption + 1}`;
           }
           alert(message);
         }
       }
 
-      return result;
+      return validationResult;
     } catch (error) {
       console.error('Fel vid AI-validering:', error);
       if (!silent) {
