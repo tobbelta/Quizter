@@ -490,10 +490,9 @@ const AdminQuestionsPage = () => {
             )}
           </div>
         )}
-      </div>
 
-      {/* AI Generation Dialog */}
-      {showAIDialog && (
+        {/* AI Generation Dialog */}
+        {showAIDialog && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[1200]">
           <div className="bg-slate-900 rounded-xl shadow-2xl border border-purple-500/40 max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
@@ -673,9 +672,9 @@ const AdminQuestionsPage = () => {
             </div>
           </div>
         </div>
-      )}
-          </>
         )}
+        </>
+      )}
       </div>
     </div>
   );

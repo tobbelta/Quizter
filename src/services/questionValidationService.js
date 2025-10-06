@@ -213,8 +213,10 @@ export const validateQuestions = (questions, language = 'sv') => {
   };
 };
 
-export default {
+const questionValidationService = {
   validateQuestion,
   validateQuestions,
   findDuplicates
 };
+
+export default questionValidationService;
