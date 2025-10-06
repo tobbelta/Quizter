@@ -4,6 +4,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
 import { questionRepository } from '../repositories/questionRepository';
+import { validateQuestion, validateQuestions, findDuplicates } from './questionValidationService';
 
 let cachedQuestions = []; // Använd bara Firestore-frågor
 let isInitialized = false;
@@ -42,6 +43,26 @@ const addQuestions = async (questions) => {
   if (incoming.length === 0) return cachedQuestions;
 
   try {
+    // VALIDERING: Kontrollera alla frågor innan de läggs till
+    const validationResults = validateQuestions(incoming, 'sv');
+
+    if (validationResults.invalid > 0) {
+      console.error('[questionService] Valideringsfel:', validationResults.results);
+      throw new Error(
+        `${validationResults.invalid} av ${validationResults.total} frågor är ogiltiga. ` +
+        `Första felet: ${validationResults.results[0]?.errors[0]}`
+      );
+    }
+
+    // DUBLETTKONTROLL: Kolla om nya frågor är lika befintliga
+    const allQuestions = [...cachedQuestions, ...incoming];
+    const duplicates = findDuplicates(allQuestions, 'sv', 0.85);
+
+    if (duplicates.length > 0) {
+      console.warn('[questionService] Hittade potentiella dubletter:', duplicates);
+      // Logga varning men tillåt för nu - användaren kan välja att ta bort manuellt
+    }
+
     const questionsWithIds = incoming.map(q => ({ ...q, id: q.id || uuidv4() }));
     await questionRepository.addManyQuestions(questionsWithIds);
 
@@ -56,6 +77,7 @@ const addQuestions = async (questions) => {
     notify();
   } catch (error) {
     console.error("Kunde inte spara nya frågor till Firestore:", error);
+    throw error; // Kasta vidare så anroparen ser felet
   }
   return cachedQuestions;
 };
@@ -117,5 +139,9 @@ export const questionService = {
     listeners.add(listener);
     listener([...cachedQuestions]);
     return () => listeners.delete(listener);
-  }
+  },
+  // Nya valideringsfunktioner
+  validateQuestion: (question, language = 'sv') => validateQuestion(question, language),
+  validateQuestions: (questions, language = 'sv') => validateQuestions(questions, language),
+  findDuplicates: (language = 'sv', threshold = 0.85) => findDuplicates(cachedQuestions, language, threshold)
 };
