@@ -28,6 +28,7 @@ import SuperUserErrorLogsPage from './views/SuperUserErrorLogsPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
+import { useBreadcrumbs } from './hooks/useBreadcrumbs';
 
 /**
  * Skyddar SuperUser-rutter
@@ -224,14 +225,27 @@ const AnalyticsTracker = () => {
  * Komponent som hanterar import av localStorage-rundor vid inloggning
  */
 const LocalRunsImportHandler = () => {
-  const { currentUser, isAuthInitialized } = useAuth();
+  const { currentUser, isAuthInitialized, isSuperUser } = useAuth();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [localRunCount, setLocalRunCount] = useState(0);
-  const [hasCheckedImport, setHasCheckedImport] = useState(false);
 
   useEffect(() => {
     // Kontrollera om användaren precis loggat in och har lokala rundor
-    if (isAuthInitialized && currentUser && !currentUser.isAnonymous && !hasCheckedImport) {
+    if (isAuthInitialized && currentUser && !currentUser.isAnonymous) {
+      // SuperUsers behöver aldrig importera
+      if (isSuperUser) {
+        return;
+      }
+
+      // Kolla om användaren redan har sett/hanterat importdialogen
+      const importHandledKey = `geoquest:import:handled:${currentUser.id}`;
+      const alreadyHandled = localStorage.getItem(importHandledKey) === 'true';
+
+      if (alreadyHandled) {
+        console.log('[LocalRunsImportHandler] Import redan hanterad för användare:', currentUser.id);
+        return;
+      }
+
       const localRuns = localStorageService.getCreatedRuns();
       const count = localRuns?.length || 0;
 
@@ -240,22 +254,30 @@ const LocalRunsImportHandler = () => {
       if (count > 0) {
         setLocalRunCount(count);
         setShowImportDialog(true);
+      } else {
+        // Även om användaren inte har några rundor, markera att vi har frågat
+        // så att dialogen inte dyker upp varje gång vid F5
+        localStorage.setItem(importHandledKey, 'true');
       }
-
-      setHasCheckedImport(true);
     }
-  }, [currentUser, isAuthInitialized, hasCheckedImport]);
+  }, [currentUser, isAuthInitialized, isSuperUser]);
 
   // Återställ när användaren loggar ut
   useEffect(() => {
     if (isAuthInitialized && !currentUser) {
-      setHasCheckedImport(false);
       setShowImportDialog(false);
     }
   }, [currentUser, isAuthInitialized]);
 
   const handleImportComplete = (success) => {
     console.log('[LocalRunsImportHandler] Import slutförd:', success);
+
+    // Markera att användaren har hanterat importen (även om de hoppade över)
+    if (currentUser && !currentUser.isAnonymous) {
+      const importHandledKey = `geoquest:import:handled:${currentUser.id}`;
+      localStorage.setItem(importHandledKey, 'true');
+    }
+
     setShowImportDialog(false);
   };
 
@@ -272,12 +294,21 @@ const LocalRunsImportHandler = () => {
   );
 };
 
+/**
+ * Breadcrumb tracker - loggar navigering automatiskt
+ */
+const BreadcrumbTracker = () => {
+  useBreadcrumbs(); // Loggar automatiskt all navigering
+  return null;
+};
+
 function App() {
   return (
     <AuthProvider>
       <RunProvider>
         <VersionChecker>
           <div className="min-h-screen bg-slate-950 text-gray-100">
+            <BreadcrumbTracker />
             <AnalyticsTracker />
             <MigrationHandler />
             <LocalRunsImportHandler />

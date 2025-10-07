@@ -5,7 +5,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import GPSPrompt from '../components/shared/GPSPrompt';
 import PageLayout from '../components/layout/PageLayout';
 
 const LandingPage = () => {
@@ -77,8 +76,11 @@ const LandingPage = () => {
             onClick={handleCreateRun}
             className="group flex flex-col items-center gap-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-8 transition-all hover:border-cyan-400 hover:bg-slate-800/70"
           >
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-cyan-500/20 text-4xl transition-colors group-hover:bg-cyan-500/30">
-              ✨
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-100 shadow-inner shadow-cyan-500/20 transition-colors group-hover:bg-cyan-500/30 group-hover:text-white">
+              <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M9 20.25l-5.25-2.1a1 1 0 01-.6-.92V4.77c0-.69.7-1.18 1.35-.92L9 5.75m0 0l6-2.25m-6 2.25v14.5m6-16.75l5.25 2.25c.45.19.75.63.75 1.12v12.46c0 .69-.7 1.18-1.35.92L15 17.75m0 0l-6 2.5" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M14.75 8.75h4M16.75 6.75v4" />
+              </svg>
             </div>
             <div>
               <h2 className="text-xl font-semibold text-slate-100">Skapa runda</h2>
@@ -87,14 +89,16 @@ const LandingPage = () => {
               </p>
             </div>
           </button>
-
           <button
             type="button"
             onClick={handleStartRun}
             className="group flex flex-col items-center gap-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-8 transition-all hover:border-purple-400 hover:bg-slate-800/70"
           >
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/20 text-4xl transition-colors group-hover:bg-purple-500/30">
-              🎯
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/20 text-purple-100 shadow-inner shadow-purple-500/20 transition-colors group-hover:bg-purple-500/30 group-hover:text-white">
+              <svg className="h-10 w-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M18 9v3m1.5-1.5h-3M16.5 16.5a4.5 4.5 0 00-9 0m9-8.25a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" d="M9 16.5v-.75a2.25 2.25 0 012.25-2.25h.5A2.25 2.25 0 0114 15.75v.75" />
+              </svg>
             </div>
             <div>
               <h2 className="text-xl font-semibold text-slate-100">Anslut till runda</h2>
@@ -148,10 +152,10 @@ const LandingPage = () => {
         )}
       </section>
 
-      {/* GPS-aktiverings prompt */}
-      <GPSPrompt />
     </PageLayout>
   );
 };
 
 export default LandingPage;
+
+

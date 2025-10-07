@@ -2,20 +2,21 @@
  * Vy för att skapa en auto-genererad runda på plats.
  */
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
 import PageLayout from '../components/layout/PageLayout';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import RunMap from '../components/run/RunMap';
-import PaymentModal from '../components/payment/PaymentModal';
-import GPSPrompt from '../components/shared/GPSPrompt';
 import { buildJoinLink } from '../utils/joinLink';
 import { FALLBACK_POSITION } from '../utils/constants';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
 import { errorLogService } from '../services/errorLogService';
+import { userPreferencesService } from '../services/userPreferencesService';
 import useQRCode from '../hooks/useQRCode';
 import useRunLocation from '../hooks/useRunLocation';
+import { useBreadcrumbs } from '../hooks/useBreadcrumbs';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 import FullscreenMap from '../components/shared/FullscreenMap';
 
@@ -41,21 +42,117 @@ const categoryOptions = [
 ];
 
 const GenerateRunPage = () => {
-  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const { currentUser, loginAsGuest } = useAuth();
   const { generateRun } = useRun();
   const { coords, status: gpsStatus, trackingEnabled } = useRunLocation();
+  const { logFormSubmit, logStateChange } = useBreadcrumbs();
   const [form, setForm] = useState(defaultForm);
+  const initialAlias = React.useMemo(() => userPreferencesService.getAlias() || '', []);
+  const [alias, setAlias] = useState(initialAlias);
+  const [aliasCommitted, setAliasCommitted] = useState(() => Boolean(initialAlias.trim()));
+  const [showAliasDialog, setShowAliasDialog] = useState(false);
   const [error, setError] = useState('');
   const [generatedRun, setGeneratedRun] = useState(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRunSaved, setIsRunSaved] = useState(false);
   const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
-  const [showPayment, setShowPayment] = useState(false);
+  const [shareStatus, setShareStatus] = useState('');
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000));
 
-  const joinLink = generatedRun ? buildJoinLink(generatedRun.joinCode) : '';
+  const joinLink = React.useMemo(() => (
+    generatedRun ? buildJoinLink(generatedRun.joinCode) : ''
+  ), [generatedRun]);
   const { dataUrl, isLoading, error: qrError } = useQRCode(joinLink, 320);
+  const shareTimeoutRef = React.useRef(null);
+
+  const ensureCreatorIdentity = React.useCallback(async () => {
+    if (currentUser?.id) {
+      return {
+        id: currentUser.id,
+        name: currentUser.name || '',
+      };
+    }
+
+    const aliasValue = alias?.trim() || form.name?.trim() || 'G?st';
+
+    try {
+    userPreferencesService.saveAlias(aliasValue);
+    setAlias(aliasValue);
+    setAliasCommitted(true);
+      const guestUser = await loginAsGuest({
+        alias: aliasValue
+      });
+
+      if (!guestUser) {
+        throw new Error('G?st-inloggning misslyckades');
+      }
+
+      return {
+        id: guestUser.uid || guestUser.id || 'anonymous',
+        name: guestUser.displayName || guestUser.name || aliasValue || 'G?st'
+      };
+    } catch (guestError) {
+      console.error('[GenerateRunPage] Kunde inte skapa g?stidentitet:', guestError);
+      throw guestError;
+    }
+  }, [alias, currentUser, form.name, loginAsGuest]);
+
+  const handleShare = React.useCallback(async () => {
+    if (!generatedRun || !joinLink) {
+      return;
+    }
+
+    if (shareTimeoutRef.current) {
+      clearTimeout(shareTimeoutRef.current);
+    }
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({
+          title: generatedRun.name || 'RouteQuest',
+          text: 'Hang med pa min runda!',
+          url: joinLink
+        });
+        setShareStatus('Delat!');
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(joinLink);
+        setShareStatus('Lanken kopierades.');
+      } else {
+        setShareStatus('Kopiera Lanken: ' + joinLink);
+      }
+    } catch (shareError) {
+      console.warn('[GenerateRunPage] Share failed', shareError);
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(joinLink);
+        setShareStatus('Lanken kopierades.');
+      } else {
+        setShareStatus('Kunde inte dela automatiskt.');
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      shareTimeoutRef.current = window.setTimeout(() => {
+        setShareStatus('');
+      }, 4000);
+    }
+  }, [generatedRun, joinLink]);
+
+  React.useEffect(() => {
+    if (shareTimeoutRef.current) {
+      clearTimeout(shareTimeoutRef.current);
+    }
+    setShareStatus('');
+  }, [generatedRun]);
+  React.useEffect(() => {
+    return () => {
+      if (shareTimeoutRef.current) {
+        clearTimeout(shareTimeoutRef.current);
+      }
+    };
+  }, []);
+
 
   // Användarens GPS-position (om tillgänglig)
   // OBS: coords från useRunLocation har redan lat/lng format (inte latitude/longitude)
@@ -65,34 +162,40 @@ const GenerateRunPage = () => {
       : null;
   }, [coords]);
 
-  // Logga GPS-status när komponenten laddas OCH när coords ändras
-  React.useEffect(() => {
-    console.log('🔍 GPS STATUS CHECK:', {
-      coords,
-      gpsStatus,
-      trackingEnabled,
-      userPosition,
-      rawCoords: coords ? {
-        lat: coords.lat,
-        lng: coords.lng,
-        accuracy: coords.accuracy,
-      } : null,
-    });
+  // Logga GPS-status endast vid betydande statusändringar (inte vid varje koordinatuppdatering)
+  const prevGpsStatusRef = React.useRef(gpsStatus);
+  const prevTrackingEnabledRef = React.useRef(trackingEnabled);
 
-    errorLogService.logGPSDebug({
-      message: 'GenerateRunPage GPS update',
-      coords: coords ? {
-        latitude: coords.lat, // Konvertera till latitude för loggning
-        longitude: coords.lng,
-        accuracy: coords.accuracy,
-      } : null,
-      gpsStatus,
-      trackingEnabled,
-      userPosition,
-      hasCoords: !!coords,
-      hasLat: coords?.lat !== undefined,
-      hasLng: coords?.lng !== undefined,
-    });
+  React.useEffect(() => {
+    // Logga bara vid statusändringar, inte vid varje koordinatuppdatering
+    const statusChanged = prevGpsStatusRef.current !== gpsStatus;
+    const trackingChanged = prevTrackingEnabledRef.current !== trackingEnabled;
+
+    if (statusChanged || trackingChanged) {
+      console.log('🔍 GPS STATUS CHANGE:', {
+        coords,
+        gpsStatus,
+        trackingEnabled,
+        userPosition,
+      });
+
+      errorLogService.logGPSDebug({
+        message: 'GenerateRunPage GPS status change',
+        coords: coords ? {
+          latitude: coords.lat,
+          longitude: coords.lng,
+          accuracy: coords.accuracy,
+        } : null,
+        gpsStatus,
+        trackingEnabled,
+        userPosition,
+        statusChanged,
+        trackingChanged,
+      });
+
+      prevGpsStatusRef.current = gpsStatus;
+      prevTrackingEnabledRef.current = trackingEnabled;
+    }
   }, [coords, gpsStatus, trackingEnabled, userPosition]);
 
   const handleRegenerate = async () => {
@@ -128,6 +231,8 @@ const GenerateRunPage = () => {
         willUseFallback: !userPosition,
       });
 
+      const creatorIdentity = await ensureCreatorIdentity();
+
       const run = await generateRun({
         name: form.name,
         difficulty: form.difficulty,
@@ -139,14 +244,17 @@ const GenerateRunPage = () => {
         origin: originPosition,
         seed: newSeed,
         preferGreenAreas: form.preferGreenAreas,
-      }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
+      }, creatorIdentity);
       if (run) {
         setGeneratedRun(run);
         setIsRunSaved(false);
       }
     } catch (generationError) {
       console.error('❌ Fel vid regenerering:', generationError);
-      setError(`Kunde inte regenerera runda: ${generationError.message}`);
+      const displayMessage = generationError?.code === 'permission-denied'
+        ? 'Behorighet saknas for att spara rundan. Ladda om sidan eller logga in och forsok igen.'
+        : generationError.message;
+      setError(`Kunde inte regenerera runda: ${displayMessage}`);
     } finally {
       setIsRegenerating(false);
     }
@@ -174,43 +282,50 @@ const GenerateRunPage = () => {
   };
 
   const handleSaveRun = () => {
-    setShowPayment(true);
-  };
+    if (!generatedRun) return;
 
-  const handlePaymentSuccess = (paymentResult) => {
-    setShowPayment(false);
-
-    if (generatedRun && !currentUser) {
+    if (!currentUser) {
       localStorageService.addCreatedRun(generatedRun);
     }
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`geoquest:payment:${generatedRun.id}`, JSON.stringify({
-        paymentIntentId: paymentResult.paymentIntentId,
-        testMode: paymentResult.testMode,
-        skipped: paymentResult.skipped || false,
-        timestamp: new Date().toISOString(),
-      }));
+    if (shareTimeoutRef.current) {
+      clearTimeout(shareTimeoutRef.current);
     }
-
-    setIsRunSaved(true);
-  };
-
-  const handlePaymentCancel = () => {
-    setShowPayment(false);
-    if (generatedRun && !currentUser) {
-      localStorageService.addCreatedRun(generatedRun);
-    }
+    setShareStatus('');
     setIsRunSaved(true);
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+
+    // Om användaren är anonym och inte har angett alias, visa dialog
+    if (currentUser?.isAnonymous && !alias.trim()) {
+      setShowAliasDialog(true);
+      return;
+    }
+
+    // Logga att användaren försöker skapa en runda
+    logFormSubmit('Create Run Form', {
+      name: form.name,
+      difficulty: form.difficulty,
+      lengthMeters: form.lengthMeters,
+      hasGPS: !!userPosition,
+    });
+
     try {
       if (!form.name.trim()) {
         setError('Ange ett namn på rundan.');
+        logStateChange('Form validation failed: name missing');
         return;
+      }
+
+      // Om användaren är anonym, uppdatera profilen med alias
+      if (currentUser?.isAnonymous && alias.trim()) {
+        const cleanAlias = alias.trim();
+        userPreferencesService.saveAlias(cleanAlias);
+        setAliasCommitted(true);
+        await loginAsGuest({ alias: cleanAlias });
       }
 
       // Använd GPS-position om tillgänglig, annars fallback
@@ -250,6 +365,8 @@ const GenerateRunPage = () => {
         },
       });
 
+      const creatorIdentity = await ensureCreatorIdentity();
+
       const run = await generateRun({
         name: form.name,
         difficulty: form.difficulty,
@@ -261,7 +378,7 @@ const GenerateRunPage = () => {
         origin: originPosition,
         seed,
         preferGreenAreas: form.preferGreenAreas,
-      }, { id: currentUser?.id || 'anonymous', name: currentUser?.name || '' });
+      }, creatorIdentity);
 
       if (run) {
         setGeneratedRun(run);
@@ -282,7 +399,10 @@ const GenerateRunPage = () => {
       }
     } catch (generationError) {
       console.error('❌ Fel vid generering:', generationError);
-      setError(`Kunde inte generera runda: ${generationError.message}`);
+      const displayMessage = generationError?.code === 'permission-denied'
+        ? 'Behorighet saknas for att skapa rundan. Ladda om sidan eller logga in och forsok igen.'
+        : generationError.message;
+      setError(`Kunde inte generera runda: ${displayMessage}`);
 
       // Logga fel
       await errorLogService.logError({
@@ -296,13 +416,6 @@ const GenerateRunPage = () => {
     }
   };
 
-  const handleDownload = () => {
-    if (!dataUrl || typeof document === 'undefined') return;
-    const anchor = document.createElement('a');
-    anchor.href = dataUrl;
-    anchor.download = 'tipspromenad-qr.png';
-    anchor.click();
-  };
 
   return (
     <PageLayout headerTitle="Skapa runda" maxWidth="max-w-5xl" className="space-y-10">
@@ -318,16 +431,58 @@ const GenerateRunPage = () => {
         />
       )}
 
-      <PaymentModal
-        isOpen={showPayment}
-        runName={generatedRun?.name || ''}
-        amount={1000}
-        onSuccess={handlePaymentSuccess}
-        onCancel={handlePaymentCancel}
-        runId={generatedRun?.id}
-        participantId={currentUser?.id}
-        allowSkip
-      />
+      {/* Alias dialog - visas om användaren inte har angett alias */}
+      {showAliasDialog && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-cyan-500/40 bg-slate-900 p-6 shadow-2xl">
+            <h2 className="text-xl font-semibold text-slate-100 mb-4">Ange ditt alias</h2>
+            <p className="text-sm text-gray-300 mb-6">
+              För att skapa en runda behöver vi veta vad du vill kallas. Aliaset sparas på enheten.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-cyan-200 mb-2">Alias</label>
+                <input
+                  type="text"
+                  value={alias}
+                  onChange={(e) => setAlias(e.target.value)}
+                  placeholder="T.ex. Erik"
+                  autoFocus
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowAliasDialog(false)}
+                  className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
+                >
+                  Avbryt
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!alias.trim()) {
+                      setError('Ange ett alias');
+                      return;
+                    }
+                    const cleanAlias = alias.trim();
+                    userPreferencesService.saveAlias(cleanAlias);
+                    setAliasCommitted(true);
+                    await loginAsGuest({ alias: cleanAlias });
+                    setShowAliasDialog(false);
+                    // Trigga submit igen
+                    handleSubmit({ preventDefault: () => {} });
+                  }}
+                  className="flex-1 rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
+                >
+                  Fortsätt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!generatedRun ? (
         <section className="space-y-8">
@@ -344,6 +499,26 @@ const GenerateRunPage = () => {
             </div>
           )}
 
+          {currentUser?.isAnonymous && !aliasCommitted && (
+            <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+              <h3 className="text-sm font-semibold text-cyan-200">Ditt alias</h3>
+              <div className="space-y-1.5">
+                <label className="block text-xs text-gray-400">Alias (visas för deltagare)</label>
+                <input
+                  type="text"
+                  value={alias}
+                  onChange={(e) => {
+                    setAlias(e.target.value);
+                  }}
+                  placeholder="T.ex. Erik"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+              <p className="text-xs text-gray-400">
+                Aliaset sparas på denna enhet och kommer ihåg nästa gång.
+              </p>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="mx-auto max-w-xl space-y-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-6 shadow-xl">
             <div className="space-y-1.5">
               <label className="block text-sm font-semibold text-purple-200">Namn på runda</label>
@@ -436,12 +611,33 @@ const GenerateRunPage = () => {
               Föredra parker och stigar
             </label>
 
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-purple-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-purple-400"
-            >
-              Skapa runda
-            </button>
+        {currentUser?.isAnonymous && !alias.trim() && (
+          <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+            <h3 className="text-sm font-semibold text-cyan-200">Ditt alias</h3>
+            <div className="space-y-1.5">
+              <label className="block text-xs text-gray-400">Alias (visas för deltagare)</label>
+              <input
+                type="text"
+                value={alias}
+                onChange={(e) => {
+                  setAlias(e.target.value);
+                }}
+                placeholder="T.ex. Erik"
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
+              />
+            </div>
+            <p className="text-xs text-gray-400">
+              Aliaset sparas på denna enhet och kommer ihåg nästa gång.
+            </p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="w-full rounded-xl bg-purple-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-purple-400"
+        >
+          Skapa runda
+        </button>
           </form>
         </section>
       ) : (
@@ -453,7 +649,7 @@ const GenerateRunPage = () => {
                   <div>
                     <h2 className="text-xl font-semibold text-slate-100">Förslag på runda</h2>
                     <p className="text-sm text-gray-300">
-                      Granska kartan nedan. Spara rundan för att visa QR-kod och dela länken.
+                      Granska kartan nedan. Spara rundan för att visa QR-kod och dela lanken.
                     </p>
                   </div>
                   <button
@@ -496,10 +692,10 @@ const GenerateRunPage = () => {
               </>
             ) : (
               <>
-                <div className="space-y-2">
+                <div className="space-y-2 text-center sm:text-left">
                   <h2 className="text-xl font-semibold text-slate-100">{generatedRun.name}</h2>
                   <p className="text-sm text-gray-300">
-                    Längd: {generatedRun.lengthMeters} m • {generatedRun.questionCount} frågor
+                    L�ngd: {generatedRun.lengthMeters} m � {generatedRun.questionCount} fr�gor
                   </p>
                   <p className="text-sm text-gray-300">
                     Anslutningskod: <span className="font-mono text-lg tracking-wide text-cyan-200">{generatedRun.joinCode}</span>
@@ -510,45 +706,49 @@ const GenerateRunPage = () => {
                   <QRCodeDisplay dataUrl={dataUrl} isLoading={isLoading} error={qrError} />
                 </div>
 
-                <div className="flex flex-wrap justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(joinLink)}
-                    className="rounded-lg bg-purple-500 px-4 py-2 font-semibold text-black transition-colors hover:bg-purple-400"
-                  >
-                    Kopiera länk
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard.writeText(generatedRun.joinCode)}
-                    className="rounded-lg bg-purple-500 px-4 py-2 font-semibold text-black transition-colors hover:bg-purple-400"
-                  >
-                    Kopiera kod
-                  </button>
-                </div>
-
-                <div className="text-center text-sm text-gray-300 break-all">
-                  <a href={joinLink} target="_blank" rel="noopener noreferrer" className="text-purple-300 underline hover:text-purple-200">
-                    {joinLink}
-                  </a>
-                </div>
-
                 <div className="flex flex-wrap justify-center gap-3 text-sm">
                   <button
                     type="button"
-                    onClick={handleDownload}
-                    className="rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-black transition-colors hover:bg-cyan-400"
+                    onClick={() => navigate(`/join?code=${generatedRun.joinCode}`)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-60"
+                    disabled={!generatedRun?.joinCode}
                   >
-                    Ladda ner QR-kod
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                    Starta runda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    disabled={!joinLink}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-600/70 px-3 py-2 text-slate-100 transition-colors hover:border-cyan-400/80 hover:text-cyan-200 disabled:opacity-60"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v8" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 6l3-3 3 3" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+                    </svg>
+                    Dela
                   </button>
                   <button
                     type="button"
                     onClick={() => setIsMapFullscreen(true)}
-                    className="rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-100 transition-colors hover:border-cyan-400 hover:text-cyan-200"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-600/70 px-3 py-2 text-slate-100 transition-colors hover:border-cyan-400/80 hover:text-cyan-200"
                   >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A2 2 0 013 15.382V5.618a2 2 0 011.105-1.795L9 2m6 0l4.895 1.823A2 2 0 0121 5.618v9.764a2 2 0 01-1.105 1.795L15 20m-6 0V2m6 18V2" />
+                    </svg>
                     Visa karta
                   </button>
                 </div>
+
+                {shareStatus && (
+                  <p className="text-xs text-center text-emerald-200">
+                    {shareStatus}
+                  </p>
+                )}
+
               </>
             )}
           </article>
@@ -575,10 +775,25 @@ const GenerateRunPage = () => {
         </section>
       )}
 
-      {/* GPS-aktiverings prompt */}
-      <GPSPrompt />
     </PageLayout>
   );
 };
 
 export default GenerateRunPage;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

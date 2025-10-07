@@ -11,8 +11,9 @@ import {
   updateProfile,
   createUserWithEmailAndPassword
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseAuth, getFirebaseDb, hasFirebaseConfig } from '../firebaseClient';
+import { userPreferencesService } from '../services/userPreferencesService';
 
 const STORAGE_KEY = 'tipspromenad:auth';
 
@@ -82,11 +83,32 @@ const mapFirebaseUser = async (firebaseUser) => {
 const ensureUserDoc = async (firebaseUser, { profileOverride } = {}) => {
   if (!firebaseDb || !firebaseUser) return;
   const docRef = doc(firebaseDb, 'users', firebaseUser.uid);
+  let docSnapshot = null;
+
+  try {
+    docSnapshot = await getDoc(docRef);
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[Auth] Kunde inte läsa befintlig användarprofil:', error);
+    }
+  }
+
+  const existingData = docSnapshot?.exists() ? docSnapshot.data() : null;
+
   const profilePayload = {
     displayName: profileOverride?.displayName || firebaseUser.displayName || firebaseUser.email || 'Användare',
     contact: profileOverride?.contact ?? firebaseUser.email ?? null
   };
-  const payload = { profile: profilePayload };
+
+  const payload = {
+    profile: profilePayload,
+    email: firebaseUser.email || null
+  };
+
+  if (!existingData?.createdAt) {
+    payload.createdAt = serverTimestamp();
+  }
+
   // isSuperUser sätts ENDAST manuellt i Firebase, aldrig via kod
   await setDoc(docRef, payload, { merge: true });
 };
@@ -149,7 +171,35 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (!usesFirebaseAuth || !firebaseAuth) return undefined;
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+      // Om användaren inte är autentiserad, logga in som anonym automatiskt
+      // Detta säkerställer att Firestore-queries alltid fungerar
+      if (!user) {
+        console.log('[Auth] Ingen användare autentiserad, skapar anonym användare...');
+        try {
+          const credential = await signInAnonymously(firebaseAuth);
+
+          // Använd sparat alias om det finns
+          const savedAlias = userPreferencesService.getAlias();
+          const savedContact = userPreferencesService.getContact();
+
+          if (savedAlias || savedContact) {
+            console.log('[Auth] Använder sparat alias:', savedAlias);
+            await ensureUserDoc(credential.user, {
+              profileOverride: {
+                displayName: savedAlias || 'Gäst',
+                contact: savedContact || null
+              }
+            });
+          }
+
+          // onAuthStateChanged kommer att triggas igen med den nya anonyma användaren
+          return;
+        } catch (error) {
+          console.error('[Auth] Kunde inte skapa anonym användare:', error);
+          // Fortsätt ändå för att sätta isAuthInitialized
+        }
+      }
       syncFromFirebaseUser(user);
     });
     return unsubscribe;
@@ -241,6 +291,26 @@ export const AuthProvider = ({ children }) => {
       return user;
     }
     try {
+      // Spara alias och kontakt lokalt
+      if (alias) {
+        userPreferencesService.saveAlias(alias);
+      }
+      if (contact) {
+        userPreferencesService.saveContact(contact);
+      }
+
+      // Om användaren redan är anonym, uppdatera bara profilen
+      const currentFirebaseUser = firebaseAuth.currentUser;
+      if (currentFirebaseUser && currentFirebaseUser.isAnonymous) {
+        console.log('[Auth] Användaren är redan anonym, uppdaterar profil...');
+        await ensureUserDoc(currentFirebaseUser, {
+          profileOverride: { displayName: alias || currentFirebaseUser.displayName || 'Gäst', contact: contact || null }
+        });
+        await syncFromFirebaseUser(currentFirebaseUser);
+        return currentFirebaseUser;
+      }
+
+      // Annars skapa ny anonym användare
       const credential = await signInAnonymously(firebaseAuth);
       await ensureUserDoc(credential.user, {
         profileOverride: { displayName: alias || credential.user.displayName || 'Gäst', contact: contact || null }
