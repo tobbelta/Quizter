@@ -1,7 +1,7 @@
 // Version check - körs FÖRE allt annat
 // Denna fil ska ALDRIG cachas
 (function() {
-  const VERSION_CHECK_APP_VERSION = '0.3.0';
+  const VERSION_CHECK_APP_VERSION = '0.3.1';
   const urlParams = new URLSearchParams(window.location.search);
   const requestedVersion = urlParams.get('ver') || urlParams.get('version');
 
