@@ -151,6 +151,10 @@ async function enqueueTask(taskType, payload, userId) {
       headers: {
         'Content-Type': 'application/json',
       },
+      // Add OIDC token to authenticate with the private Cloud Function
+      oidcToken: {
+        serviceAccountEmail: `geoquest2-7e45c@appspot.gserviceaccount.com`,
+      },
     },
     scheduleTime: {
         seconds: Date.now() / 1000 + 2 // Schedule to run in 2 seconds
