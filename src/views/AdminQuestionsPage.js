@@ -1,10 +1,13 @@
 /**
  * Admin-sida för att hantera och visa tillgängliga frågor.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
+import { aiService } from '../services/aiService';
+import { taskService } from '../services/taskService';
+import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
@@ -335,6 +338,7 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
 const AdminQuestionsPage = () => {
   const navigate = useNavigate();
   const { isSuperUser } = useAuth();
+  const { registerTask } = useBackgroundTasks();
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
@@ -355,6 +359,7 @@ const AdminQuestionsPage = () => {
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'duplicates'
   const [validatingQuestion, setValidatingQuestion] = useState(null); // ID av fråga som valideras
   const [validatingBatch, setValidatingBatch] = useState(false);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     const loadQuestions = () => {
@@ -386,6 +391,12 @@ const AdminQuestionsPage = () => {
       navigate('/');
     }
   }, [isSuperUser, navigate]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Hämta AI-status när AI-dialogen öppnas
   useEffect(() => {
@@ -480,52 +491,56 @@ const AdminQuestionsPage = () => {
     const requestAmount = Math.ceil(aiAmount * 1.5);
 
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/generateAIQuestions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: requestAmount,
-          category: aiCategory || undefined,
-          difficulty: aiDifficulty || undefined,
-          provider: aiProvider
-        })
+      const { taskId } = await aiService.startAIGeneration({
+        amount: requestAmount,
+        category: aiCategory || undefined,
+        difficulty: aiDifficulty || undefined,
+        provider: aiProvider,
       });
 
-      const data = await response.json();
+      if (taskId) {
+        const providerLabel = aiProvider ? aiProvider.toUpperCase() : 'AI';
+        const descriptorParts = [];
+        descriptorParts.push(`${aiAmount} frågor`);
+        if (aiCategory) descriptorParts.push(aiCategory);
+        if (aiDifficulty) descriptorParts.push(aiDifficulty);
+        descriptorParts.push(providerLabel);
 
-      if (!response.ok) {
-        throw new Error(data.error || data.message || 'Failed to generate questions');
+        registerTask(taskId, {
+          taskType: 'generation',
+          label: 'AI-generering',
+          description: descriptorParts.join(' · '),
+          createdAt: new Date(),
+        });
       }
 
-      // Lägg till frågor (validering och dublettkontroll sker automatiskt)
-      const importResult = await questionService.addQuestions(data.questions || []);
-
-      let message = `🎉 AI-generering med ${aiProvider} klar!\n\n`;
-      message += `✓ ${importResult.added} nya giltiga frågor importerades\n`;
-
-      if (importResult.addedInvalid > 0) {
-        message += `⚠️ ${importResult.addedInvalid} frågor importerades med valideringsfel (taggade)\n`;
+      if (!taskId) {
+        throw new Error('Bakgrundsjobbet saknar taskId.');
       }
 
-      if (importResult.duplicatesBlocked > 0) {
-        message += `⚠️ ${importResult.duplicatesBlocked} dubletter blockerades\n`;
+      const taskData = await taskService.waitForCompletion(taskId);
+      const result = taskData?.result || {};
+      const providerLabel = result.provider || aiProvider;
+
+      let message = `🤖 AI-generering via ${providerLabel || 'AI'} klar!\n\n`;
+      if (typeof result.count === 'number') {
+        message += `✓ ${result.count} frågor genererades.\n`;
+      } else {
+        message += '✓ Genereringen slutfördes.\n';
       }
 
-      // Varna om vi inte fick tillräckligt många giltiga frågor
-      if (importResult.added < aiAmount) {
-        message += `\n⚠️ OBS: Du begärde ${aiAmount} frågor men fick bara ${importResult.added} giltiga.\n`;
-        message += `Försök generera fler för att få det antal du behöver.`;
+      if (Array.isArray(result.questionIds) && result.questionIds.length > 0) {
+        message += `\nFrågorna har importerats och visas här så snart Firestore-synken är klar.`;
       }
-
-      message += `\nFrågorna finns nu både på svenska och engelska med kategorier och svårighetsgrader.`;
 
       alert(message);
     } catch (error) {
-      alert(`❌ Kunde inte generera frågor: ${error.message}\n\nKontrollera att API-nyckeln för ${aiProvider} är konfigurerad i Firebase.`);
+      console.error('Kunde inte generera frågor:', error);
+      alert(`⚠️ Kunde inte generera frågor: ${error.message}`);
     } finally {
-      setIsGeneratingAI(false);
+      if (isMountedRef.current) {
+        setIsGeneratingAI(false);
+      }
     }
   };
 
@@ -536,82 +551,71 @@ const AdminQuestionsPage = () => {
       const langData = question.languages?.sv || {
         text: question.text,
         options: question.options,
-        explanation: question.explanation
+        explanation: question.explanation,
       };
 
-      const response = await fetch(
-        'https://europe-west1-geoquest2-7e45c.cloudfunctions.net/validateQuestionWithAI',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            question: langData.text,
-            options: langData.options,
-            correctOption: question.correctOption,
-            explanation: langData.explanation,
-            provider: 'anthropic'
-          })
-        }
-      );
+      const { taskId } = await aiService.startAIValidation({
+        question: langData.text,
+        options: langData.options,
+        correctOption: question.correctOption,
+        explanation: langData.explanation,
+      });
 
-      const result = await response.json();
-
-      console.log('[AI-Validering] Raw response:', result);
-      console.log('[AI-Validering] Response status:', response.status);
-
-      // Kontrollera om det finns ett felmeddelande
-      if (result.error || result.message) {
-        throw new Error(result.error || result.message);
+      if (taskId) {
+        const preview = (langData.text || '').trim().slice(0, 60);
+        registerTask(taskId, {
+          taskType: 'validation',
+          label: 'AI-validering',
+          description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
+          createdAt: new Date(),
+        });
       }
 
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}: ${JSON.stringify(result)}`);
+      if (!taskId) {
+        throw new Error('Bakgrundsjobbet saknar taskId.');
       }
 
-      // Kontrollera att svaret har rätt format
-      if (!result || typeof result !== 'object') {
-        throw new Error('Ogiltigt svar från AI-validering: ' + JSON.stringify(result));
-      }
+      const taskData = await taskService.waitForCompletion(taskId);
+      const result = taskData?.result || {};
 
-      // Sätt default-värden om de saknas
       const validationResult = {
         valid: result.valid !== false,
         issues: Array.isArray(result.issues) ? result.issues : [],
         suggestedCorrectOption: result.suggestedCorrectOption,
-        reasoning: result.reasoning || ''
+        reasoning: result.reasoning || '',
+        providerResults: result.providerResults,
+        providersChecked: result.providersChecked,
       };
 
-      console.log('[AI-Validering] Result:', validationResult);
-
-      // Spara BARA om frågan är valid (alla providers godkände)
       if (validationResult.valid) {
         await questionService.markAsValidated(question.id, validationResult);
       } else {
-        // Om frågan underkänns, markera som invalid
         await questionService.markAsInvalid(question.id, validationResult);
       }
 
       if (!silent) {
         if (validationResult.valid) {
-          // Visa vilka providers som validerade
           const providersInfo = validationResult.providersChecked
             ? `\n\nValiderad av ${validationResult.providersChecked} AI-providers`
             : '';
           alert('✅ Frågan är validerad!' + providersInfo + '\n\nAI:n bekräftar att det markerade svaret är korrekt.');
         } else {
           let message = '⚠️ AI hittade problem:\n\n';
-          validationResult.issues.forEach(issue => {
+          validationResult.issues.forEach((issue) => {
             message += `• ${issue}\n`;
           });
-          if (validationResult.suggestedCorrectOption !== undefined && validationResult.suggestedCorrectOption !== question.correctOption) {
-            message += `\n💡 AI föreslår: Alternativ ${validationResult.suggestedCorrectOption + 1}`;
+          if (
+            validationResult.suggestedCorrectOption !== undefined &&
+            validationResult.suggestedCorrectOption !== question.correctOption
+          ) {
+            message += `\n🤖 AI föreslår: Alternativ ${validationResult.suggestedCorrectOption + 1}`;
           }
 
-          // Visa provider-resultat om tillgängliga
           if (validationResult.providerResults) {
             message += `\n\n--- Provider-resultat ---\n`;
-            Object.entries(validationResult.providerResults).forEach(([provider, result]) => {
-              message += `${provider}: ${result.valid ? '✓' : '✗'}\n`;
+            Object.entries(validationResult.providerResults).forEach(([provider, providerResult]) => {
+              const isValid = providerResult?.valid;
+              message += `${provider}: ${isValid ? '✓' : '✗'}\n`;
             });
           }
 
@@ -623,15 +627,17 @@ const AdminQuestionsPage = () => {
     } catch (error) {
       console.error('Fel vid AI-validering:', error);
       if (!silent) {
-        alert('❌ Kunde inte validera fråga: ' + error.message);
+        alert(`⚠️ Kunde inte validera fråga: ${error.message}`);
       }
       throw error;
     } finally {
-      setValidatingQuestion(null);
+      if (isMountedRef.current) {
+        setValidatingQuestion(null);
+      }
     }
   };
 
-  const handleManualApprove = async (questionId) => {
+const handleManualApprove = async (questionId) => {
     if (!window.confirm('Godkänn denna fråga manuellt?\n\nDetta markerar frågan som validerad oavsett AI-valideringens resultat.')) {
       return;
     }
@@ -691,9 +697,8 @@ const AdminQuestionsPage = () => {
   };
 
   const handleValidateAllUnvalidated = async () => {
-    // Exkludera manuellt godkända och manuellt underkända
-    const unvalidatedQuestions = questions.filter(q =>
-      !q.aiValidated && !q.manuallyApproved && !q.manuallyRejected
+    const unvalidatedQuestions = questions.filter(
+      (q) => !q.aiValidated && !q.manuallyApproved && !q.manuallyRejected
     );
 
     if (unvalidatedQuestions.length === 0) {
@@ -701,7 +706,15 @@ const AdminQuestionsPage = () => {
       return;
     }
 
-    if (!window.confirm(`Detta kommer att AI-validera ${unvalidatedQuestions.length} ovaliderade frågor.\n\nDetta kostar API-anrop och kan ta några minuter.\n\nVill du fortsätta?`)) {
+    if (
+      !window.confirm(
+        `Detta kommer att AI-validera ${unvalidatedQuestions.length} ovaliderade frågor.
+
+Detta kostar API-anrop och kan ta några minuter.
+
+Vill du fortsätta?`
+      )
+    ) {
       return;
     }
 
@@ -709,51 +722,54 @@ const AdminQuestionsPage = () => {
     let validated = 0;
     let failed = 0;
     const issues = [];
-    const validationUpdates = []; // Samla alla uppdateringar för batch-skrivning
+    const validationUpdates = [];
 
     try {
-      // Steg 1: Hämta valideringsresultat från AI (detta måste göras sekventiellt pga API-begränsningar)
       for (const question of unvalidatedQuestions) {
         try {
           const langData = question.languages?.sv || {
             text: question.text,
             options: question.options,
-            explanation: question.explanation
+            explanation: question.explanation,
           };
 
-          const response = await fetch(
-            'https://europe-west1-geoquest2-7e45c.cloudfunctions.net/validateQuestionWithAI',
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                question: langData.text,
-                options: langData.options,
-                correctOption: question.correctOption,
-                explanation: langData.explanation,
-                provider: 'anthropic'
-              })
-            }
-          );
+          const { taskId } = await aiService.startAIValidation({
+            question: langData.text,
+            options: langData.options,
+            correctOption: question.correctOption,
+            explanation: langData.explanation,
+          });
 
-          const result = await response.json();
-
-          if (result.error || result.message || !response.ok) {
-            throw new Error(result.error || result.message || `API returned ${response.status}`);
+          if (taskId) {
+            const preview = (langData.text || '').trim().slice(0, 60);
+            registerTask(taskId, {
+              taskType: 'validation',
+              label: 'AI-validering',
+              description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
+              createdAt: new Date(),
+            });
           }
+
+          if (!taskId) {
+            throw new Error('Bakgrundsjobbet saknar taskId.');
+          }
+
+          const taskData = await taskService.waitForCompletion(taskId);
+          const result = taskData?.result || {};
 
           const validationResult = {
             valid: result.valid !== false,
             issues: Array.isArray(result.issues) ? result.issues : [],
             suggestedCorrectOption: result.suggestedCorrectOption,
-            reasoning: result.reasoning || ''
+            reasoning: result.reasoning || '',
+            providerResults: result.providerResults,
+            providersChecked: result.providersChecked,
           };
 
-          // Samla uppdateringar istället för att skriva direkt
           validationUpdates.push({
             questionId: question.id,
             valid: validationResult.valid,
-            validationData: validationResult
+            validationData: validationResult,
           });
 
           validated++;
@@ -762,7 +778,7 @@ const AdminQuestionsPage = () => {
             issues.push({
               id: question.id,
               text: question.languages?.sv?.text || question.text,
-              issues: validationResult.issues
+              issues: validationResult.issues,
             });
           }
         } catch (error) {
@@ -771,22 +787,20 @@ const AdminQuestionsPage = () => {
         }
       }
 
-      // Steg 2: Skriv ALLA uppdateringar till Firestore i EN batch-operation
       if (validationUpdates.length > 0) {
-        console.log(`[Batch-validering] Skriver ${validationUpdates.length} uppdateringar till Firestore...`);
         await questionService.markManyAsValidated(validationUpdates);
       }
 
-      let message = `✅ Batch-validering klar!\n\n`;
+      let message = '✅ Batch-validering klar!\n\n';
       message += `Validerade: ${validated}\n`;
       message += `Misslyckades: ${failed}\n`;
       message += `Problem hittade: ${issues.length}\n`;
 
       if (issues.length > 0) {
         message += `\n⚠️ Frågor med problem:\n`;
-        issues.slice(0, 5).forEach(issue => {
+        issues.slice(0, 5).forEach((issue) => {
           message += `\n• ${issue.text.substring(0, 50)}...\n`;
-          issue.issues.forEach(i => message += `  - ${i}\n`);
+          issue.issues.forEach((i) => (message += `  - ${i}\n`));
         });
         if (issues.length > 5) {
           message += `\n...och ${issues.length - 5} fler.`;
@@ -795,7 +809,9 @@ const AdminQuestionsPage = () => {
 
       alert(message);
     } finally {
-      setValidatingBatch(false);
+      if (isMountedRef.current) {
+        setValidatingBatch(false);
+      }
     }
   };
 

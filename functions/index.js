@@ -3,9 +3,11 @@
  */
 const {onRequest} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {onTaskDispatched} = require("firebase-functions/v2/tasks");
 const {defineString, defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const {CloudTasksClient} = require("@google-cloud/tasks");
 
 // CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
@@ -31,12 +33,22 @@ if (!admin.apps.length) {
 }
 
 const REGION = "europe-west1";
+const PROJECT_ID = "geoquest2-7e45c"; // Replace with your project ID
+
+// The queue name will be determined dynamically based on the function name.
+
 const runtimeDefaults = {
   region: REGION,
   memory: "512MB",
   timeoutSeconds: 60,
   secrets: [anthropicApiKey, openaiApiKey, geminiApiKey, stripeSecretKey]
 };
+
+const taskRuntimeDefaults = {
+    ...runtimeDefaults,
+    timeoutSeconds: 540, // Allow longer for background tasks
+};
+
 
 const createHttpsHandler = (handler) =>
   onRequest(runtimeDefaults, handler);
@@ -49,6 +61,115 @@ const ensurePost = (req, res) => {
   }
   return true;
 };
+
+// Cloud Tasks client
+const cloudTasksClient = new CloudTasksClient();
+
+/**
+ * Ensures that the Cloud Tasks queue exists before enqueuing work.
+ * Creates the queue with sensible defaults if it is missing.
+ * @param {string} queueName - The short name of the queue (without project/location).
+ * @returns {Promise<string>} - Fully qualified queue path.
+ */
+async function ensureQueue(queueName) {
+  const queuePath = cloudTasksClient.queuePath(PROJECT_ID, REGION, queueName);
+  try {
+    await cloudTasksClient.getQueue({name: queuePath});
+  } catch (error) {
+    if (error.code === 5) { // NOT_FOUND
+      const parent = cloudTasksClient.locationPath(PROJECT_ID, REGION);
+      await cloudTasksClient.createQueue({
+        parent,
+        queue: {
+          name: queuePath,
+          rateLimits: {maxDispatchesPerSecond: 5},
+          retryConfig: {
+            maxRetryDuration: {seconds: 3600},
+          },
+        },
+      });
+      logger.info(`Created Cloud Tasks queue ${queueName}.`);
+    } else {
+      throw error;
+    }
+  }
+  return queuePath;
+}
+
+/**
+ * Enqueues a task for background processing.
+ * @param {string} taskType - The type of task to enqueue (e.g., 'generate', 'validate').
+ * @param {object} payload - The data required for the task.
+ * @param {string} userId - The ID of the user who initiated the task.
+ * @returns {Promise<string>} The ID of the created background task document.
+ */
+async function enqueueTask(taskType, payload, userId) {
+  const db = admin.firestore();
+  const taskDocRef = db.collection('backgroundTasks').doc();
+  const sanitizePayload = (data) => {
+    if (Array.isArray(data)) {
+      return data
+        .filter((item) => item !== undefined)
+        .map((item) => sanitizePayload(item));
+    }
+
+    if (data && typeof data === 'object') {
+      return Object.entries(data).reduce((acc, [key, value]) => {
+        if (value === undefined) {
+          return acc;
+        }
+        acc[key] = sanitizePayload(value);
+        return acc;
+      }, {});
+    }
+
+    return data;
+  };
+
+  const sanitizedPayload = sanitizePayload(payload);
+
+  const taskInfo = {
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    status: 'pending',
+    taskType,
+    userId,
+    payload: sanitizedPayload,
+  };
+  await taskDocRef.set(taskInfo);
+
+  const queueName = `runai${taskType}`;
+  const queuePath = await ensureQueue(queueName);
+
+  // Construct the URL to the handler function
+  const url = `https://${REGION}-${PROJECT_ID}.cloudfunctions.net/${queueName}`;
+
+  const task = {
+    httpRequest: {
+      httpMethod: 'POST',
+      url,
+      body: Buffer.from(JSON.stringify({ taskId: taskDocRef.id, ...sanitizedPayload })).toString('base64'),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+    scheduleTime: {
+        seconds: Date.now() / 1000 + 2 // Schedule to run in 2 seconds
+    }
+  };
+
+  try {
+    const [response] = await cloudTasksClient.createTask({ parent: queuePath, task });
+    logger.info(`Task ${response.name} enqueued to ${queueName}.`);
+    await taskDocRef.update({ status: 'queued', cloudTaskName: response.name });
+  } catch (error) {
+    logger.error("Error enqueueing task", { error: error.message, taskId: taskDocRef.id });
+    await taskDocRef.update({ status: 'failed', error: error.message });
+    throw error; // Re-throw to be caught by the calling function
+  }
+
+  return taskDocRef.id;
+}
+
 
 exports.createRun = createHttpsHandler(async (req, res) => {
   // TODO: Validera payload, skapa run i Firestore och svara med id/kod.
@@ -228,241 +349,92 @@ exports.getAIStatus = createHttpsHandler(async (req, res) => {
 });
 
 /**
- * Generera fr├Ñgor manuellt med AI (HTTP endpoint)
- * Anv├ñnder Anthropic Claude som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
+ * Queue a task to generate questions with AI.
  */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
-  return cors(req, res, async () => {
-    if (!ensurePost(req, res)) {
-      return;
-    }
-
-    try {
-      const { amount = 10, category, difficulty, provider = 'anthropic' } = req.body;
-
-      // Validera amount
-      if (amount < 1 || amount > 50) {
-        res.status(400).json({
-          error: "Amount must be between 1 and 50"
-        });
-        return;
-      }
-
-      let questions = null;
-      let usedProvider = null;
-
-      // Anv├ñnd den valda providern
-      if (provider === 'gemini') {
-        const geminiKey = geminiApiKey.value();
-        if (geminiKey) {
-          try {
-            const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
-            logger.info("Using Gemini (user selected)", { amount, category, difficulty });
-            questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
-            usedProvider = 'gemini';
-            logger.info("Successfully generated with Gemini");
-          } catch (error) {
-            logger.warn("Gemini failed", { error: error.message });
-          }
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
         }
-      } else if (provider === 'openai') {
-        const openaiKey = openaiApiKey.value();
-        if (openaiKey) {
-          try {
-            const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
-            logger.info("Using OpenAI (user selected)", { amount, category, difficulty });
-            questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
-            usedProvider = 'openai';
-            logger.info("Successfully generated with OpenAI");
-          } catch (error) {
-            logger.warn("OpenAI failed", { error: error.message });
-          }
+
+        try {
+            // Verify Firebase ID token
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const { amount = 10, category, difficulty, provider = 'anthropic' } = req.body;
+
+            if (amount < 1 || amount > 50) {
+                return res.status(400).json({ error: "Amount must be between 1 and 50" });
+            }
+
+            const taskId = await enqueueTask('generation', { amount, category, difficulty, provider }, userId);
+
+            res.status(202).json({
+                success: true,
+                message: "Question generation has been queued.",
+                taskId: taskId
+            });
+        } catch (error) {
+            logger.error("Error queueing AI question generation", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue question generation task.", message: error.message });
         }
-      } else {
-        // Anthropic (default)
-        const anthropicKey = anthropicApiKey.value();
-        if (anthropicKey) {
-          try {
-            const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
-            logger.info("Using Anthropic (user selected or default)", { amount, category, difficulty });
-            questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
-            usedProvider = 'anthropic';
-            logger.info("Successfully generated with Anthropic");
-          } catch (error) {
-            logger.warn("Anthropic failed", { error: error.message });
-          }
-        }
-      }
-
-      // Om vald provider misslyckades, returnera fel
-      if (!questions) {
-        logger.error(`Selected provider ${provider} failed or not configured`);
-        res.status(500).json({
-          error: `Failed to generate questions with ${provider}`,
-          provider: provider
-        });
-        return;
-      }
-
-      // Spara till Firestore
-      const db = admin.firestore();
-      const batch = db.batch();
-
-      questions.forEach(question => {
-        const docRef = db.collection('questions').doc(question.id);
-        // L├ñgg till createdAt om det inte finns
-        const questionData = {
-          ...question,
-          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
-        };
-        batch.set(docRef, questionData);
-      });
-
-      await batch.commit();
-
-      logger.info("Successfully generated and saved AI questions", {
-        count: questions.length,
-        provider: usedProvider
-      });
-
-      res.status(200).json({
-        success: true,
-        count: questions.length,
-        provider: usedProvider,
-        questions: questions
-      });
-    } catch (error) {
-      logger.error("Error generating AI questions", {
-        error: error.message,
-        stack: error.stack
-      });
-      res.status(500).json({
-        error: "Failed to generate questions",
-        message: error.message
-      });
-    }
-  });
+    });
 });
 
-// AI-validering av frågor - kontrollerar att rätt svar är korrekt
+/**
+ * Queue a task to validate a question with AI.
+ */
 exports.validateQuestionWithAI = createHttpsHandler(async (req, res) => {
-  return cors(req, res, async () => {
-    if (!ensurePost(req, res)) {
-      return;
-    }
-
-    try {
-      const { question, options, correctOption, explanation, provider = 'anthropic' } = req.body;
-
-      // Validera input
-      if (!question || !options || correctOption === undefined || !explanation) {
-        res.status(400).json({
-          error: "Missing required fields: question, options, correctOption, explanation"
-        });
-        return;
-      }
-
-      if (!Array.isArray(options) || options.length !== 4) {
-        res.status(400).json({
-          error: "Options must be an array of 4 strings"
-        });
-        return;
-      }
-
-      // Validera med ALLA tillgängliga providers
-      const validationResults = {};
-      let allValid = true;
-      const allIssues = [];
-      let combinedReasoning = '';
-
-      // Testa Anthropic
-      const anthropicKey = anthropicApiKey.value();
-      if (anthropicKey) {
-        try {
-          const { validateQuestion } = require('./services/aiQuestionValidator');
-          logger.info("Validating question with Anthropic", { question: question.substring(0, 50) });
-          const result = await validateQuestion({
-            question,
-            options,
-            correctOption,
-            explanation
-          }, anthropicKey);
-          validationResults.anthropic = result;
-
-          if (!result.valid) {
-            allValid = false;
-            allIssues.push(...result.issues.map(issue => `[Anthropic] ${issue}`));
-          }
-          combinedReasoning += `**Anthropic:** ${result.reasoning}\n\n`;
-          logger.info("Anthropic validation complete", { valid: result.valid });
-        } catch (error) {
-          logger.error("Anthropic validation failed", { error: error.message });
-          validationResults.anthropic = { valid: false, error: error.message };
-          allValid = false;
-          allIssues.push(`[Anthropic] Valideringsfel: ${error.message}`);
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
         }
-      }
 
-      // Testa Gemini
-      const geminiKey = geminiApiKey.value();
-      if (geminiKey) {
         try {
-          const { validateQuestion } = require('./services/geminiQuestionValidator');
-          logger.info("Validating question with Gemini", { question: question.substring(0, 50) });
-          const result = await validateQuestion({
-            question,
-            options,
-            correctOption,
-            explanation
-          }, geminiKey);
-          validationResults.gemini = result;
+            // Verify Firebase ID token
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
 
-          if (!result.valid) {
-            allValid = false;
-            allIssues.push(...result.issues.map(issue => `[Gemini] ${issue}`));
-          }
-          combinedReasoning += `**Gemini:** ${result.reasoning}\n\n`;
-          logger.info("Gemini validation complete", { valid: result.valid });
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const { question, options, correctOption, explanation } = req.body;
+
+            if (!question || !options || correctOption === undefined || !explanation) {
+                return res.status(400).json({ error: "Missing required fields: question, options, correctOption, explanation" });
+            }
+            if (!Array.isArray(options) || options.length !== 4) {
+                return res.status(400).json({ error: "Options must be an array of 4 strings" });
+            }
+
+            const taskId = await enqueueTask('validation', { question, options, correctOption, explanation }, userId);
+
+            res.status(202).json({
+                success: true,
+                message: "Question validation has been queued.",
+                taskId: taskId
+            });
         } catch (error) {
-          logger.error("Gemini validation failed", { error: error.message });
-          validationResults.gemini = { valid: false, error: error.message };
-          allValid = false;
-          allIssues.push(`[Gemini] Valideringsfel: ${error.message}`);
+            logger.error("Error queueing AI question validation", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue question validation task.", message: error.message });
         }
-      }
-
-      // Om inga providers är konfigurerade
-      if (!anthropicKey && !geminiKey) {
-        res.status(500).json({
-          error: "No AI providers configured for validation"
-        });
-        return;
-      }
-
-      // Sammanställ resultat - alla måste godkänna
-      const finalResult = {
-        valid: allValid,
-        issues: allIssues,
-        reasoning: combinedReasoning.trim(),
-        providerResults: validationResults,
-        providersChecked: Object.keys(validationResults).length
-      };
-
-      logger.info("Multi-provider validation complete", {
-        valid: finalResult.valid,
-        providers: Object.keys(validationResults).join(', ')
-      });
-
-      res.status(200).json(finalResult);
-    } catch (error) {
-      logger.error("Error validating question", { error: error.message });
-      res.status(500).json({
-        error: "Failed to validate question",
-        message: error.message
-      });
-    }
-  });
+    });
 });
+
 
 // Schemalagd funktion som ska h├ñmta fler fr├Ñgor l├╢pande med AI.
 // Anv├ñnder Anthropic som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
@@ -600,6 +572,148 @@ exports.questionImport = onSchedule(
     }
   }
 );
+
+/**
+ * Task-dispatched function to run AI question generation.
+ */
+exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId, amount, category, difficulty, provider } = req.body;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+
+    try {
+        await taskDocRef.update({ status: 'processing', startedAt: admin.firestore.FieldValue.serverTimestamp() });
+        logger.info(`Processing AI generation task ${taskId}`, { amount, category, difficulty, provider });
+
+        let questions = null;
+        let usedProvider = null;
+
+        if (provider === 'gemini') {
+            const geminiKey = geminiApiKey.value();
+            if (geminiKey) {
+                const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
+                questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
+                usedProvider = 'gemini';
+            }
+        } else if (provider === 'openai') {
+            const openaiKey = openaiApiKey.value();
+            if (openaiKey) {
+                const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
+                questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
+                usedProvider = 'openai';
+            }
+        } else {
+            const anthropicKey = anthropicApiKey.value();
+            if (anthropicKey) {
+                const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
+                questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
+                usedProvider = 'anthropic';
+            }
+        }
+
+        if (!questions) {
+            throw new Error(`Provider ${provider} failed or is not configured.`);
+        }
+
+        const batch = db.batch();
+        questions.forEach(question => {
+            const docRef = db.collection('questions').doc(question.id);
+            const questionData = { ...question, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+            batch.set(docRef, questionData);
+        });
+        await batch.commit();
+
+        const result = {
+            count: questions.length,
+            provider: usedProvider,
+            questionIds: questions.map(q => q.id),
+        };
+
+        await taskDocRef.update({ status: 'completed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), result });
+        logger.info(`Successfully completed AI generation task ${taskId}`);
+
+    } catch (error) {
+        logger.error(`Failed AI generation task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({ status: 'failed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), error: error.message });
+    }
+});
+
+/**
+ * Task-dispatched function to run AI question validation.
+ */
+exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId, question, options, correctOption, explanation } = req.body;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+
+    try {
+        await taskDocRef.update({ status: 'processing', startedAt: admin.firestore.FieldValue.serverTimestamp() });
+        logger.info(`Processing AI validation task ${taskId}`);
+
+        const validationResults = {};
+        let allValid = true;
+        const allIssues = [];
+        let combinedReasoning = '';
+
+        const anthropicKey = anthropicApiKey.value();
+        if (anthropicKey) {
+            try {
+                const { validateQuestion } = require('./services/aiQuestionValidator');
+                const result = await validateQuestion({ question, options, correctOption, explanation }, anthropicKey);
+                validationResults.anthropic = result;
+                if (!result.valid) {
+                    allValid = false;
+                    allIssues.push(...result.issues.map(issue => `[Anthropic] ${issue}`));
+                }
+                combinedReasoning += `**Anthropic:** ${result.reasoning}\n\n`;
+            } catch (error) {
+                logger.error("Anthropic validation failed during task", { error: error.message });
+                validationResults.anthropic = { valid: false, error: error.message };
+                allValid = false;
+                allIssues.push(`[Anthropic] Validation Error: ${error.message}`);
+            }
+        }
+
+        const geminiKey = geminiApiKey.value();
+        if (geminiKey) {
+            try {
+                const { validateQuestion } = require('./services/geminiQuestionValidator');
+                const result = await validateQuestion({ question, options, correctOption, explanation }, geminiKey);
+                validationResults.gemini = result;
+                if (!result.valid) {
+                    allValid = false;
+                    allIssues.push(...result.issues.map(issue => `[Gemini] ${issue}`));
+                }
+                combinedReasoning += `**Gemini:** ${result.reasoning}\n\n`;
+            } catch (error) {
+                logger.error("Gemini validation failed during task", { error: error.message });
+                validationResults.gemini = { valid: false, error: error.message };
+                allValid = false;
+                allIssues.push(`[Gemini] Validation Error: ${error.message}`);
+            }
+        }
+
+        if (!anthropicKey && !geminiKey) {
+            throw new Error("No AI providers configured for validation.");
+        }
+
+        const finalResult = {
+            valid: allValid,
+            issues: allIssues,
+            reasoning: combinedReasoning.trim(),
+            providerResults: validationResults,
+            providersChecked: Object.keys(validationResults).length
+        };
+
+        await taskDocRef.update({ status: 'completed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), result: finalResult });
+        logger.info(`Successfully completed AI validation task ${taskId}`);
+
+    } catch (error) {
+        logger.error(`Failed AI validation task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({ status: 'failed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), error: error.message });
+    }
+});
+
 
 /**
  * Stripe Payment Intent Creation

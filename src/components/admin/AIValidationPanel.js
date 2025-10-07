@@ -2,47 +2,62 @@
  * Panel för AI-baserad validering av frågor
  * Kontrollerar att rätt svar verkligen är rätt och att inga andra alternativ också är korrekta
  */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { questionService } from '../../services/questionService';
+import { aiService } from '../../services/aiService';
+import { taskService } from '../../services/taskService';
+import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 
 const AIValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { registerTask } = useBackgroundTasks();
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const runAIValidation = async () => {
     setLoading(true);
     try {
       const allQuestions = questionService.listAll();
-
-      // Ta en mindre batch för testning (kan expanderas)
       const questionsToValidate = allQuestions.slice(0, 10);
-
       const results = [];
 
       for (const question of questionsToValidate) {
         const langData = question.languages?.sv || {
           text: question.text,
           options: question.options,
-          explanation: question.explanation
+          explanation: question.explanation,
         };
 
-        // Anropa backend för AI-validering
         try {
-          const response = await fetch(
-            'https://europe-west1-geoquest2-7e45c.cloudfunctions.net/validateQuestionWithAI',
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                question: langData.text,
-                options: langData.options,
-                correctOption: question.correctOption,
-                explanation: langData.explanation
-              })
-            }
-          );
+          const { taskId } = await aiService.startAIValidation({
+            question: langData.text,
+            options: langData.options,
+            correctOption: question.correctOption,
+            explanation: langData.explanation,
+          });
 
-          const data = await response.json();
+          if (taskId) {
+            const preview = (langData.text || '').trim().slice(0, 60);
+            registerTask(taskId, {
+              taskType: 'validation',
+              label: 'AI-validering',
+              description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
+              createdAt: new Date(),
+            });
+          }
+
+          if (!taskId) {
+            throw new Error('Bakgrundsjobbet saknar taskId.');
+          }
+
+          const taskData = await taskService.waitForCompletion(taskId);
+          const data = taskData?.result || {};
 
           if (data.valid === false) {
             results.push({
@@ -50,7 +65,7 @@ const AIValidationPanel = () => {
               questionText: langData.text,
               issues: data.issues || [],
               correctOption: question.correctOption,
-              suggestedCorrectOption: data.suggestedCorrectOption
+              suggestedCorrectOption: data.suggestedCorrectOption,
             });
           }
         } catch (error) {
@@ -58,17 +73,21 @@ const AIValidationPanel = () => {
         }
       }
 
-      setValidationResults({
-        total: questionsToValidate.length,
-        valid: questionsToValidate.length - results.length,
-        invalid: results.length,
-        issues: results
-      });
+      if (isMountedRef.current) {
+        setValidationResults({
+          total: questionsToValidate.length,
+          valid: questionsToValidate.length - results.length,
+          invalid: results.length,
+          issues: results,
+        });
+      }
     } catch (error) {
       console.error('Fel vid AI-validering:', error);
       alert('Kunde inte köra AI-validering: ' + error.message);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

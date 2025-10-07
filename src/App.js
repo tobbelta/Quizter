@@ -5,6 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
+import { BackgroundTaskProvider } from './context/BackgroundTaskContext';
+import { ToastProvider } from './context/ToastContext';
 import { localStorageService } from './services/localStorageService';
 import { analyticsService } from './services/analyticsService';
 import { VERSION } from './version';
@@ -25,9 +27,11 @@ import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
 import SuperUserMessagesPage from './views/SuperUserMessagesPage';
 import SuperUserNotificationsPage from './views/SuperUserNotificationsPage';
 import SuperUserErrorLogsPage from './views/SuperUserErrorLogsPage';
+import SuperUserTasksPage from './views/SuperUserTasksPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
+import ToastViewport from './components/shared/ToastViewport';
 import { useBreadcrumbs } from './hooks/useBreadcrumbs';
 
 /**
@@ -106,6 +110,14 @@ const AppRoutes = () => (
       element={(
         <RequireSuperUser>
           <SuperUserMessagesPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/superuser/tasks"
+      element={(
+        <RequireSuperUser>
+          <SuperUserTasksPage />
         </RequireSuperUser>
       )}
     />
@@ -305,18 +317,23 @@ const BreadcrumbTracker = () => {
 function App() {
   return (
     <AuthProvider>
-      <RunProvider>
-        <VersionChecker>
-          <div className="min-h-screen bg-slate-950 text-gray-100">
-            <BreadcrumbTracker />
-            <AnalyticsTracker />
-            <MigrationHandler />
-            <LocalRunsImportHandler />
-            <InstallPrompt />
-            <AppRoutes />
-          </div>
-        </VersionChecker>
-      </RunProvider>
+      <ToastProvider>
+        <BackgroundTaskProvider>
+          <RunProvider>
+            <VersionChecker>
+              <div className="min-h-screen bg-slate-950 text-gray-100">
+                <BreadcrumbTracker />
+                <AnalyticsTracker />
+                <MigrationHandler />
+                <LocalRunsImportHandler />
+                <InstallPrompt />
+                <AppRoutes />
+                <ToastViewport />
+              </div>
+            </VersionChecker>
+          </RunProvider>
+        </BackgroundTaskProvider>
+      </ToastProvider>
     </AuthProvider>
   );
 }
