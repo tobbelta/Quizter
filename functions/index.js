@@ -344,6 +344,126 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
   });
 });
 
+// AI-validering av frågor - kontrollerar att rätt svar är korrekt
+exports.validateQuestionWithAI = createHttpsHandler(async (req, res) => {
+  return cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { question, options, correctOption, explanation, provider = 'anthropic' } = req.body;
+
+      // Validera input
+      if (!question || !options || correctOption === undefined || !explanation) {
+        res.status(400).json({
+          error: "Missing required fields: question, options, correctOption, explanation"
+        });
+        return;
+      }
+
+      if (!Array.isArray(options) || options.length !== 4) {
+        res.status(400).json({
+          error: "Options must be an array of 4 strings"
+        });
+        return;
+      }
+
+      // Validera med ALLA tillgängliga providers
+      const validationResults = {};
+      let allValid = true;
+      const allIssues = [];
+      let combinedReasoning = '';
+
+      // Testa Anthropic
+      const anthropicKey = anthropicApiKey.value();
+      if (anthropicKey) {
+        try {
+          const { validateQuestion } = require('./services/aiQuestionValidator');
+          logger.info("Validating question with Anthropic", { question: question.substring(0, 50) });
+          const result = await validateQuestion({
+            question,
+            options,
+            correctOption,
+            explanation
+          }, anthropicKey);
+          validationResults.anthropic = result;
+
+          if (!result.valid) {
+            allValid = false;
+            allIssues.push(...result.issues.map(issue => `[Anthropic] ${issue}`));
+          }
+          combinedReasoning += `**Anthropic:** ${result.reasoning}\n\n`;
+          logger.info("Anthropic validation complete", { valid: result.valid });
+        } catch (error) {
+          logger.error("Anthropic validation failed", { error: error.message });
+          validationResults.anthropic = { valid: false, error: error.message };
+          allValid = false;
+          allIssues.push(`[Anthropic] Valideringsfel: ${error.message}`);
+        }
+      }
+
+      // Testa Gemini
+      const geminiKey = geminiApiKey.value();
+      if (geminiKey) {
+        try {
+          const { validateQuestion } = require('./services/geminiQuestionValidator');
+          logger.info("Validating question with Gemini", { question: question.substring(0, 50) });
+          const result = await validateQuestion({
+            question,
+            options,
+            correctOption,
+            explanation
+          }, geminiKey);
+          validationResults.gemini = result;
+
+          if (!result.valid) {
+            allValid = false;
+            allIssues.push(...result.issues.map(issue => `[Gemini] ${issue}`));
+          }
+          combinedReasoning += `**Gemini:** ${result.reasoning}\n\n`;
+          logger.info("Gemini validation complete", { valid: result.valid });
+        } catch (error) {
+          logger.error("Gemini validation failed", { error: error.message });
+          validationResults.gemini = { valid: false, error: error.message };
+          allValid = false;
+          allIssues.push(`[Gemini] Valideringsfel: ${error.message}`);
+        }
+      }
+
+      // Om inga providers är konfigurerade
+      if (!anthropicKey && !geminiKey) {
+        res.status(500).json({
+          error: "No AI providers configured for validation"
+        });
+        return;
+      }
+
+      // Sammanställ resultat - alla måste godkänna
+      const finalResult = {
+        valid: allValid,
+        issues: allIssues,
+        reasoning: combinedReasoning.trim(),
+        providerResults: validationResults,
+        providersChecked: Object.keys(validationResults).length
+      };
+
+      logger.info("Multi-provider validation complete", {
+        valid: finalResult.valid,
+        providers: Object.keys(validationResults).join(', ')
+      });
+
+      res.status(200).json(finalResult);
+    } catch (error) {
+      logger.error("Error validating question", { error: error.message });
+      res.status(500).json({
+        error: "Failed to validate question",
+        message: error.message
+      });
+    }
+  });
+});
+
 // Schemalagd funktion som ska h├ñmta fler fr├Ñgor l├╢pande med AI.
 // Anv├ñnder Anthropic som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
 exports.questionImport = onSchedule(
