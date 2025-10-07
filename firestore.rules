@@ -203,6 +203,15 @@ service cloud.firestore {
       allow update, delete: if isSuperUser();
     }
 
+    // Background tasks collection (Cloud Tasks status)
+    match /backgroundTasks/{taskId} {
+      // Läs: SuperUser behöver kunna följa köade jobb
+      allow read: if isSuperUser();
+
+      // Klienten ska aldrig skriva eller ta bort dessa dokument
+      allow write: if false;
+    }
+
     // Default: Neka all annan åtkomst
     match /{document=**} {
       allow read, write: if false;

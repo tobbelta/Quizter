@@ -16,6 +16,8 @@ import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
 import ServiceStatusBanner from '../shared/ServiceStatusBanner';
 import { VERSION } from '../../version';
+import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
+import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
 
 const Header = ({ title = 'RouteQuest' }) => {
   const navigate = useNavigate();
@@ -24,7 +26,16 @@ const Header = ({ title = 'RouteQuest' }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const {
+    myTrackedTasks,
+    unreadTaskIds,
+    unreadCount: taskUnreadCount,
+    hasActiveTrackedTasks,
+    markTaskAsSeen,
+    markAllTasksAsSeen,
+  } = useBackgroundTasks();
   const [guestAlias, setGuestAlias] = useState(() => {
     if (typeof window === 'undefined') return '';
     return userPreferencesService.getAlias();
@@ -90,6 +101,24 @@ const Header = ({ title = 'RouteQuest' }) => {
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setShowTasks(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (showMessages) {
+      setShowTasks(false);
+    }
+  }, [showMessages]);
+
+  useEffect(() => {
+    if (showTasks) {
+      setShowMessages(false);
+    }
+  }, [showTasks]);
 
   const handleLogout = () => {
     logout();
@@ -205,11 +234,17 @@ const Header = ({ title = 'RouteQuest' }) => {
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'opacity-0' : ''}`} />
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
             </div>
-            {/* Badge för olästa meddelanden (prioritet) eller lokala rundor */}
-            {unreadMessageCount > 0 ? (
+            {/* Badge för bakgrundsjobb, meddelanden eller lokala rundor */}
+            {taskUnreadCount > 0 ? (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full text-xs font-bold text-black flex items-center justify-center animate-pulse">
+                {taskUnreadCount}
+              </span>
+            ) : unreadMessageCount > 0 ? (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs font-bold text-white flex items-center justify-center animate-pulse">
                 {unreadMessageCount}
               </span>
+            ) : hasActiveTrackedTasks ? (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping" />
             ) : hasLocalRuns ? (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-cyan-500 rounded-full text-xs font-bold text-black flex items-center justify-center">
                 {localCreatedCount + localJoinedCount}
@@ -282,6 +317,21 @@ const Header = ({ title = 'RouteQuest' }) => {
                         {unreadMessageCount}
                       </span>
                     )}
+                  </button>
+                  <button
+                    onClick={() => { setIsMenuOpen(false); setShowTasks(true); }}
+                    className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
+                  >
+                    <span className="text-gray-200">Bakgrundsjobb</span>
+                    {taskUnreadCount > 0 ? (
+                      <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
+                        {taskUnreadCount}
+                      </span>
+                    ) : hasActiveTrackedTasks ? (
+                      <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded text-[11px] font-semibold">
+                        Pågår
+                      </span>
+                    ) : null}
                   </button>
 
                   {/* Mina rundor */}
@@ -402,6 +452,17 @@ const Header = ({ title = 'RouteQuest' }) => {
                         Meddelanden
                       </button>
                       <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/tasks'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300 flex items-center justify-between"
+                      >
+                        <span>Bakgrundsjobb</span>
+                        {taskUnreadCount > 0 && (
+                          <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
+                            {taskUnreadCount}
+                          </span>
+                        )}
+                      </button>
+                      <button
                         onClick={() => { setIsMenuOpen(false); navigate('/superuser/logs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
@@ -478,6 +539,28 @@ const Header = ({ title = 'RouteQuest' }) => {
 
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
+
+    {/* Background task dropdown */}
+    {showTasks && (
+      <>
+        <div
+          className="fixed inset-0 z-[60]"
+          onClick={() => setShowTasks(false)}
+        />
+        <BackgroundTasksDropdown
+          isOpen={showTasks}
+          tasks={myTrackedTasks}
+          unreadTaskIds={unreadTaskIds}
+          onMarkTaskSeen={markTaskAsSeen}
+          onMarkAllSeen={() => {
+            markAllTasksAsSeen();
+            setShowTasks(false);
+          }}
+          onClose={() => setShowTasks(false)}
+          isSuperUser={isSuperUser}
+        />
+      </>
+    )}
 
     {/* Messages Dropdown */}
     {showMessages && (
