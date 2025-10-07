@@ -8,7 +8,6 @@ import { validateQuestion, validateQuestions, findDuplicates } from './questionV
 
 let cachedQuestions = []; // Använd bara Firestore-frågor
 let isInitialized = false;
-let firestoreUnsubscribe = null; // Firestore real-time listener unsubscribe-funktion
 
 const listeners = new Set();
 
@@ -29,7 +28,7 @@ const initialize = async () => {
 
   try {
     // Starta real-time listener istället för one-time fetch
-    firestoreUnsubscribe = questionRepository.subscribeToQuestions((questions) => {
+    questionRepository.subscribeToQuestions((questions) => {
       // Uppdatera cache automatiskt när Firestore ändras
       cachedQuestions = sortQuestions(questions);
       notify();
