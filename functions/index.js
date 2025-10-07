@@ -147,7 +147,7 @@ async function enqueueTask(taskType, payload, userId) {
     httpRequest: {
       httpMethod: 'POST',
       url,
-      body: Buffer.from(JSON.stringify({ taskId: taskDocRef.id, ...sanitizedPayload })).toString('base64'),
+      body: Buffer.from(JSON.stringify({ data: { taskId: taskDocRef.id, ...sanitizedPayload } })).toString('base64'),
       headers: {
         'Content-Type': 'application/json',
       },
