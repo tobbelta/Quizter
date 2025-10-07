@@ -581,6 +581,7 @@ exports.questionImport = onSchedule(
  * Task-dispatched function to run AI question generation.
  */
 exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    logger.info("Incoming task data:", req.data);
     const { taskId, amount, category, difficulty, provider } = req.data;
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
