@@ -70,8 +70,14 @@ service cloud.firestore {
       // Läs: Alla kan läsa frågor
       allow read: if true;
 
-      // Skapa/Uppdatera/Ta bort: Endast SuperUser eller backend (via service account)
-      allow write: if isSuperUser();
+      // Skapa/Ta bort: Endast SuperUser eller backend (via service account)
+      allow create, delete: if isSuperUser();
+
+      // Uppdatera: SuperUser kan uppdatera allt
+      // Autentiserade användare kan endast lägga till rapporter
+      allow update: if isSuperUser() ||
+                       (isAuthenticated() &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reported', 'reportCount', 'reports']));
     }
 
     // Users collection

@@ -1,30 +1,28 @@
 /**
  * Vy där spelare ansluter med en kod eller via QR-länk.
  */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
-import PaymentModal from '../components/payment/PaymentModal';
-import GPSPrompt from '../components/shared/GPSPrompt';
 import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
+import { userPreferencesService } from '../services/userPreferencesService';
 import PageLayout from '../components/layout/PageLayout';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, loginAsGuest } = useAuth();
+  const { currentUser, loginAsGuest, isAuthInitialized } = useAuth();
   const { joinRunByCode } = useRun();
 
   const [joinCode, setJoinCode] = useState('');
-  const [alias, setAlias] = useState('');
-  const [contact, setContact] = useState('');
+  const initialAlias = useMemo(() => userPreferencesService.getAlias() || '', []);
+  const [alias, setAlias] = useState(initialAlias);
+  const [aliasCommitted, setAliasCommitted] = useState(() => Boolean(initialAlias.trim()));
+  const [contact, setContact] = useState(() => userPreferencesService.getContact());
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [showPayment, setShowPayment] = useState(false);
-  const [runToJoin, setRunToJoin] = useState(null);
-  const [participantData, setParticipantData] = useState(null);
 
   const handleJoin = useCallback(async (code) => {
     setError('');
@@ -36,13 +34,24 @@ const JoinRunPage = () => {
       return;
     }
 
+    // För anonyma användare, kontrollera att alias finns
+    if (currentUser?.isAnonymous && !alias.trim()) {
+      setError('Ange ett alias för att delta.');
+      return;
+    }
+
+    // Om användaren är anonym och har angivit alias, uppdatera profilen
     let participantUser = currentUser;
-    if (!participantUser) {
-      if (!alias.trim()) {
-        setError('Ange ett alias för att delta.');
-        return;
+    if (currentUser?.isAnonymous && alias.trim()) {
+      const cleanAlias = alias.trim();
+      userPreferencesService.saveAlias(cleanAlias);
+      setAlias(cleanAlias);
+      setAliasCommitted(true);
+      if (contact) {
+        userPreferencesService.saveContact(contact);
       }
-      participantUser = await loginAsGuest({ alias, contact });
+      // Uppdatera den anonyma användarens profil
+      participantUser = await loginAsGuest({ alias: cleanAlias, contact });
     }
 
     try {
@@ -53,82 +62,89 @@ const JoinRunPage = () => {
         isAnonymous: participantUser?.isAnonymous,
       });
 
-      setRunToJoin(run);
-      setParticipantData({
+      const participantDetails = {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
         alias: participantUser?.name,
         contact: participantUser?.contact,
         isAnonymous: participantUser?.isAnonymous,
+      };
+
+      if (!currentUser || currentUser.isAnonymous) {
+        localStorageService.addJoinedRun(run, participantDetails);
+      }
+
+      analyticsService.logVisit('join_run', {
+        runId: run.id,
+        runName: run.name,
       });
 
-      setShowPayment(true);
+      setSuccess(`Du är nu ansluten till ${run.name}!`);
+
+      setTimeout(() => {
+        navigate(`/run/${run.id}/play`);
+      }, 600);
     } catch (joinError) {
       setError(joinError.message);
     }
-  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode]);
+  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleStorage = (event) => {
+      if (!event.key || event.key === 'geoquest:preferences') {
+        const storedAlias = userPreferencesService.getAlias() || '';
+        setAlias(storedAlias);
+        setAliasCommitted(Boolean(storedAlias.trim()));
+        setContact(userPreferencesService.getContact());
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('userPreferences:changed', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('userPreferences:changed', handleStorage);
+    };
+  }, []);
+
+  // Ta bort auto-login för gäster - de ska fylla i sitt alias först
+  // useEffect för auth-check har tagits bort
+
+  // Förifyll joinCode från URL och auto-join för inloggade användare
+  useEffect(() => {
+    if (!isAuthInitialized) {
+      return;
+    }
+
     const params = new URLSearchParams(location.search);
     const codeParam = params.get('code');
     if (codeParam) {
       const upperCode = codeParam.toUpperCase();
       setJoinCode(upperCode);
-      if (currentUser) {
+
+      // Om användaren är riktigt inloggad (inte anonym), anslut direkt
+      if (currentUser && !currentUser.isAnonymous) {
+        console.log('[JoinRunPage] Inloggad användare, ansluter direkt med kod:', upperCode);
         handleJoin(upperCode);
       }
+      // Om användaren är anonym men har sparat alias, anslut direkt
+      else if (currentUser?.isAnonymous && aliasCommitted) {
+        console.log('[JoinRunPage] Anonym användare med sparat alias, ansluter direkt med kod:', upperCode);
+        handleJoin(upperCode);
+      }
+      else {
+        console.log('[JoinRunPage] Kod förifylld från URL:', upperCode);
+      }
     }
-  }, [location.search, currentUser, handleJoin]);
+  }, [location.search, currentUser, isAuthInitialized, aliasCommitted, handleJoin]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
     handleJoin(joinCode);
   };
 
-  const handlePaymentSuccess = (paymentResult) => {
-    setShowPayment(false);
-
-    const successMessage = paymentResult.skipped
-      ? `Du är nu ansluten till ${runToJoin.name}!`
-      : `Tack för ditt stöd! Du är nu ansluten till ${runToJoin.name}!`;
-
-    setSuccess(successMessage);
-
-    if (!currentUser || currentUser.isAnonymous) {
-      localStorageService.addJoinedRun(runToJoin, participantData);
-    }
-
-    analyticsService.logVisit('join_run', {
-      runId: runToJoin.id,
-      runName: runToJoin.name,
-    });
-
-    if (!paymentResult.skipped && paymentResult.paymentIntentId) {
-      analyticsService.logDonation(1000, paymentResult.paymentIntentId, {
-        runId: runToJoin.id,
-        context: 'join_run',
-      });
-    }
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`geoquest:payment:${runToJoin.id}`, JSON.stringify({
-        paymentIntentId: paymentResult.paymentIntentId,
-        testMode: paymentResult.testMode,
-        skipped: paymentResult.skipped || false,
-        timestamp: new Date().toISOString(),
-      }));
-    }
-
-    setTimeout(() => {
-      navigate(`/run/${runToJoin.id}/play`);
-    }, 600);
-  };
-
-  const handlePaymentCancel = () => {
-    setShowPayment(false);
-    setError('Du kan fortfarande ansluta utan att donera.');
-  };
-
-  const localInfo = !currentUser ? localStorageService.getJoinedRuns() : [];
+  const localInfo = currentUser?.isAnonymous ? localStorageService.getJoinedRuns() : [];
 
   return (
     <PageLayout headerTitle="Anslut till runda" maxWidth="max-w-2xl" className="space-y-8">
@@ -169,30 +185,47 @@ const JoinRunPage = () => {
           />
         </div>
 
-        {!currentUser && (
-          <div className="space-y-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+        {currentUser?.isAnonymous && !aliasCommitted && (
+          <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
             <div>
-              <h2 className="text-base font-semibold text-cyan-200">Spela som gäst</h2>
-              <p className="text-xs text-gray-400">Ange ett alias (och valfri kontaktuppgift) så registrerar vi dig som anonym spelare.</p>
+              <h2 className="text-base font-semibold text-cyan-200">Ditt alias</h2>
+              <p className="text-xs text-gray-400">
+                {alias ? 'Detta alias sparas på din enhet och används vid framtida anslutningar.' : 'Ange ett alias för att delta.'}
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-200">Alias</label>
               <input
                 value={alias}
-                onChange={(event) => setAlias(event.target.value)}
+                onChange={(event) => {
+                  setAlias(event.target.value);
+                }}
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
-                placeholder="Spelare 1"
+                placeholder="T.ex. Erik"
               />
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-200">Kontakt (valfritt)</label>
               <input
                 value={contact}
-                onChange={(event) => setContact(event.target.value)}
+                onChange={(event) => {
+                  setContact(event.target.value);
+                  userPreferencesService.saveContact(event.target.value);
+                }}
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
                 placeholder="E-post eller telefon"
               />
             </div>
+          </div>
+        )}
+        {currentUser?.isAnonymous && aliasCommitted && (
+          <div className="space-y-1 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4 text-sm text-cyan-100">
+            <p>
+              Aliaset <span className="font-semibold text-cyan-200">{alias}</span> används automatiskt för denna anslutning.
+            </p>
+            <p className="text-xs text-gray-400">
+              Du kan ta bort aliaset via menyn om du vill ange ett nytt.
+            </p>
           </div>
         )}
 
@@ -203,22 +236,11 @@ const JoinRunPage = () => {
           Anslut till runda
         </button>
       </form>
-
-      <PaymentModal
-        isOpen={showPayment}
-        runName={runToJoin?.name || ''}
-        amount={500}
-        onSuccess={handlePaymentSuccess}
-        onCancel={handlePaymentCancel}
-        runId={runToJoin?.id}
-        participantId={participantData?.userId}
-        allowSkip
-      />
-
-      {/* GPS-aktiverings prompt */}
-      <GPSPrompt />
     </PageLayout>
   );
 };
 
 export default JoinRunPage;
+
+
+

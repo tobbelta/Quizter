@@ -4,12 +4,13 @@
  * Props:
  * - title: Text som visas i mitten (default: "GeoQuest")
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
 import { messageService } from '../../services/messageService';
 import { analyticsService } from '../../services/analyticsService';
+import { userPreferencesService } from '../../services/userPreferencesService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
@@ -24,10 +25,57 @@ const Header = ({ title = 'RouteQuest' }) => {
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [guestAlias, setGuestAlias] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return userPreferencesService.getAlias();
+  });
   const [language, setLanguage] = useState(() => {
     if (typeof window === 'undefined') return 'sv';
     return localStorage.getItem('routequest:language') || 'sv';
   });
+
+  const handleRemoveAlias = useCallback(() => {
+    try {
+      userPreferencesService.removeAlias();
+      userPreferencesService.removeContact();
+    } catch (error) {
+      console.warn('[Header] Kunde inte ta bort alias:', error);
+    }
+    setGuestAlias('');
+    setIsMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    try {
+      setGuestAlias(userPreferencesService.getAlias());
+    } catch (error) {
+      console.warn('[Header] Kunde inte läsa gästalias:', error);
+    }
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleStorage = (event) => {
+      if (!event.key || event.key === 'geoquest:preferences') {
+        setGuestAlias(userPreferencesService.getAlias());
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('userPreferences:changed', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('userPreferences:changed', handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.isAnonymous) {
+      setGuestAlias(userPreferencesService.getAlias());
+    }
+  }, [currentUser]);
 
     // Lyssna på olästa meddelanden i realtid
   useEffect(() => {
@@ -184,7 +232,9 @@ const Header = ({ title = 'RouteQuest' }) => {
         />
 
         {/* Meny */}
-        <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] overflow-hidden">
+        <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] max-h-[calc(100vh-6rem)] overflow-hidden">
+          <div className="max-h-[calc(100vh-7rem)] overflow-y-auto">
+
                 {/* Användarinfo - visa bara för riktigt inloggade */}
                 {isAuthenticated && !currentUser?.isAnonymous && (
                   <div className="px-4 py-3 border-b border-slate-700">
@@ -199,9 +249,23 @@ const Header = ({ title = 'RouteQuest' }) => {
                 )}
 
                 {/* Gäststatus - visa bara för anonyma */}
-                {isAuthenticated && currentUser?.isAnonymous && (
+                {((isAuthenticated && currentUser?.isAnonymous) || (!isAuthenticated && guestAlias)) && (
                   <div className="px-4 py-3 border-b border-slate-700">
                     <p className="text-sm text-gray-400">Gäst (ej inloggad)</p>
+                    {guestAlias ? (
+                      <>
+                        <p className="mt-1 text-sm font-semibold text-gray-200">{guestAlias}</p>
+                        <button
+                          type="button"
+                          onClick={handleRemoveAlias}
+                          className="mt-2 text-xs font-semibold text-red-300 hover:text-red-200"
+                        >
+                          Ta bort alias
+                        </button>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">Alias visas här när du sparat ett.</p>
+                    )}
                   </div>
                 )}
 
@@ -407,6 +471,7 @@ const Header = ({ title = 'RouteQuest' }) => {
                     </button>
                   )}
                 </div>
+          </div>
         </div>
       </>
     )}
@@ -436,3 +501,7 @@ const Header = ({ title = 'RouteQuest' }) => {
 };
 
 export default Header;
+
+
+
+

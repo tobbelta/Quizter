@@ -5,9 +5,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { useAuth } from '../context/AuthContext';
-import { describeParticipantStatus } from '../utils/participantStatus';
 import { questionService } from '../services/questionService';
 import Header from '../components/layout/Header';
+import PaymentModal from '../components/payment/PaymentModal';
+import { analyticsService } from '../services/analyticsService';
+import { describeParticipantStatus } from '../utils/participantStatus';
 
 const RunResultsPage = () => {
   const { runId } = useParams();
@@ -15,6 +17,8 @@ const RunResultsPage = () => {
   const { currentRun, participants, currentParticipant, loadRunById, refreshParticipants } = useRun();
   const { currentUser, isAuthenticated } = useAuth();
   const [showDetailedResults, setShowDetailedResults] = useState(false);
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [donationFeedback, setDonationFeedback] = useState('');
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
@@ -32,6 +36,27 @@ const RunResultsPage = () => {
   useEffect(() => {
     refreshParticipants().catch((error) => console.warn('Kunde inte uppdatera deltagare', error));
   }, [refreshParticipants]);
+
+  const handleOpenDonation = () => {
+    setDonationFeedback('');
+    setShowDonationModal(true);
+  };
+
+  const handleDonationSuccess = (paymentResult) => {
+    setShowDonationModal(false);
+    setDonationFeedback('Tack för ditt stöd! Donationen registrerades.');
+
+    if (paymentResult?.paymentIntentId && currentRun) {
+      analyticsService.logDonation(2000, paymentResult.paymentIntentId, {
+        runId: currentRun.id,
+        context: 'results',
+      });
+    }
+  };
+
+  const handleDonationCancel = () => {
+    setShowDonationModal(false);
+  };
 
   /** Skapar topplistan baserat på poäng och sluttider. */
   const ranking = useMemo(() => {
@@ -121,6 +146,12 @@ const RunResultsPage = () => {
             )}
           </div>
         </div>
+
+        {donationFeedback && (
+          <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/30 px-4 py-3 text-emerald-100">
+            {donationFeedback}
+          </div>
+        )}
 
       <section className="rounded border border-emerald-500/40 bg-emerald-900/20 p-6">
         <h2 className="text-xl font-semibold mb-3 text-emerald-200">Ledartavla</h2>
@@ -261,15 +292,38 @@ const RunResultsPage = () => {
         )}
         <button
           type="button"
+          onClick={handleOpenDonation}
+          disabled={showDonationModal}
+          className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
+        >
+          Stöd RouteQuest (20 kr)
+        </button>
+        <button
+          type="button"
           onClick={() => navigate('/')}
           className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
         >
           Startsidan
         </button>
       </div>
+
+      <PaymentModal
+        isOpen={showDonationModal}
+        runName={currentRun?.name || ''}
+        amount={2000}
+        onSuccess={handleDonationSuccess}
+        onCancel={handleDonationCancel}
+        runId={currentRun?.id}
+        participantId={currentParticipant?.id}
+        allowSkip={false}
+      />
+
       </div>
     </div>
   );
 };
 
 export default RunResultsPage;
+
+
+

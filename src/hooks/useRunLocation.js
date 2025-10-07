@@ -6,6 +6,24 @@ import { FALLBACK_POSITION } from '../utils/constants';
 
 const STORAGE_KEY = 'tipspromenad:trackingEnabled';
 
+/**
+ * Beräknar avståndet mellan två GPS-koordinater i meter (Haversine-formeln)
+ */
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Jordens radie i meter
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+};
+
 /** Säkerställer att vi startar med samma GPS-inställning som senast. */
 const readInitialPreference = () => {
   if (typeof window === 'undefined') return true;
@@ -61,8 +79,28 @@ const useRunLocation = () => {
     }
 
     setStatus('pending');
+
+    // Håll koll på senaste positionen för att undvika onödiga uppdateringar
+    let lastPosition = null;
+
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        // Uppdatera bara om positionen har ändrats signifikant (>5 meter)
+        if (lastPosition) {
+          const distance = calculateDistance(
+            lastPosition.coords.latitude,
+            lastPosition.coords.longitude,
+            position.coords.latitude,
+            position.coords.longitude
+          );
+
+          // Om förflyttningen är mindre än 5 meter, hoppa över uppdateringen
+          if (distance < 5) {
+            return;
+          }
+        }
+
+        lastPosition = position;
         setStatus('active');
         setError(null);
         setCoords({
@@ -88,7 +126,7 @@ const useRunLocation = () => {
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 15000,
+        maximumAge: 10000, // Acceptera position upp till 10 sekunder gammal
         timeout: 20000
       }
     );

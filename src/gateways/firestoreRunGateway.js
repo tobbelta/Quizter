@@ -209,11 +209,28 @@ export const firestoreRunGateway = {
   /** Söker upp runda via joinCode. */
   async getRunByCode(joinCode) {
     console.log(`getRunByCode: searching for joinCode=${joinCode}`);
-    const runQuery = query(hämtaRundsCollection(), where('joinCode', '==', joinCode.toUpperCase()));
-    const snapshot = await getDocs(runQuery);
-    console.log(`getRunByCode: snapshot size=${snapshot.size}`);
-    const [first] = snapshot.docs;
-    return first ? mapperaRundeDokument(first) : null;
+
+    try {
+      const runQuery = query(hämtaRundsCollection(), where('joinCode', '==', joinCode.toUpperCase()));
+      const snapshot = await getDocs(runQuery);
+      console.log(`getRunByCode: snapshot size=${snapshot.size}`);
+      const [first] = snapshot.docs;
+      return first ? mapperaRundeDokument(first) : null;
+    } catch (error) {
+      console.error('[getRunByCode] Firestore query failed:', {
+        code: error.code,
+        message: error.message,
+        joinCode,
+        error
+      });
+
+      // Om det är ett permissions-fel, ge en tydligare felmeddelande
+      if (error.code === 'permission-denied') {
+        throw new Error('Kunde inte hämta runda - behörighetsproblem. Försök igen om en stund.');
+      }
+
+      throw error;
+    }
   },
 
   /** Sparar en ny admin-skapad runda. */
