@@ -581,7 +581,7 @@ exports.questionImport = onSchedule(
  * Task-dispatched function to run AI question generation.
  */
 exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-    const { taskId, amount, category, difficulty, provider } = req.body;
+    const { taskId, amount, category, difficulty, provider } = req.data;
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
 
@@ -646,7 +646,7 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
  * Task-dispatched function to run AI question validation.
  */
 exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-    const { taskId, question, options, correctOption, explanation } = req.body;
+    const { taskId, question, options, correctOption, explanation } = req.data;
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
 
