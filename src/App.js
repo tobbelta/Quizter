@@ -32,6 +32,7 @@ import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
 import ToastViewport from './components/shared/ToastViewport';
+import ServiceStatusIcon from './components/shared/ServiceStatusIcon';
 import { useBreadcrumbs } from './hooks/useBreadcrumbs';
 
 /**
@@ -314,6 +315,20 @@ const BreadcrumbTracker = () => {
   return null;
 };
 
+const SuperUserFeatures = () => {
+  const { isSuperUser } = useAuth();
+
+  if (!isSuperUser) {
+    return null;
+  }
+
+  return (
+    <>
+      <ServiceStatusIcon />
+    </>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -329,6 +344,7 @@ function App() {
                 <InstallPrompt />
                 <AppRoutes />
                 <ToastViewport />
+                <SuperUserFeatures />
               </div>
             </VersionChecker>
           </RunProvider>

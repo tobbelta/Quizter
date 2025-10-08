@@ -14,7 +14,7 @@ import { userPreferencesService } from '../../services/userPreferencesService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
-import ServiceStatusBanner from '../shared/ServiceStatusBanner';
+
 import { VERSION } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
@@ -190,8 +190,7 @@ const Header = ({ title = 'RouteQuest' }) => {
   return (
     <>
     <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
-      {/* Service Status Banner - visas endast för SuperUser */}
-      {isSuperUser && <ServiceStatusBanner />}
+      
 
       <div className="mx-auto w-full max-w-6xl px-3 py-2 grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3">
         {/* Vänster: Logotyp med GPS-status */}
