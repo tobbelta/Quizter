@@ -8,6 +8,7 @@ const {defineString, defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {CloudTasksClient} = require("@google-cloud/tasks");
+const {prepareQuestionsForImport, loadExistingQuestions} = require("./services/questionImportService");
 
 // CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
@@ -503,24 +504,37 @@ exports.questionImport = onSchedule(
 
       // Spara till Firestore
       const db = admin.firestore();
+      const existingQuestions = await loadExistingQuestions(db);
+      const {questionsToImport, stats} = prepareQuestionsForImport(questions, existingQuestions);
+
+      if (questionsToImport.length === 0) {
+        logger.warn('No questions imported efter validering/dublettkontroll', {
+          provider: usedProvider,
+          totalIncoming: stats.totalIncoming,
+          duplicatesBlocked: stats.duplicatesBlocked,
+          invalidCount: stats.invalidCount,
+        });
+        return;
+      }
+
       const batch = db.batch();
 
-      questions.forEach(question => {
+      questionsToImport.forEach((question) => {
         const docRef = db.collection('questions').doc(question.id);
-        // L├ñgg till createdAt om det inte finns
         const questionData = {
           ...question,
-          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp()
+          createdAt: question.createdAt || admin.firestore.FieldValue.serverTimestamp(),
         };
         batch.set(docRef, questionData);
       });
 
       await batch.commit();
 
-      logger.info("Successfully imported AI-generated questions", {
-        count: questions.length,
+      logger.info('Successfully imported AI-generated questions', {
+        count: questionsToImport.length,
         provider: usedProvider,
-        timestamp: event.scheduleTime
+        timestamp: event.scheduleTime,
+        validation: stats,
       });
 
       // Skapa notis till superusers
@@ -529,11 +543,11 @@ exports.questionImport = onSchedule(
         await notificationRef.set({
           type: 'question_import',
           title: 'Automatisk fr├Ñgegenerering slutf├╢rd',
-          message: `${questions.length} nya fr├Ñgor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
+          message: `${questionsToImport.length} nya fr├Ñgor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
           data: {
-            count: questions.length,
+            count: questionsToImport.length,
             provider: usedProvider,
-            model: questions[0]?.source || 'ai-generated',
+            model: questionsToImport[0]?.source || 'ai-generated',
             timestamp: new Date().toISOString()
           },
           targetAudience: 'superusers',
@@ -581,7 +595,6 @@ exports.questionImport = onSchedule(
  * Task-dispatched function to run AI question generation.
  */
 exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-    logger.info("Incoming task data:", req.data);
     const { taskId, amount, category, difficulty, provider } = req.data;
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
@@ -620,18 +633,35 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             throw new Error(`Provider ${provider} failed or is not configured.`);
         }
 
+        const existingQuestions = await loadExistingQuestions(db);
+        const {questionsToImport, stats} = prepareQuestionsForImport(questions, existingQuestions);
+
+        if (questionsToImport.length === 0) {
+            throw new Error('No new questions passed validation/dublettkontroll.');
+        }
+
         const batch = db.batch();
-        questions.forEach(question => {
+        questionsToImport.forEach((question) => {
             const docRef = db.collection('questions').doc(question.id);
             const questionData = { ...question, createdAt: admin.firestore.FieldValue.serverTimestamp() };
             batch.set(docRef, questionData);
         });
         await batch.commit();
 
-        const result = {
-            count: questions.length,
+        logger.info('Queued AI generation import summary', {
+            taskId,
             provider: usedProvider,
-            questionIds: questions.map(q => q.id),
+            totalIncoming: stats.totalIncoming,
+            duplicatesBlocked: stats.duplicatesBlocked,
+            invalidCount: stats.invalidCount,
+            imported: questionsToImport.length,
+        });
+
+        const result = {
+            count: questionsToImport.length,
+            provider: usedProvider,
+            questionIds: questionsToImport.map(q => q.id),
+            validation: stats,
         };
 
         await taskDocRef.update({ status: 'completed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), result });

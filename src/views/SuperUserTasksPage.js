@@ -124,7 +124,7 @@ const SuperUserTasksPage = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-gray-100">
       <Header title="Bakgrundsjobb" />
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6 pt-24">
         <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-xl bg-slate-900 border border-slate-800 p-4">
             <div className="text-xs uppercase tracking-wide text-slate-500">Totalt</div>

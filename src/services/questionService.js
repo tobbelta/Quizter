@@ -53,10 +53,18 @@ const addQuestions = async (questions) => {
   const incoming = questions.filter(q => !cachedQuestions.some(existing => existing.id === q.id));
   if (incoming.length === 0) return { added: 0, duplicatesBlocked: 0, validationFailed: 0, total: 0 };
 
+  // Säkerställ att varje inkommande fråga har ett ID innan validering/dublettkontroll
+  const incomingWithIds = incoming.map(q => {
+    if (q.id) {
+      return { ...q };
+    }
+    return { ...q, id: uuidv4() };
+  });
+
   try {
     // STEG 1: STRUKTURVALIDERING
     console.log('[questionService] Strukturvalidering av importerade frågor...');
-    const validationResults = validateQuestions(incoming, 'sv');
+    const validationResults = validateQuestions(incomingWithIds, 'sv');
 
     // Tagga strukturellt ogiltiga frågor (men importera dem ändå med feltagg)
     const structurallyInvalidIds = new Set();
@@ -68,21 +76,21 @@ const addQuestions = async (questions) => {
 
     // STEG 2: DUBLETTKONTROLL
     console.log('[questionService] Dublettkontroll...');
-    const allQuestions = [...cachedQuestions, ...incoming];
+    const allQuestions = [...cachedQuestions, ...incomingWithIds];
     const duplicates = findDuplicates(allQuestions, 'sv', 0.85);
 
     const duplicateQuestionIds = new Set();
     duplicates.forEach(dup => {
-      if (incoming.some(q => q.id === dup.question2.id)) {
+      if (incomingWithIds.some(q => q.id === dup.question2.id)) {
         duplicateQuestionIds.add(dup.question2.id);
       }
-      if (incoming.some(q => q.id === dup.question1.id) && cachedQuestions.some(q => q.id === dup.question2.id)) {
+      if (incomingWithIds.some(q => q.id === dup.question1.id) && cachedQuestions.some(q => q.id === dup.question2.id)) {
         duplicateQuestionIds.add(dup.question1.id);
       }
     });
 
     // FILTRERA: Ta bort BARA dubletter (behåll ogiltiga för att tagga dem)
-    const uniqueIncoming = incoming.filter(q => !duplicateQuestionIds.has(q.id));
+    const uniqueIncoming = incomingWithIds.filter(q => !duplicateQuestionIds.has(q.id));
 
     if (duplicateQuestionIds.size > 0) {
       console.warn(`[questionService] Blockerar ${duplicateQuestionIds.size} dubletter vid import`);
@@ -103,7 +111,6 @@ const addQuestions = async (questions) => {
         // Tagga som strukturellt ogiltig
         return {
           ...q,
-          id: q.id || uuidv4(),
           aiValidated: false,
           aiValidationResult: {
             valid: false,
@@ -117,7 +124,6 @@ const addQuestions = async (questions) => {
       // Strukturellt giltig fråga - markera som validerad
       return {
         ...q,
-        id: q.id || uuidv4(),
         aiValidated: true,
         aiValidatedAt: new Date(),
         aiValidationResult: {
@@ -144,7 +150,7 @@ const addQuestions = async (questions) => {
       added: validCount,
       addedInvalid: invalidCount,
       duplicatesBlocked: duplicateQuestionIds.size,
-      total: incoming.length
+      total: incomingWithIds.length
     };
   } catch (error) {
     console.error("Kunde inte spara nya frågor till Firestore:", error);
