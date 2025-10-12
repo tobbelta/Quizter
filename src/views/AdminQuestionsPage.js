@@ -15,9 +15,23 @@ import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel
 import ValidationPanel from '../components/admin/ValidationPanel';
 import AIValidationPanel from '../components/admin/AIValidationPanel';
 
-const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, handleManualApprove, handleManualReject, handleApproveReported, handleRejectReported, isSelected, onSelect }) => {
+const QuestionCard = ({
+  question,
+  index,
+  expandedQuestion,
+  setExpandedQuestion,
+  handleDeleteQuestion,
+  handleManualApprove,
+  handleManualReject,
+  handleApproveReported,
+  handleRejectReported,
+  isSelected,
+  onSelect,
+  registerTask
+}) => {
   const [currentLang, setCurrentLang] = useState('sv');
   const [regeneratingIllustration, setRegeneratingIllustration] = useState(false);
+  const [validatingAI, setValidatingAI] = useState(false);
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
@@ -63,17 +77,103 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
       setRegeneratingIllustration(false);
     }
   };
+  const handleValidateWithAI = async () => {
+    if (validatingAI) {
+      return;
+    }
+
+    const langData = question.languages?.sv || {
+      text: question.text,
+      options: question.options,
+      explanation: question.explanation
+    };
+
+    if (!langData?.text || !Array.isArray(langData.options) || langData.options.length !== 4) {
+      alert('Frågan saknar komplett svensk text eller fyra svarsalternativ. Uppdatera frågan och försök igen.');
+      return;
+    }
+
+    const numericCorrectOption = typeof question.correctOption === 'number'
+      ? question.correctOption
+      : parseInt(question.correctOption, 10);
+
+    if (!Number.isInteger(numericCorrectOption) || numericCorrectOption < 0 || numericCorrectOption > 3) {
+      alert('Frågan saknar ett giltigt index för rätt svar. Korrigera frågan och försök igen.');
+      return;
+    }
+
+    setValidatingAI(true);
+    try {
+      const response = await aiService.startAIValidation({
+        question: langData.text,
+        options: langData.options,
+        correctOption: numericCorrectOption,
+        explanation: langData.explanation || ''
+      });
+
+      const taskId = response?.taskId;
+      if (!taskId) {
+        throw new Error('Bakgrundsjobbet saknar taskId.');
+      }
+
+      if (typeof registerTask === 'function') {
+        const descriptionParts = [
+          `Fråga ${question.id}`,
+          langData.text.length > 80 ? `${langData.text.slice(0, 80)}…` : langData.text
+        ];
+        registerTask(taskId, {
+          taskType: 'validation',
+          label: 'AI-validering',
+          description: descriptionParts.join(' – '),
+          createdAt: new Date()
+        });
+      }
+
+      const taskData = await taskService.waitForCompletion(taskId);
+      const result = taskData?.result;
+      if (!result) {
+        throw new Error('Inget valideringsresultat mottogs från AI-tjänsten.');
+      }
+
+      const validationData = {
+        ...result,
+        validationType: result.validationType || 'ai'
+      };
+
+      if (validationData.valid) {
+        await questionService.markAsValidated(question.id, validationData);
+        alert('AI-valideringen godkände frågan utan anmärkning.');
+      } else {
+        await questionService.markAsInvalid(question.id, validationData);
+        const issues = Array.isArray(validationData.issues) && validationData.issues.length > 0
+          ? `\n- ${validationData.issues.join('\n- ')}`
+          : '';
+        alert(`AI-valideringen hittade problem:${issues}`);
+      }
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte AI-validera frågan:', error);
+      alert(`Kunde inte AI-validera frågan: ${error.message}`);
+    } finally {
+      setValidatingAI(false);
+    }
+  };
   const rawAiResult = question.aiValidationResult;
-  const structureResult = question.structureValidationResult || (rawAiResult?.validationType === 'structure' ? rawAiResult : null);
-  const aiResult = rawAiResult && rawAiResult.validationType !== 'structure' ? rawAiResult : null;
-  const hasStructureIssue =
-    structureResult?.validationType === 'structure' && structureResult?.valid === false;
-  const hasStructurePass =
-    structureResult?.validationType === 'structure' && structureResult?.valid === true;
+  const structureResult =
+    question.structureValidationResult ||
+    (rawAiResult?.validationType === 'structure' ? rawAiResult : null);
+  const aiResult =
+    rawAiResult && rawAiResult.validationType !== 'structure' ? rawAiResult : null;
+
+  const hasStructurePass = structureResult?.valid === true;
+  const hasStructureIssue = structureResult?.valid === false;
+
+  const aiPassed =
+    question.manuallyApproved === true ||
+    question.aiValidated === true ||
+    (aiResult?.valid === true);
   const hasAiIssue =
-    question.aiValidated === false &&
-    Boolean(aiResult) &&
-    !question.manuallyRejected;
+    question.manuallyRejected === true ||
+    (aiResult && aiResult.valid === false);
 
   return (
     <div className={`rounded-lg border bg-slate-900/60 p-4 transition-colors ${isSelected ? 'border-cyan-500' : 'border-slate-700'}`}>
@@ -115,7 +215,7 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                     ✓ Struktur-OK
                   </span>
                 )}
-                {question.aiValidated === true && question.manuallyApproved !== true && !question.manuallyRejected && (
+                {aiPassed && question.manuallyRejected !== true && (
                   <span className="inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-300" title="AI-validerad - Alla providers godkände">
                     ✓ AI-OK
                   </span>
@@ -210,6 +310,14 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                 </>
               ) : (
                 <>
+                  <button
+                    onClick={handleValidateWithAI}
+                    disabled={validatingAI}
+                    className="rounded bg-purple-600 px-3 py-1 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-600 disabled:text-gray-400"
+                    title="Kör AI-validering på denna fråga"
+                  >
+                    {validatingAI ? 'Validerar...' : 'AI-validera'}
+                  </button>
                   <button
                     onClick={handleRegenerateIllustration}
                     disabled={regeneratingIllustration}
@@ -682,14 +790,35 @@ const AdminQuestionsPage = () => {
     const matchesAudience =
       selectedAudience === 'all' || audienceValue === normalizedAudience;
 
+    const rawAi = question.aiValidationResult;
+    const structureResult =
+      question.structureValidationResult ||
+      (rawAi?.validationType === 'structure' ? rawAi : null);
+    const aiResult =
+      rawAi && rawAi.validationType !== 'structure' ? rawAi : null;
+
+    const hasStructureResult = Boolean(structureResult);
+    const structureValid = structureResult?.valid === true;
+    const structureInvalid = structureResult?.valid === false;
+    const aiValid =
+      question.manuallyApproved === true ||
+      question.aiValidated === true ||
+      (aiResult?.valid === true);
+    const aiInvalid =
+      question.manuallyRejected === true ||
+      (aiResult && aiResult.valid === false);
+
     let matchesValidationStatus = true;
     if (validationStatusFilter === 'validated') {
-      matchesValidationStatus = question.aiValidated === true;
+      matchesValidationStatus = aiValid && (!hasStructureResult || structureValid);
     } else if (validationStatusFilter === 'failed') {
-      matchesValidationStatus = question.aiValidated === false && !question.manuallyApproved;
+      matchesValidationStatus = aiInvalid || structureInvalid;
     } else if (validationStatusFilter === 'unvalidated') {
       matchesValidationStatus =
-        !question.aiValidated && !question.manuallyApproved && !question.manuallyRejected && !question.reported;
+        !hasStructureResult &&
+        !aiValid &&
+        !aiInvalid &&
+        !question.reported;
     } else if (validationStatusFilter === 'reported') {
       matchesValidationStatus = question.reported === true;
     }
@@ -1112,6 +1241,7 @@ const AdminQuestionsPage = () => {
                       handleManualReject={handleManualReject}
                       handleApproveReported={handleApproveReported}
                       handleRejectReported={handleRejectReported}
+                      registerTask={registerTask}
                       isSelected={selectedQuestions.has(question.id)}
                       onSelect={handleToggleSelect}
                     />

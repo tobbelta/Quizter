@@ -266,9 +266,19 @@ Validering använder alla tillgängliga providers för att säkerställa kvalite
 ### Admin-flikar för validering
 
 - **Frågebank → Validering:** kör strukturvalideringen lokalt i webbläsaren. Panelen visar nu en progressindikator och markerar varje ogiltig fråga igen (även om den redan tidigare har kontrollerats).
-- **Frågebank → AI-Validering:** skapar ett batchjobb via Cloud Tasks. En ny växlare låter superuser välja om även redan AI-validerade frågor ska skickas om (”Validera om alla”). Jobbet följer samma bakgrundsflöde som tidigare och resultaten sparas tillbaka på frågorna.
-- Knapparna för enskild AI-validering togs bort från frågelistan – använd flikarna ovan när en revalidering behövs.
+- **Frågebank → AI-Validering:** skapar ett batchjobb via Cloud Tasks. En ny växlare låter superuser välja om även redan AI-validerade frågor ska skickas om ("Validera om alla"). Jobbet följer samma bakgrundsflöde som tidigare och resultaten sparas tillbaka på frågorna.
+- **Frågebankens frågekort:** har återigen en knapp för enskild AI-validering (`AI-validera`). Den köar `validateQuestionWithAI`, registrerar bakgrundsjobbet och skriver resultatet via `questionService.markAsValidated/markAsInvalid`.
 - Frågelistans filter stödjer nu de migrerade fälten (`categories`, `ageGroups`, `targetAudience`) och sökningen matchar även ID, kategorier och målgrupper.
+
+### Statusuppdatering (2025-XX-XX)
+
+**Gjort**
+- Återinfört enskild AI-validering direkt på frågekortet i `AdminQuestionsPage.js`. Funktionen använder befintliga Cloud Functions (`validateQuestionWithAI`) och markerar resultat i Firestore via `questionService.markAsValidated/markAsInvalid`.
+
+**Kvar / Felaktigt**
+- Listvyn visar fortfarande `0` godkända frågor efter batchvalidering. Kontrollera att `aiValidated`, `aiValidatedAt` och `aiValidationResult.valid` faktiskt skrivs på varje dokument. Om de saknas, felsök `questionService.markManyAsValidated` (t.ex. rättigheter eller misslyckade Firestore-uppdateringar).
+- Multi-provider-konsensusen är strikt: ett enda negativt resultat gör att AI-status blir underkänd. Utvärdera om UI ska visa mer granular feedback (t.ex. vilka providers som blockerar) eller om vi behöver fallback-hantering när en provider ofta returnerar `valid: false`.
+- När en fråga saknar komplett språkversion (saknar svensk text eller fyra alternativ) stoppar per-fråga-valideringen. Lägg till editorstöd för att komplettera eller acceptera engelska fallback innan validering.
 
 ---
 
