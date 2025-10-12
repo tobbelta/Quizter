@@ -58,4 +58,19 @@ export const aiService = {
   startAIValidation: async ({ question, options, correctOption, explanation }) => {
     return await queueTask('validateQuestionWithAI', { question, options, correctOption, explanation });
   },
+
+  /**
+   * Queues a task to validate multiple questions in a single batch job.
+   * @param {{ questions: Array<{id: string, question: string, options: string[], correctOption: number, explanation: string}> }} params
+   * @returns {Promise<{success: boolean, taskId: string, questionCount: number}>}
+   */
+  startBatchAIValidation: async ({ questions }) => {
+    return await queueTask('batchValidateQuestions', { questions });
+  },
+
+  regenerateQuestionIllustration: async ({ questionId, provider }) => {
+    return await queueTask('regenerateQuestionIllustration', { questionId, provider });
+  },
 };
+
+

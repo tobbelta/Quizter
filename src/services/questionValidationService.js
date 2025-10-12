@@ -1,6 +1,103 @@
-/**
- * Validering av frågor för att säkerställa kvalitet och undvika dubletter
- */
+const VALID_AGE_GROUPS = ['children', 'youth', 'adults'];
+const LEGACY_DIFFICULTY_MAP = {
+  easy: ['children'],
+  medium: ['youth'],
+  hard: ['adults'],
+  kid: ['children'],
+  family: ['children', 'adults'],
+  adult: ['adults'],
+};
+const LEGACY_AUDIENCE_MAP = {
+  barn: ['children'],
+  kid: ['children'],
+  children: ['children'],
+  ungdom: ['youth'],
+  youth: ['youth'],
+  vuxen: ['adults'],
+  adult: ['adults'],
+  familj: ['children', 'adults'],
+  family: ['children', 'adults'],
+};
+const VALID_TARGET_AUDIENCES = [
+  'swedish',
+  'english',
+  'international',
+  'global',
+  'german',
+  'norwegian',
+  'danish',
+];
+const MIN_TEXT_LENGTH = 10;
+const REQUIRED_OPTION_COUNT = 4;
+
+const normalizeLower = (value) => (typeof value === 'string' ? value.toLowerCase().trim() : '');
+
+const resolveLanguageBlock = (question, language) => {
+  if (question.languages) {
+    return question.languages[language];
+  }
+
+  return {
+    text: question.text,
+    options: question.options,
+    explanation: question.explanation,
+  };
+};
+
+const resolveAgeGroups = (question) => {
+  const groups = new Set();
+
+  if (Array.isArray(question.ageGroups)) {
+    question.ageGroups.forEach((value) => {
+      const normalized = normalizeLower(value);
+      if (VALID_AGE_GROUPS.includes(normalized)) {
+        groups.add(normalized);
+      }
+    });
+  }
+
+  const difficulty = normalizeLower(question.difficulty);
+  if (LEGACY_DIFFICULTY_MAP[difficulty]) {
+    LEGACY_DIFFICULTY_MAP[difficulty].forEach((value) => groups.add(value));
+  }
+
+  const audience = normalizeLower(question.audience);
+  if (LEGACY_AUDIENCE_MAP[audience]) {
+    LEGACY_AUDIENCE_MAP[audience].forEach((value) => groups.add(value));
+  }
+
+  return Array.from(groups);
+};
+
+const resolveTargetAudience = (question) => {
+  const directValue = normalizeLower(question.targetAudience);
+  if (directValue) {
+    return directValue;
+  }
+
+  // Legacy audience fanns tidigare och kan tolkas som svenskt fokus
+  const legacyAudience = normalizeLower(question.audience);
+  if (legacyAudience) {
+    return legacyAudience;
+  }
+
+  return '';
+};
+
+const resolveCategories = (question) => {
+  if (Array.isArray(question.categories)) {
+    return question.categories
+      .filter((value) => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  if (typeof question.category === 'string' && question.category.trim().length > 0) {
+    return [question.category.trim()];
+  }
+
+  return [];
+};
 
 /**
  * Validerar en enskild fråga
@@ -11,89 +108,68 @@
 export const validateQuestion = (question, language = 'sv') => {
   const errors = [];
 
-  // Hämta språkdata - hantera både languages-struktur och flat struktur
-  let langData;
-  if (question.languages) {
-    langData = question.languages[language];
-    if (!langData) {
-      errors.push(`Frågan saknar ${language === 'sv' ? 'svensk' : 'engelsk'} översättning`);
-      return { valid: false, errors };
-    }
-  } else {
-    // Fallback för gamla frågor med flat struktur
-    langData = {
-      text: question.text,
-      options: question.options,
-      explanation: question.explanation
-    };
+  const langData = resolveLanguageBlock(question, language);
+  if (!langData) {
+    errors.push(`Frågan saknar ${language === 'sv' ? 'svensk' : 'engelsk'} översättning`);
+    return { valid: false, errors };
   }
 
   const { text, options, explanation } = langData;
   const correctOption = question.correctOption;
 
-  // 1. Kontrollera att frågetext finns och är tillräckligt lång
-  if (!text || text.trim().length < 10) {
+  if (!text || text.trim().length < MIN_TEXT_LENGTH) {
     errors.push('Frågetexten måste vara minst 10 tecken lång');
   }
 
-  // 2. Kontrollera att det finns exakt 4 svarsalternativ
-  if (!options || !Array.isArray(options)) {
+  if (!Array.isArray(options)) {
     errors.push('Frågan måste ha svarsalternativ');
-  } else if (options.length !== 4) {
+  } else if (options.length !== REQUIRED_OPTION_COUNT) {
     errors.push(`Frågan måste ha exakt 4 svarsalternativ (har ${options.length})`);
   } else {
-    // 3. Kontrollera att alla alternativ har innehåll
     options.forEach((option, index) => {
       if (!option || option.trim().length === 0) {
         errors.push(`Alternativ ${index + 1} är tomt`);
       }
     });
 
-    // 4. Kontrollera att inga alternativ är identiska
-    const uniqueOptions = new Set(options.map(o => o.trim().toLowerCase()));
+    const uniqueOptions = new Set(options.map((option) => option.trim().toLowerCase()));
     if (uniqueOptions.size !== options.length) {
       errors.push('Flera svarsalternativ är identiska');
     }
 
-    // 5. Kontrollera att flera alternativ inte kan vara rätt
-    // Detta kräver semantisk analys - kan göras med AI senare
     const similarOptions = findSimilarOptions(options);
     if (similarOptions.length > 0) {
       errors.push(`Varning: Dessa alternativ verkar liknande: ${similarOptions.join(', ')}`);
     }
   }
 
-  // 6. Kontrollera att correctOption är giltig
   if (typeof correctOption !== 'number') {
     errors.push('Frågan måste ha ett korrekt svar angivet (correctOption)');
   } else if (correctOption < 0 || correctOption >= (options?.length || 0)) {
     errors.push(`Korrekt svar (${correctOption}) är utanför giltigt intervall (0-${(options?.length || 1) - 1})`);
   }
 
-  // 7. Kontrollera att förklaring finns
-  if (!explanation || explanation.trim().length < 10) {
+  if (!explanation || explanation.trim().length < MIN_TEXT_LENGTH) {
     errors.push('Förklaringen måste vara minst 10 tecken lång');
   }
 
-  // 8. Kontrollera metadata
-  const validDifficulties = ['easy', 'medium', 'hard', 'kid', 'family', 'adult'];
-  if (!question.difficulty || !validDifficulties.includes(question.difficulty)) {
-    errors.push(`Frågan måste ha en giltig svårighetsgrad (${validDifficulties.join('/')})`);
+  const ageGroups = resolveAgeGroups(question);
+  if (ageGroups.length === 0) {
+    errors.push('Frågan måste ha minst en ageGroup (children/youth/adults)');
   }
 
-  const validAudiences = ['barn', 'vuxen', 'familj', 'kid', 'family', 'adult'];
-  if (!question.audience && !validAudiences.includes(question.difficulty)) {
-    // Om audience saknas men difficulty är kid/family/adult, acceptera det
-    if (!question.difficulty || !['kid', 'family', 'adult'].includes(question.difficulty)) {
-      errors.push(`Frågan måste ha en giltig målgrupp (${validAudiences.join('/')})`);
-    }
+  const targetAudience = resolveTargetAudience(question);
+  if (!targetAudience) {
+    errors.push('Frågan måste ha en targetAudience (t.ex. swedish/english/international)');
+  } else if (!VALID_TARGET_AUDIENCES.includes(targetAudience)) {
+    errors.push(`Frågan måste ha en giltig targetAudience (${VALID_TARGET_AUDIENCES.join('/')})`);
   }
 
-  if (!question.category && (!question.categories || !Array.isArray(question.categories) || question.categories.length === 0)) {
+  const categories = resolveCategories(question);
+  if (categories.length === 0) {
     errors.push('Frågan måste ha minst en kategori');
   }
 
-  // 9. Kontrollera att båda språken finns (om frågan använder languages-struktur)
   if (question.languages) {
     if (!question.languages.sv) {
       errors.push('Frågan saknar svensk översättning');
@@ -105,7 +181,7 @@ export const validateQuestion = (question, language = 'sv') => {
 
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 };
 

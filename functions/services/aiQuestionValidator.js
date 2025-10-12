@@ -31,6 +31,7 @@ Analysera frågan och svarsalternativen noggrant och kontrollera:
 2. Kan något av de andra alternativen också vara rätt?
 3. Är något av alternativen tvetydigt eller felaktigt?
 4. Stämmer förklaringen med det korrekta svaret?
+5. Har frågan, alternativen och förklaringen perfekt stavning och grammatik? (Detta är KRITISKT)
 
 Svara ENDAST med giltig JSON (ingen markdown, inga kommentarer):
 {"valid": true/false, "issues": ["lista med problem om några finns"], "suggestedCorrectOption": 0-3 (om rätt svar är fel), "reasoning": "förklaring av bedömningen"}`;

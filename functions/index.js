@@ -9,6 +9,12 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {CloudTasksClient} = require("@google-cloud/tasks");
 const {prepareQuestionsForImport, loadExistingQuestions} = require("./services/questionImportService");
+const {categorizeQuestion: categorizeWithAnthropic} = require('./services/aiQuestionCategorizer');
+const {generateSvgIllustration: generateSvgWithAnthropic} = require('./services/aiSvgGenerator');
+const {categorizeQuestion: categorizeWithOpenAI} = require('./services/openaiQuestionCategorizer');
+const {generateSvgIllustration: generateSvgWithOpenAI} = require('./services/openaiSvgGenerator');
+const {categorizeQuestion: categorizeWithGemini} = require('./services/geminiQuestionCategorizer');
+const {generateSvgIllustration: generateSvgWithGemini} = require('./services/geminiSvgGenerator');
 
 // CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
@@ -226,136 +232,171 @@ exports.closeRun = createHttpsHandler(async (req, res) => {
   res.status(501).json({ error: "Not implemented" });
 });
 
+const PROVIDER_STATUS_CACHE_MS = 60 * 1000;
+let providerStatusCache = { timestamp: 0, value: null };
+let providerStatusPromise = null;
+
+async function evaluateProviderStatus() {
+  const providers = {
+    anthropic: { configured: false, available: false },
+    openai: { configured: false, available: false },
+    gemini: { configured: false, available: false },
+  };
+
+  const anthropicKey = anthropicApiKey.value();
+  if (anthropicKey) {
+    providers.anthropic.configured = true;
+    try {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey: anthropicKey });
+
+      await anthropic.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'Hi' }],
+      });
+
+      providers.anthropic.available = true;
+      providers.anthropic.model = 'claude-3-5-haiku-20241022';
+    } catch (error) {
+      logger.warn("Anthropic unavailable", { error: error.message });
+      providers.anthropic.error = error.message;
+      if (error.status) {
+        providers.anthropic.errorStatus = error.status;
+      }
+    }
+  }
+
+  const openaiKey = openaiApiKey.value();
+  if (openaiKey) {
+    providers.openai.configured = true;
+    try {
+      const OpenAI = require('openai');
+      const openai = new OpenAI({ apiKey: openaiKey });
+
+      await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 10,
+      });
+
+      providers.openai.available = true;
+      providers.openai.model = 'gpt-4o-mini';
+    } catch (error) {
+      logger.warn("OpenAI unavailable", { error: error.message });
+      providers.openai.error = error.message;
+    }
+  }
+
+  const geminiKey = geminiApiKey.value();
+  if (geminiKey) {
+    providers.gemini.configured = true;
+    try {
+      const listResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`,
+      );
+
+      if (listResponse.ok) {
+        const modelData = await listResponse.json();
+        const availableModels = modelData.models || [];
+
+        const compatibleModel = availableModels.find((model) =>
+          model.supportedGenerationMethods?.includes('generateContent'),
+        );
+
+        if (compatibleModel) {
+          providers.gemini.available = true;
+          providers.gemini.model = compatibleModel.name.replace('models/', '');
+          providers.gemini.availableModels = availableModels.map((model) => model.name);
+        } else {
+          throw new Error('No compatible Gemini models found');
+        }
+      } else {
+        const errorText = await listResponse.text();
+        throw new Error(`Failed to list models: ${errorText}`);
+      }
+    } catch (error) {
+      logger.warn("Gemini unavailable", { error: error.message });
+      providers.gemini.error = error.message;
+    }
+  }
+
+  let primaryProvider = null;
+  let message = "Ingen AI-tjänst konfigurerad";
+
+  if (providers.anthropic.available) {
+    primaryProvider = 'anthropic';
+    message = 'AI-generering tillgänglig (Anthropic Claude)';
+  } else if (providers.openai.available) {
+    primaryProvider = 'openai';
+    message = 'AI-generering tillgänglig (OpenAI fallback)';
+  } else if (providers.gemini.available) {
+    primaryProvider = 'gemini';
+    message = 'AI-generering tillgänglig (Gemini fallback)';
+  } else if (
+    providers.anthropic.configured ||
+    providers.openai.configured ||
+    providers.gemini.configured
+  ) {
+    message = 'Alla AI-tjänster ej tillgängliga - kontrollera API-nycklar';
+  }
+
+  return { providers, primaryProvider, message };
+}
+
+async function getProviderStatus({ force = false } = {}) {
+  const now = Date.now();
+
+  if (!force && providerStatusCache.value && (now - providerStatusCache.timestamp) < PROVIDER_STATUS_CACHE_MS) {
+    return providerStatusCache.value;
+  }
+
+  if (providerStatusPromise) {
+    return providerStatusPromise;
+  }
+
+  providerStatusPromise = evaluateProviderStatus()
+    .then((status) => {
+      providerStatusCache = { timestamp: Date.now(), value: status };
+      return status;
+    })
+    .catch((error) => {
+      providerStatusCache = { timestamp: 0, value: null };
+      throw error;
+    });
+
+  try {
+    return await providerStatusPromise;
+  } finally {
+    providerStatusPromise = null;
+  }
+}
+
 /**
  * H├ñmta AI-status (krediter och tillg├ñnglighet f├╢r alla providers)
  */
 exports.getAIStatus = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
     try {
-      const providers = {
-        anthropic: { configured: false, available: false },
-        openai: { configured: false, available: false },
-        gemini: { configured: false, available: false }
-      };
-
-      // Testa Anthropic
-      const anthropicKey = anthropicApiKey.value();
-      if (anthropicKey) {
-        providers.anthropic.configured = true;
-        try {
-          const Anthropic = require('@anthropic-ai/sdk');
-          const anthropic = new Anthropic({ apiKey: anthropicKey });
-
-          await anthropic.messages.create({
-            model: 'claude-3-5-haiku-20241022',
-            max_tokens: 10,
-            messages: [{ role: 'user', content: 'Hi' }]
-          });
-
-          providers.anthropic.available = true;
-          providers.anthropic.model = 'claude-3-5-haiku-20241022';
-        } catch (error) {
-          logger.warn("Anthropic unavailable", { error: error.message });
-          providers.anthropic.error = error.message;
-          providers.anthropic.errorStatus = error.status;
-        }
-      }
-
-      // Testa OpenAI
-      const openaiKey = openaiApiKey.value();
-      if (openaiKey) {
-        providers.openai.configured = true;
-        try {
-          const OpenAI = require('openai');
-          const openai = new OpenAI({ apiKey: openaiKey });
-
-          await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: 'Hi' }],
-            max_tokens: 10
-          });
-
-          providers.openai.available = true;
-          providers.openai.model = 'gpt-4o-mini';
-        } catch (error) {
-          logger.warn("OpenAI unavailable", { error: error.message });
-          providers.openai.error = error.message;
-        }
-      }
-
-      // Testa Gemini - lista tillg├ñngliga modeller f├╢rst
-      const geminiKey = geminiApiKey.value();
-      if (geminiKey) {
-        providers.gemini.configured = true;
-        try {
-          // Lista tillg├ñngliga modeller
-          const listResponse = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`
-          );
-
-          if (listResponse.ok) {
-            const modelData = await listResponse.json();
-            const availableModels = modelData.models || [];
-
-            // Hitta f├╢rsta modellen som st├╢der generateContent
-            const compatibleModel = availableModels.find(m =>
-              m.supportedGenerationMethods?.includes('generateContent')
-            );
-
-            if (compatibleModel) {
-              providers.gemini.available = true;
-              providers.gemini.model = compatibleModel.name.replace('models/', '');
-              providers.gemini.availableModels = availableModels.map(m => m.name);
-            } else {
-              throw new Error('No compatible Gemini models found');
-            }
-          } else {
-            const errorText = await listResponse.text();
-            throw new Error(`Failed to list models: ${errorText}`);
-          }
-        } catch (error) {
-          logger.warn("Gemini unavailable", { error: error.message });
-          providers.gemini.error = error.message;
-        }
-      }
-
-      // Best├ñm vilken provider som kommer anv├ñndas (prioritetsordning)
-      let primaryProvider = null;
-      let message = "Ingen AI-tj├ñnst konfigurerad";
-
-      if (providers.anthropic.available) {
-        primaryProvider = 'anthropic';
-        message = `AI-generering tillg├ñnglig (Anthropic Claude)`;
-      } else if (providers.openai.available) {
-        primaryProvider = 'openai';
-        message = `AI-generering tillg├ñnglig (OpenAI fallback)`;
-      } else if (providers.gemini.available) {
-        primaryProvider = 'gemini';
-        message = `AI-generering tillg├ñnglig (Gemini fallback)`;
-      } else if (providers.anthropic.configured || providers.openai.configured || providers.gemini.configured) {
-        message = "Alla AI-tj├ñnster ej tillg├ñngliga - kontrollera API-nycklar";
-      }
+      const { providers, primaryProvider, message } = await getProviderStatus({ force: true });
 
       res.status(200).json({
         available: primaryProvider !== null,
         primaryProvider,
         providers,
-        message
+        message,
       });
     } catch (error) {
       logger.error("Error checking AI status", { error: error.message });
       res.status(500).json({
         available: false,
         error: error.message,
-        message: "Kunde inte kontrollera AI-status"
+        message: "Kunde inte kontrollera AI-status",
       });
     }
   });
 });
 
-/**
- * Queue a task to generate questions with AI.
- */
 exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
     return cors(req, res, async () => {
         if (!ensurePost(req, res)) {
@@ -372,13 +413,13 @@ exports.generateAIQuestions = createHttpsHandler(async (req, res) => {
             const decodedToken = await admin.auth().verifyIdToken(idToken);
             const userId = decodedToken.uid;
 
-            const { amount = 10, category, difficulty, provider = 'anthropic' } = req.body;
+            const { amount = 10, category, ageGroup, provider = 'anthropic' } = req.body;
 
             if (amount < 1 || amount > 50) {
                 return res.status(400).json({ error: "Amount must be between 1 and 50" });
             }
 
-            const taskId = await enqueueTask('generation', { amount, category, difficulty, provider }, userId);
+            const taskId = await enqueueTask('generation', { amount, category, ageGroup, provider }, userId);
 
             res.status(202).json({
                 success: true,
@@ -440,9 +481,462 @@ exports.validateQuestionWithAI = createHttpsHandler(async (req, res) => {
     });
 });
 
+/**
+ * Get AI provider settings
+ */
+exports.getProviderSettings = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        try {
+            const db = admin.firestore();
+            const settingsDoc = await db.collection('aiProviderSettings').doc('config').get();
+
+            const defaultSettings = {
+                generation: {
+                    anthropic: true,
+                    openai: true,
+                    gemini: true
+                },
+                validation: {
+                    anthropic: true,
+                    openai: true,
+                    gemini: true
+                },
+                migration: {
+                    anthropic: true,
+                    openai: false,
+                    gemini: false
+                }
+            };
+
+            if (!settingsDoc.exists) {
+                // Return default settings
+                res.status(200).json({
+                    settings: defaultSettings,
+                    message: 'Using default settings'
+                });
+            } else {
+                res.status(200).json({
+                    settings: settingsDoc.data(),
+                    message: 'Settings loaded successfully'
+                });
+            }
+        } catch (error) {
+            logger.error("Error getting provider settings", { error: error.message });
+            res.status(500).json({ error: "Failed to get provider settings", message: error.message });
+        }
+    });
+});
+
+/**
+ * Update AI provider settings
+ */
+exports.updateProviderSettings = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            // Verify Firebase ID token
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+            // Verify user is superuser (you might want to add a custom claim check here)
+            // For now, we just check they're authenticated
+
+            const { settings } = req.body;
+
+            if (!settings || typeof settings !== 'object') {
+                return res.status(400).json({ error: "Invalid settings object" });
+            }
+
+            // Validate structure
+            const validPurposes = ['generation', 'validation', 'migration'];
+            const validProviders = ['anthropic', 'openai', 'gemini'];
+
+            for (const purpose of validPurposes) {
+                if (!settings[purpose]) {
+                    return res.status(400).json({ error: `Missing settings for ${purpose}` });
+                }
+                for (const provider of validProviders) {
+                    if (typeof settings[purpose][provider] !== 'boolean') {
+                        return res.status(400).json({ error: `Invalid value for ${purpose}.${provider}` });
+                    }
+                }
+            }
+
+            const db = admin.firestore();
+            await db.collection('aiProviderSettings').doc('config').set({
+                ...settings,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedBy: decodedToken.uid
+            });
+
+            logger.info('Provider settings updated', { userId: decodedToken.uid });
+
+            res.status(200).json({
+                success: true,
+                message: "Provider settings updated successfully"
+            });
+        } catch (error) {
+            logger.error("Error updating provider settings", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to update provider settings", message: error.message });
+        }
+    });
+});
+
+/**
+ * Regenerate SVG illustration for a single question using configured providers.
+ */
+exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const { questionId, provider } = req.body || {};
+
+            if (!questionId) {
+                return res.status(400).json({ error: "questionId is required" });
+            }
+
+            const db = admin.firestore();
+            const questionRef = db.collection('questions').doc(questionId);
+            const questionSnap = await questionRef.get();
+
+            if (!questionSnap.exists) {
+                return res.status(404).json({ error: "Question not found" });
+            }
+
+            const questionData = questionSnap.data();
+
+            const toArray = (value) => {
+                if (Array.isArray(value)) {
+                    return value;
+                }
+                if (value && typeof value === 'object') {
+                    return Object.values(value);
+                }
+                if (typeof value === 'string' && value.trim().length > 0) {
+                    return [value];
+                }
+                return [];
+            };
+
+            const questionTextRaw =
+                questionData.languages?.sv?.text ??
+                questionData.question?.sv ??
+                questionData.question ??
+                questionData.text ??
+                questionData.languages?.en?.text ??
+                '';
+
+            const questionText = typeof questionTextRaw === 'string' && questionTextRaw.trim().length > 0
+                ? questionTextRaw
+                : 'Ok�nd fr�ga fr�n tidigare import';
+
+            const rawOptions =
+                questionData.languages?.sv?.options ??
+                questionData.options?.sv ??
+                questionData.options ??
+                questionData.languages?.en?.options ??
+                [];
+
+            const normalizedOptions = toArray(rawOptions)
+                .map((option) => (typeof option === 'string' ? option : String(option ?? '')))
+                .filter((option) => option.trim().length > 0);
+
+            const explanationText =
+                questionData.languages?.sv?.explanation ??
+                questionData.explanation?.sv ??
+                questionData.explanation ??
+                questionData.languages?.en?.explanation ??
+                '';
+
+            const questionPayload = {
+                question: questionText,
+                options: normalizedOptions,
+                explanation: explanationText
+            };
+
+            const providers = await getProvidersForPurpose('migration');
+            if (providers.length === 0) {
+                return res.status(500).json({
+                    error: 'AI migration requires at least one provider to be enabled and configured'
+                });
+            }
+
+            let preferredProvider = null;
+            if (provider) {
+                preferredProvider = providers.find((p) => p.name === provider);
+            }
+
+            const svgOutcome = await runSvgGenerationWithProviders(
+                questionPayload,
+                providers,
+                questionId,
+                preferredProvider
+            );
+
+            if (!svgOutcome) {
+                return res.status(500).json({
+                    error: 'Failed to generate illustration with available providers'
+                });
+            }
+
+            const updateData = {
+                illustration: svgOutcome.svg,
+                migrationSvgProvider: svgOutcome.provider.name,
+                migrationSvgUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+
+            await questionRef.update(updateData);
+
+            logger.info('Regenerated illustration for question', {
+                questionId,
+                provider: svgOutcome.provider.name,
+                requestedProvider: provider || 'auto',
+                userId: decodedToken.uid,
+            });
+
+            res.status(200).json({
+                success: true,
+                questionId,
+                provider: svgOutcome.provider.name,
+                svg: svgOutcome.svg,
+            });
+        } catch (error) {
+            logger.error('Error regenerating illustration', { error: error.message, stack: error.stack });
+            res.status(500).json({ error: "Failed to regenerate illustration", message: error.message });
+        }
+    });
+});
+
+/**
+ * Queue a task to migrate questions to new schema with AI categorization.
+ */
+exports.queueMigration = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            // Verify Firebase ID token
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const taskId = await enqueueTask('migration', {}, userId);
+
+            res.status(202).json({
+                success: true,
+                message: "Question migration has been queued.",
+                taskId: taskId
+            });
+        } catch (error) {
+            logger.error("Error queueing AI question migration", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue question migration task.", message: error.message });
+        }
+    });
+});
+
+
+/**
+ * Hämtar provider settings från Firestore
+ * @returns {Promise<object>} Provider settings
+ */
+async function getProviderSettings() {
+  try {
+    const db = admin.firestore();
+    const settingsDoc = await db.collection('aiProviderSettings').doc('config').get();
+
+    const defaultSettings = {
+      generation: { anthropic: true, openai: true, gemini: true },
+      validation: { anthropic: true, openai: true, gemini: true },
+      migration: { anthropic: true, openai: false, gemini: false }
+    };
+
+    return settingsDoc.exists ? settingsDoc.data() : defaultSettings;
+  } catch (error) {
+    logger.warn('Failed to load provider settings, using defaults', { error: error.message });
+    return {
+      generation: { anthropic: true, openai: true, gemini: true },
+      validation: { anthropic: true, openai: true, gemini: true },
+      migration: { anthropic: true, openai: false, gemini: false }
+    };
+  }
+}
+
+async function getProvidersForPurpose(purpose = 'generation') {
+  const settings = await getProviderSettings();
+  const purposeSettings = settings[purpose] || settings.generation || {};
+  const providers = [];
+  const status = await getProviderStatus();
+  const providerStates = (status && status.providers) || {};
+  const requireAvailability = purpose === 'migration';
+
+  const isProviderActive = (name) => {
+    const state = providerStates[name];
+    if (!state) {
+      return !requireAvailability;
+    }
+    if (!state.configured) {
+      return false;
+    }
+    if (requireAvailability) {
+      return state.available === true;
+    }
+    return state.available !== false;
+  };
+
+  const anthropicKey = anthropicApiKey.value();
+  if (anthropicKey && purposeSettings.anthropic !== false && isProviderActive('anthropic')) {
+    const provider = {
+      name: 'anthropic',
+      key: anthropicKey,
+    };
+    if (purpose === 'generation') {
+      provider.generator = require('./services/aiQuestionGenerator').generateQuestions;
+    }
+    if (purpose === 'migration') {
+      provider.categorize = (payload) => categorizeWithAnthropic(payload, anthropicKey);
+      provider.generateSvg = (payload) => generateSvgWithAnthropic(payload, anthropicKey);
+    }
+    providers.push(provider);
+  }
+
+  const openaiKey = openaiApiKey.value();
+  if (openaiKey && purposeSettings.openai !== false && isProviderActive('openai')) {
+    const provider = {
+      name: 'openai',
+      key: openaiKey,
+    };
+    if (purpose === 'generation') {
+      provider.generator = require('./services/openaiQuestionGenerator').generateQuestions;
+    }
+    if (purpose === 'migration') {
+      provider.categorize = (payload) => categorizeWithOpenAI(payload, openaiKey);
+      provider.generateSvg = (payload) => generateSvgWithOpenAI(payload, openaiKey);
+    }
+    providers.push(provider);
+  }
+
+  const geminiKey = geminiApiKey.value();
+  if (geminiKey && purposeSettings.gemini !== false && isProviderActive('gemini')) {
+    const provider = {
+      name: 'gemini',
+      key: geminiKey,
+    };
+    if (purpose === 'generation') {
+      provider.generator = require('./services/geminiQuestionGenerator').generateQuestions;
+    }
+    if (purpose === 'migration') {
+      provider.categorize = (payload) => categorizeWithGemini(payload, geminiKey);
+      provider.generateSvg = (payload) => generateSvgWithGemini(payload, geminiKey);
+    }
+    providers.push(provider);
+  }
+
+  return providers;
+}
+
+/**
+ * Hjälpfunktion för att slumpmässigt välja en tillgänglig AI-provider
+ * @param {string} purpose - Ändamål: 'generation', 'validation', 'migration'
+ * @returns {Promise<object|null>}
+ */
+async function selectRandomProvider(purpose = 'generation') {
+  const providers = await getProvidersForPurpose(purpose);
+  if (providers.length === 0) {
+    return null;
+  }
+  const randomIndex = Math.floor(Math.random() * providers.length);
+  return providers[randomIndex];
+}
+
+function shuffleArray(items) {
+  const array = [...items];
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+async function runCategorizationWithProviders(questionPayload, providers, docId) {
+  const order = shuffleArray(
+    providers.filter((provider) => typeof provider.categorize === 'function'),
+  );
+
+  for (const provider of order) {
+    try {
+      const result = await provider.categorize(questionPayload);
+      return { result, provider };
+    } catch (error) {
+      logger.warn(`Categorization failed for provider ${provider.name}`, {
+        questionId: docId,
+        error: error.message,
+      });
+    }
+  }
+
+  return null;
+}
+
+async function runSvgGenerationWithProviders(questionPayload, providers, docId, preferredProvider) {
+  const availableProviders = providers.filter((provider) => typeof provider.generateSvg === 'function');
+  if (availableProviders.length === 0) {
+    return null;
+  }
+
+  const remaining = preferredProvider
+    ? availableProviders.filter((provider) => provider.name !== preferredProvider.name)
+    : availableProviders;
+
+  const order = preferredProvider
+    ? [preferredProvider, ...shuffleArray(remaining)]
+    : shuffleArray(availableProviders);
+
+  for (const provider of order) {
+    try {
+      const svg = await provider.generateSvg(questionPayload);
+      return { svg, provider };
+    } catch (error) {
+      logger.warn(`SVG generation failed for provider ${provider.name}`, {
+        questionId: docId,
+        error: error.message,
+      });
+    }
+  }
+
+  return null;
+}
 
 // Schemalagd funktion som ska h├ñmta fler fr├Ñgor l├╢pande med AI.
-// Anv├ñnder Anthropic som prim├ñr, OpenAI som andra fallback, Gemini som tredje fallback
+// Använder slumpmässig provider-val för varje batch av frågor
 exports.questionImport = onSchedule(
   {
     schedule: "every 6 hours",
@@ -453,54 +947,42 @@ exports.questionImport = onSchedule(
     logger.info("questionImport trigger executed", { timestamp: event.scheduleTime });
 
     try {
-      let questions = null;
-      let usedProvider = null;
+      const allQuestions = [];
+      const providerUsage = { anthropic: 0, openai: 0, gemini: 0 };
+      const totalQuestionsToGenerate = 20;
+      const questionsPerBatch = 5; // Generera 5 frågor per batch för bättre blandning
+      const batches = Math.ceil(totalQuestionsToGenerate / questionsPerBatch);
 
-      // F├╢rs├╢k med Anthropic f├╢rst
-      const anthropicKey = anthropicApiKey.value();
-      if (anthropicKey) {
-        try {
-          const { generateQuestions } = require('./services/aiQuestionGenerator');
-          questions = await generateQuestions({ amount: 20 }, anthropicKey);
-          usedProvider = 'anthropic';
-          logger.info("Generated with Anthropic");
-        } catch (anthropicError) {
-          logger.warn("Anthropic failed in scheduled import, trying OpenAI", {
-            error: anthropicError.message
-          });
-        }
-      }
+      for (let i = 0; i < batches; i++) {
+        const provider = await selectRandomProvider('generation');
 
-      // Fallback till OpenAI
-      if (!questions) {
-        const openaiKey = openaiApiKey.value();
-        if (openaiKey) {
-          try {
-            const { generateQuestions } = require('./services/openaiQuestionGenerator');
-            questions = await generateQuestions({ amount: 20 }, openaiKey);
-            usedProvider = 'openai';
-            logger.info("Generated with OpenAI");
-          } catch (openaiError) {
-            logger.warn("OpenAI failed in scheduled import, trying Gemini", {
-              error: openaiError.message
-            });
-          }
-        }
-      }
-
-      // Fallback till Gemini
-      if (!questions) {
-        const geminiKey = geminiApiKey.value();
-        if (!geminiKey) {
-          logger.warn("No AI providers configured, skipping automatic question import");
+        if (!provider) {
+          logger.warn("No AI providers enabled for generation, skipping automatic question import");
           return;
         }
 
-        const { generateQuestions } = require('./services/geminiQuestionGenerator');
-        questions = await generateQuestions({ amount: 20 }, geminiKey);
-        usedProvider = 'gemini';
-        logger.info("Generated with Gemini");
+        try {
+          const questions = await provider.generator({ amount: questionsPerBatch }, provider.key);
+          if (questions && questions.length > 0) {
+            allQuestions.push(...questions);
+            providerUsage[provider.name] += questions.length;
+            logger.info(`Batch ${i + 1}/${batches}: Generated ${questions.length} questions with ${provider.name}`);
+          }
+        } catch (error) {
+          logger.warn(`Failed to generate with ${provider.name} in batch ${i + 1}`, {
+            error: error.message
+          });
+          // Fortsätt med nästa batch även om en misslyckas
+        }
       }
+
+      if (allQuestions.length === 0) {
+        logger.warn('No questions generated from any provider');
+        return;
+      }
+
+      const questions = allQuestions;
+      const usedProvider = 'mixed'; // Flera providers användes
 
       // Spara till Firestore
       const db = admin.firestore();
@@ -533,6 +1015,7 @@ exports.questionImport = onSchedule(
       logger.info('Successfully imported AI-generated questions', {
         count: questionsToImport.length,
         provider: usedProvider,
+        providerUsage,
         timestamp: event.scheduleTime,
         validation: stats,
       });
@@ -540,13 +1023,27 @@ exports.questionImport = onSchedule(
       // Skapa notis till superusers
       try {
         const notificationRef = db.collection('notifications').doc();
+
+        // Bygg meddelande baserat på provider-användning
+        let providerMessage = '';
+        if (usedProvider === 'mixed') {
+          const usedProviders = Object.entries(providerUsage)
+            .filter(([, count]) => count > 0)
+            .map(([name, count]) => `${name.charAt(0).toUpperCase() + name.slice(1)} (${count})`)
+            .join(', ');
+          providerMessage = `blandade providers: ${usedProviders}`;
+        } else {
+          providerMessage = usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini';
+        }
+
         await notificationRef.set({
           type: 'question_import',
-          title: 'Automatisk fr├Ñgegenerering slutf├╢rd',
-          message: `${questionsToImport.length} nya fr├Ñgor har genererats med ${usedProvider === 'anthropic' ? 'Anthropic Claude' : usedProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}`,
+          title: 'Automatisk frågegenerering slutförd',
+          message: `${questionsToImport.length} nya frågor har genererats med ${providerMessage}`,
           data: {
             count: questionsToImport.length,
             provider: usedProvider,
+            providerUsage,
             model: questionsToImport[0]?.source || 'ai-generated',
             timestamp: new Date().toISOString()
           },
@@ -595,43 +1092,119 @@ exports.questionImport = onSchedule(
  * Task-dispatched function to run AI question generation.
  */
 exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-    const { taskId, amount, category, difficulty, provider } = req.data;
+    const { taskId, amount, category, ageGroup, provider } = req.data;
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
 
+    const safeUpdateProgress = async ({ phase = '', completed = 0, total = 0, details = '' }) => {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(taskDocRef);
+                if (!snapshot.exists) {
+                    throw new Error(`Task ${taskId} not found during progress update`);
+                }
+
+                const data = snapshot.data() || {};
+                const status = data.status;
+                if (['cancelled', 'failed'].includes(status)) {
+                    return;
+                }
+
+                const nextProgress = {
+                    phase,
+                    completed: Math.max(0, completed),
+                    total: Math.max(0, total),
+                    details,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                transaction.update(taskDocRef, { progress: nextProgress });
+            });
+        } catch (progressError) {
+            logger.warn(`Failed to update progress for generation task ${taskId}`, { error: progressError.message });
+        }
+    };
+
     try {
-        await taskDocRef.update({ status: 'processing', startedAt: admin.firestore.FieldValue.serverTimestamp() });
-        logger.info(`Processing AI generation task ${taskId}`, { amount, category, difficulty, provider });
+        await taskDocRef.update({
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            progress: {
+                phase: 'Initierar',
+                completed: 0,
+                total: amount,
+                details: 'Förbereder AI-generering...',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+        logger.info(`Processing AI generation task ${taskId}`, { amount, category, ageGroup, provider });
 
         let questions = null;
         let usedProvider = null;
+        const anthropicKey = anthropicApiKey.value();
 
-        if (provider === 'gemini') {
+        // Om provider är 'random', slumpa fram en provider
+        if (provider === 'random') {
+            const randomProvider = await selectRandomProvider('generation');
+            if (!randomProvider) {
+                throw new Error('No AI providers are enabled for generation');
+            }
+            await safeUpdateProgress({
+                phase: 'Genererar frågor',
+                completed: 0,
+                total: amount,
+                details: `Använder ${randomProvider.name}...`
+            });
+            questions = await randomProvider.generator({ amount, category, ageGroup }, randomProvider.key);
+            usedProvider = randomProvider.name;
+        } else if (provider === 'gemini') {
             const geminiKey = geminiApiKey.value();
             if (geminiKey) {
+                await safeUpdateProgress({
+                    phase: 'Genererar frågor',
+                    completed: 0,
+                    total: amount,
+                    details: 'Använder Gemini...'
+                });
                 const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
-                questions = await generateWithGemini({ amount, category, difficulty }, geminiKey);
+                questions = await generateWithGemini({ amount, category, ageGroup }, geminiKey);
                 usedProvider = 'gemini';
             }
         } else if (provider === 'openai') {
             const openaiKey = openaiApiKey.value();
             if (openaiKey) {
+                await safeUpdateProgress({
+                    phase: 'Genererar frågor',
+                    completed: 0,
+                    total: amount,
+                    details: 'Använder OpenAI...'
+                });
                 const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
-                questions = await generateWithOpenAI({ amount, category, difficulty }, openaiKey);
+                questions = await generateWithOpenAI({ amount, category, ageGroup }, openaiKey);
                 usedProvider = 'openai';
             }
-        } else {
-            const anthropicKey = anthropicApiKey.value();
-            if (anthropicKey) {
-                const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
-                questions = await generateWithAnthropic({ amount, category, difficulty }, anthropicKey);
-                usedProvider = 'anthropic';
-            }
+        } else if (anthropicKey) {
+            await safeUpdateProgress({
+                phase: 'Genererar frågor',
+                completed: 0,
+                total: amount,
+                details: 'Använder Anthropic...'
+            });
+            const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
+            questions = await generateWithAnthropic({ amount, category, ageGroup }, anthropicKey);
+            usedProvider = 'anthropic';
         }
 
         if (!questions) {
             throw new Error(`Provider ${provider} failed or is not configured.`);
         }
+
+        await safeUpdateProgress({
+            phase: 'Validerar frågor',
+            completed: questions.length,
+            total: amount,
+            details: `${questions.length} frågor genererade, kontrollerar dubletter...`
+        });
 
         const existingQuestions = await loadExistingQuestions(db);
         const {questionsToImport, stats} = prepareQuestionsForImport(questions, existingQuestions);
@@ -639,6 +1212,62 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         if (questionsToImport.length === 0) {
             throw new Error('No new questions passed validation/dublettkontroll.');
         }
+
+        // Generera SVG-illustrationer för frågorna
+        const canGenerateSvg = Boolean(anthropicKey);
+        await safeUpdateProgress({
+            phase: 'Genererar illustrationer',
+            completed: canGenerateSvg ? 0 : questionsToImport.length,
+            total: questionsToImport.length,
+            details: canGenerateSvg
+                ? 'Skapar SVG-illustrationer med AI...'
+                : 'Anthropic-nyckel saknas - hoppar över SVG-generering'
+        });
+
+        const { generateSvgIllustration } = require('./services/aiSvgGenerator');
+        let svgGeneratedCount = 0;
+        let svgFailedCount = 0;
+        let svgSkippedCount = 0;
+
+        if (!canGenerateSvg) {
+            svgSkippedCount = questionsToImport.length;
+            logger.warn('Skipping SVG generation for AI questions - Anthropic API key is missing');
+        } else {
+            for (const question of questionsToImport) {
+                try {
+                    const svg = await generateSvgIllustration({
+                        question: question.languages?.sv?.text || question.question?.sv || question.question,
+                        options: question.languages?.sv?.options || question.options?.sv || question.options || [],
+                        explanation: question.languages?.sv?.explanation || question.explanation?.sv || question.explanation
+                    }, anthropicKey);
+
+                    question.illustration = svg;
+                    svgGeneratedCount++;
+                } catch (error) {
+                    logger.warn(`Failed to generate SVG for question ${question.id}`, { error: error.message });
+                    svgFailedCount++;
+                }
+
+                await safeUpdateProgress({
+                    phase: 'Genererar illustrationer',
+                    completed: svgGeneratedCount + svgFailedCount,
+                    total: questionsToImport.length,
+                    details: `${svgGeneratedCount} illustrationer skapade, ${svgFailedCount} misslyckades`
+                });
+            }
+        }
+
+        // Uppdatera progress med dublett-information
+        const duplicateInfo = stats.duplicatesBlocked > 0
+            ? ` (${stats.duplicatesBlocked} dubletter blockerade)`
+            : '';
+
+        await safeUpdateProgress({
+            phase: 'Sparar frågor',
+            completed: questionsToImport.length,
+            total: amount,
+            details: `Sparar ${questionsToImport.length} frågor till databasen${duplicateInfo}...`
+        });
 
         const batch = db.batch();
         questionsToImport.forEach((question) => {
@@ -655,6 +1284,9 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             duplicatesBlocked: stats.duplicatesBlocked,
             invalidCount: stats.invalidCount,
             imported: questionsToImport.length,
+            svgGenerated: svgGeneratedCount,
+            svgFailed: svgFailedCount,
+            svgSkipped: svgSkippedCount,
         });
 
         const result = {
@@ -662,14 +1294,63 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             provider: usedProvider,
             questionIds: questionsToImport.map(q => q.id),
             validation: stats,
+            svg: {
+                generated: svgGeneratedCount,
+                failed: svgFailedCount,
+                skipped: svgSkippedCount
+            },
+            details: {
+                requested: amount,
+                generated: questions.length,
+                imported: questionsToImport.length,
+                duplicatesBlocked: stats.duplicatesBlocked,
+                invalidCount: stats.invalidCount,
+                category: category || 'Alla',
+                ageGroup: ageGroup || 'Blandad',
+                svgGenerated: svgGeneratedCount,
+                svgFailed: svgFailedCount,
+                svgSkipped: svgSkippedCount
+            }
         };
 
-        await taskDocRef.update({ status: 'completed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), result });
+        // Bygg slutmeddel ande med eventuell dublett-information
+        let finalDetails = stats.duplicatesBlocked > 0
+            ? `${questionsToImport.length} frågor importerade (${stats.duplicatesBlocked} dubletter blockerade)`
+            : `${questionsToImport.length} frågor importerade`;
+        if (svgSkippedCount > 0) {
+            finalDetails += ' (SVG-generering hoppades över)';
+        } else if (svgFailedCount > 0) {
+            finalDetails += ` (${svgFailedCount} illustrationer misslyckades)`;
+        }
+
+        await taskDocRef.update({
+            status: 'completed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            result,
+            progress: {
+                phase: 'Klar',
+                completed: questionsToImport.length,
+                total: amount,
+                details: finalDetails,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
         logger.info(`Successfully completed AI generation task ${taskId}`);
 
     } catch (error) {
         logger.error(`Failed AI generation task ${taskId}`, { error: error.message, stack: error.stack });
-        await taskDocRef.update({ status: 'failed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), error: error.message });
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: error.message,
+            progress: {
+                phase: 'Misslyckades',
+                completed: 0,
+                total: amount,
+                details: error.message,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
     }
 });
 
@@ -681,64 +1362,178 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     const db = admin.firestore();
     const taskDocRef = db.collection('backgroundTasks').doc(taskId);
 
+    // Hämta provider settings
+    const settings = await getProviderSettings();
+    const validationSettings = settings.validation || { anthropic: true, openai: true, gemini: true };
+
+    const anthropicKey = anthropicApiKey.value();
+    const geminiKey = geminiApiKey.value();
+    const openaiKey = openaiApiKey.value();
+    const providerKeys = {
+        anthropic: anthropicKey && validationSettings.anthropic !== false ? anthropicKey : null,
+        gemini: geminiKey && validationSettings.gemini !== false ? geminiKey : null,
+        openai: openaiKey && validationSettings.openai !== false ? openaiKey : null
+    };
+    const enabledProviders = Object.entries(providerKeys)
+        .filter(([, key]) => Boolean(key))
+        .map(([name]) => name);
+
+    if (enabledProviders.length === 0) {
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: 'AI-valideringen avbröts: inga AI-leverantörer är konfigurerade.'
+        });
+        logger.error(`AI validation task ${taskId} aborted: no AI providers configured.`);
+        return;
+    }
+
     try {
         await taskDocRef.update({ status: 'processing', startedAt: admin.firestore.FieldValue.serverTimestamp() });
         logger.info(`Processing AI validation task ${taskId}`);
 
-        const validationResults = {};
-        let allValid = true;
-        const allIssues = [];
-        let combinedReasoning = '';
+        const providerHealth = Object.fromEntries(enabledProviders.map((name) => [name, 'unknown']));
+        const formatProviderName = (provider) => provider.charAt(0).toUpperCase() + provider.slice(1);
 
-        const anthropicKey = anthropicApiKey.value();
+        const validationResults = {};
+        const reasoningSections = [];
+        let suggestedCorrectOption;
+
         if (anthropicKey) {
             try {
                 const { validateQuestion } = require('./services/aiQuestionValidator');
                 const result = await validateQuestion({ question, options, correctOption, explanation }, anthropicKey);
                 validationResults.anthropic = result;
-                if (!result.valid) {
-                    allValid = false;
-                    allIssues.push(...result.issues.map(issue => `[Anthropic] ${issue}`));
+                providerHealth.anthropic = 'healthy';
+                if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                    reasoningSections.push(`**Anthropic:** ${result.reasoning}`);
                 }
-                combinedReasoning += `**Anthropic:** ${result.reasoning}\n\n`;
             } catch (error) {
                 logger.error("Anthropic validation failed during task", { error: error.message });
-                validationResults.anthropic = { valid: false, error: error.message };
-                allValid = false;
-                allIssues.push(`[Anthropic] Validation Error: ${error.message}`);
+                validationResults.anthropic = {
+                    valid: null,
+                    error: error.message,
+                    unavailable: true
+                };
+                if (providerHealth.anthropic !== 'healthy') {
+                    providerHealth.anthropic = 'unavailable';
+                }
             }
         }
 
-        const geminiKey = geminiApiKey.value();
         if (geminiKey) {
             try {
                 const { validateQuestion } = require('./services/geminiQuestionValidator');
                 const result = await validateQuestion({ question, options, correctOption, explanation }, geminiKey);
                 validationResults.gemini = result;
-                if (!result.valid) {
-                    allValid = false;
-                    allIssues.push(...result.issues.map(issue => `[Gemini] ${issue}`));
+                providerHealth.gemini = 'healthy';
+                if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                    reasoningSections.push(`**Gemini:** ${result.reasoning}`);
                 }
-                combinedReasoning += `**Gemini:** ${result.reasoning}\n\n`;
             } catch (error) {
                 logger.error("Gemini validation failed during task", { error: error.message });
-                validationResults.gemini = { valid: false, error: error.message };
-                allValid = false;
-                allIssues.push(`[Gemini] Validation Error: ${error.message}`);
+                validationResults.gemini = {
+                    valid: null,
+                    error: error.message,
+                    unavailable: true
+                };
+                if (providerHealth.gemini !== 'healthy') {
+                    providerHealth.gemini = 'unavailable';
+                }
             }
         }
 
-        if (!anthropicKey && !geminiKey) {
-            throw new Error("No AI providers configured for validation.");
+        if (openaiKey) {
+            try {
+                const { validateQuestion } = require('./services/openaiQuestionValidator');
+                const result = await validateQuestion({ question, options, correctOption, explanation }, openaiKey);
+                validationResults.openai = result;
+                providerHealth.openai = 'healthy';
+                if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                    reasoningSections.push(`**OpenAI:** ${result.reasoning}`);
+                }
+            } catch (error) {
+                logger.error("OpenAI validation failed during task", { error: error.message });
+                validationResults.openai = {
+                    valid: null,
+                    error: error.message,
+                    unavailable: true
+                };
+                if (providerHealth.openai !== 'healthy') {
+                    providerHealth.openai = 'unavailable';
+                }
+            }
+        }
+
+        const successfulProviders = Object.entries(validationResults)
+            .filter(([, result]) => typeof result?.valid === 'boolean');
+
+        if (successfulProviders.length === 0) {
+            if (enabledProviders.every((name) => providerHealth[name] === 'unavailable')) {
+                throw new Error('AI-valideringen avbröts: inga AI-leverantörer är tillgängliga just nu.');
+            }
+
+            const providerErrors = Object.entries(validationResults)
+                .filter(([, result]) => result?.error)
+                .map(([providerName, result]) => `[${formatProviderName(providerName)}] ${result.error}`);
+
+            const failureResult = {
+                valid: false,
+                issues: providerErrors.length > 0
+                    ? providerErrors
+                    : ['AI-valideringen kunde inte genomföras för frågan.'],
+                reasoning: '',
+                providerResults: validationResults,
+                providersChecked: 0
+            };
+
+            await taskDocRef.update({
+                status: 'failed',
+                finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+                error: failureResult.issues.join(' | '),
+                result: failureResult
+            });
+            return;
+        }
+
+        const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
+        const issues = invalidProviders.flatMap(([providerName, result]) => {
+            const providerLabel = formatProviderName(providerName);
+            if (Array.isArray(result.issues) && result.issues.length > 0) {
+                return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
+            }
+            return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+        });
+
+        if (invalidProviders.length > 0 && suggestedCorrectOption === undefined) {
+            const suggested = invalidProviders
+                .map(([, result]) => result.suggestedCorrectOption)
+                .find((value) => value !== undefined);
+            if (suggested !== undefined) {
+                suggestedCorrectOption = suggested;
+            }
         }
 
         const finalResult = {
-            valid: allValid,
-            issues: allIssues,
-            reasoning: combinedReasoning.trim(),
+            valid: invalidProviders.length === 0,
+            issues,
+            reasoning: reasoningSections.join('\n\n').trim(),
             providerResults: validationResults,
-            providersChecked: Object.keys(validationResults).length
+            providersChecked: successfulProviders.length
         };
+
+        if (suggestedCorrectOption !== undefined) {
+            finalResult.suggestedCorrectOption = suggestedCorrectOption;
+        }
+
+        if (Object.values(validationResults).some((result) => result?.error && !result?.valid)) {
+            finalResult.providerErrors = Object.entries(validationResults)
+                .filter(([, result]) => result?.error)
+                .map(([providerName, result]) => ({
+                    provider: formatProviderName(providerName),
+                    error: result.error
+                }));
+        }
 
         await taskDocRef.update({ status: 'completed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), result: finalResult });
         logger.info(`Successfully completed AI validation task ${taskId}`);
@@ -746,6 +1541,383 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     } catch (error) {
         logger.error(`Failed AI validation task ${taskId}`, { error: error.message, stack: error.stack });
         await taskDocRef.update({ status: 'failed', finishedAt: admin.firestore.FieldValue.serverTimestamp(), error: error.message });
+    }
+});
+
+/**
+ * Queue a task to validate multiple questions with AI (batch validation).
+ */
+exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            // Verify Firebase ID token
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const { questions } = req.body;
+
+            if (!Array.isArray(questions) || questions.length === 0) {
+                return res.status(400).json({ error: "questions must be a non-empty array" });
+            }
+
+            // Validate each question has required fields
+            for (const q of questions) {
+                if (!q.id || !q.question || !q.options || q.correctOption === undefined || !q.explanation) {
+                    return res.status(400).json({
+                        error: "Each question must have: id, question, options, correctOption, explanation"
+                    });
+                }
+            }
+
+            const taskId = await enqueueTask('batchvalidation', { questions }, userId);
+
+            res.status(202).json({
+                success: true,
+                message: `Batch validation of ${questions.length} questions has been queued.`,
+                taskId: taskId,
+                questionCount: questions.length
+            });
+        } catch (error) {
+            logger.error("Error queueing batch question validation", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue batch validation task.", message: error.message });
+        }
+    });
+});
+
+/**
+ * Task-dispatched function to run batch AI question validation.
+ */
+exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId, questions } = req.data;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+
+    const safeUpdateProgress = async ({ completed = 0, validated = 0, failed = 0 }) => {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(taskDocRef);
+                if (!snapshot.exists) {
+                    throw new Error(`Task ${taskId} not found during progress update`);
+                }
+
+                const data = snapshot.data() || {};
+                const status = data.status;
+                if (['cancelled', 'failed'].includes(status)) {
+                    return;
+                }
+
+                const currentProgress = data.progress || {};
+                const nextProgress = {
+                    total: questions.length,
+                    completed: Math.max(currentProgress.completed ?? 0, completed),
+                    validated: Math.max(currentProgress.validated ?? 0, validated),
+                    failed: Math.max(currentProgress.failed ?? 0, failed),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                transaction.update(taskDocRef, { progress: nextProgress });
+            });
+        } catch (progressError) {
+            logger.warn(`Failed to update progress for batch task ${taskId}`, { error: progressError.message });
+        }
+    };
+
+    // Hämta provider settings
+    const settings = await getProviderSettings();
+    const validationSettings = settings.validation || { anthropic: true, openai: true, gemini: true };
+
+    const anthropicKey = anthropicApiKey.value();
+    const geminiKey = geminiApiKey.value();
+    const openaiKey = openaiApiKey.value();
+    const providerKeys = {
+        anthropic: anthropicKey && validationSettings.anthropic !== false ? anthropicKey : null,
+        gemini: geminiKey && validationSettings.gemini !== false ? geminiKey : null,
+        openai: openaiKey && validationSettings.openai !== false ? openaiKey : null
+    };
+    const enabledProviders = Object.entries(providerKeys)
+        .filter(([, key]) => Boolean(key))
+        .map(([name]) => name);
+
+    if (enabledProviders.length === 0) {
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: 'AI-valideringen avbröts: inga AI-leverantörer är konfigurerade.'
+        });
+        logger.error(`Batch validation task ${taskId} aborted: no AI providers configured.`);
+        return;
+    }
+
+    try {
+        await taskDocRef.update({
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            progress: {
+                total: questions.length,
+                completed: 0,
+                validated: 0,
+                failed: 0,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+
+        logger.info(`Processing batch AI validation task ${taskId}`, { questionCount: questions.length });
+
+        const results = [];
+        let completedCount = 0;
+        let validatedCount = 0;
+        let failedCount = 0;
+
+        const providerHealth = Object.fromEntries(enabledProviders.map((name) => [name, 'unknown']));
+        const formatProviderName = (provider) => provider.charAt(0).toUpperCase() + provider.slice(1);
+
+        // Process each question
+        for (const questionData of questions) {
+            try {
+                const { id, question, options, correctOption, explanation } = questionData;
+
+                const validationResults = {};
+                const reasoningSections = [];
+                let suggestedCorrectOption;
+
+                if (anthropicKey) {
+                    try {
+                        const { validateQuestion } = require('./services/aiQuestionValidator');
+                        const result = await validateQuestion({ question, options, correctOption, explanation }, anthropicKey);
+                        validationResults.anthropic = result;
+                        providerHealth.anthropic = 'healthy';
+                        if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                            reasoningSections.push(`**Anthropic:** ${result.reasoning}`);
+                        }
+                    } catch (error) {
+                        logger.error(`Anthropic validation failed for question ${id}`, { error: error.message });
+                        validationResults.anthropic = {
+                            valid: null,
+                            error: error.message,
+                            unavailable: true
+                        };
+                        if (providerHealth.anthropic !== 'healthy') {
+                            providerHealth.anthropic = 'unavailable';
+                        }
+                    }
+                }
+
+                if (geminiKey) {
+                    try {
+                        const { validateQuestion } = require('./services/geminiQuestionValidator');
+                        const result = await validateQuestion({ question, options, correctOption, explanation }, geminiKey);
+                        validationResults.gemini = result;
+                        providerHealth.gemini = 'healthy';
+                        if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                            reasoningSections.push(`**Gemini:** ${result.reasoning}`);
+                        }
+                    } catch (error) {
+                        logger.error(`Gemini validation failed for question ${id}`, { error: error.message });
+                        validationResults.gemini = {
+                            valid: null,
+                            error: error.message,
+                            unavailable: true
+                        };
+                        if (providerHealth.gemini !== 'healthy') {
+                            providerHealth.gemini = 'unavailable';
+                        }
+                    }
+                }
+
+                if (openaiKey) {
+                    try {
+                        const { validateQuestion } = require('./services/openaiQuestionValidator');
+                        const result = await validateQuestion({ question, options, correctOption, explanation }, openaiKey);
+                        validationResults.openai = result;
+                        providerHealth.openai = 'healthy';
+                        if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                            reasoningSections.push(`**OpenAI:** ${result.reasoning}`);
+                        }
+                    } catch (error) {
+                        logger.error(`OpenAI validation failed for question ${id}`, { error: error.message });
+                        validationResults.openai = {
+                            valid: null,
+                            error: error.message,
+                            unavailable: true
+                        };
+                        if (providerHealth.openai !== 'healthy') {
+                            providerHealth.openai = 'unavailable';
+                        }
+                    }
+                }
+
+                const successfulProviders = Object.entries(validationResults)
+                    .filter(([, result]) => typeof result?.valid === 'boolean');
+
+                if (successfulProviders.length === 0) {
+                    if (enabledProviders.every((name) => providerHealth[name] === 'unavailable')) {
+                        throw new Error('AI-valideringen avbröts: inga AI-leverantörer är tillgängliga just nu.');
+                    }
+
+                    const providerErrors = Object.entries(validationResults)
+                        .filter(([, result]) => result?.error)
+                        .map(([providerName, result]) => `[${formatProviderName(providerName)}] ${result.error}`);
+
+                    completedCount++;
+                    failedCount++;
+
+                    await safeUpdateProgress({
+                        completed: completedCount,
+                        validated: validatedCount,
+                        failed: failedCount
+                    });
+                    logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+
+                    results.push({
+                        questionId: id,
+                        valid: false,
+                        issues: providerErrors.length > 0
+                            ? providerErrors
+                            : ['AI-valideringen kunde inte genomföras för frågan.'],
+                        reasoning: '',
+                        providerResults: validationResults,
+                        providersChecked: successfulProviders.length
+                    });
+
+                    continue;
+                }
+
+                const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
+                const issues = invalidProviders.flatMap(([providerName, result]) => {
+                    const providerLabel = formatProviderName(providerName);
+                    if (Array.isArray(result.issues) && result.issues.length > 0) {
+                        return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
+                    }
+                    return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+                });
+
+                if (invalidProviders.length > 0 && suggestedCorrectOption === undefined) {
+                    const suggested = invalidProviders
+                        .map(([, result]) => result.suggestedCorrectOption)
+                        .find((value) => value !== undefined);
+                    if (suggested !== undefined) {
+                        suggestedCorrectOption = suggested;
+                    }
+                }
+
+                const questionValid = invalidProviders.length === 0;
+                const reasoning = reasoningSections.join('\n\n').trim();
+
+                completedCount++;
+                if (questionValid) {
+                    validatedCount++;
+                } else {
+                    failedCount++;
+                }
+
+                await safeUpdateProgress({
+                    completed: completedCount,
+                    validated: validatedCount,
+                    failed: failedCount
+                });
+                logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+
+                const questionResult = {
+                    questionId: id,
+                    valid: questionValid,
+                    issues,
+                    reasoning,
+                    providerResults: validationResults,
+                    providersChecked: successfulProviders.length
+                };
+
+                if (suggestedCorrectOption !== undefined) {
+                    questionResult.suggestedCorrectOption = suggestedCorrectOption;
+                }
+
+                if (Object.values(validationResults).some((result) => result?.error && !result?.valid)) {
+                    questionResult.providerErrors = Object.entries(validationResults)
+                        .filter(([, result]) => result?.error)
+                        .map(([providerName, result]) => ({
+                            provider: formatProviderName(providerName),
+                            error: result.error
+                        }));
+                }
+
+                results.push(questionResult);
+
+            } catch (error) {
+                logger.error(`Failed to validate question in batch ${taskId}`, { error: error.message });
+                results.push({
+                    questionId: questionData.id,
+                    valid: false,
+                    issues: [`Systemfel: ${error.message}`],
+                    providerResults: {},
+                    providersChecked: 0
+                });
+                completedCount++;
+                failedCount++;
+
+                await safeUpdateProgress({
+                    completed: completedCount,
+                    validated: validatedCount,
+                    failed: failedCount
+                });
+                logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+            }
+        }
+
+        const finalResult = {
+            total: questions.length,
+            validated: validatedCount,
+            failed: failedCount,
+            results: results
+        };
+
+        await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(taskDocRef);
+            if (!snapshot.exists) {
+                throw new Error(`Task ${taskId} disappeared before completion update`);
+            }
+
+            const data = snapshot.data() || {};
+            const currentProgress = data.progress || {};
+            const nextProgress = {
+                total: questions.length,
+                completed: Math.max(currentProgress.completed ?? 0, completedCount),
+                validated: Math.max(currentProgress.validated ?? 0, validatedCount),
+                failed: Math.max(currentProgress.failed ?? 0, failedCount),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            const updates = { progress: nextProgress };
+            if (data.status !== 'completed' && data.status !== 'failed' && data.status !== 'cancelled') {
+                updates.status = 'completed';
+                updates.finishedAt = admin.firestore.FieldValue.serverTimestamp();
+                updates.result = finalResult;
+            } else if (!data.result) {
+                updates.result = finalResult;
+            }
+
+            transaction.update(taskDocRef, updates);
+        });
+
+        logger.info(`Successfully completed batch AI validation task ${taskId}`, { validated: validatedCount, failed: failedCount });
+
+    } catch (error) {
+        logger.error(`Failed batch AI validation task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: error.message
+        });
     }
 });
 
@@ -1049,6 +2221,1006 @@ exports.updateQuestionsCreatedAt = onRequest({
       logger.error('Error updating questions', { error: error.message });
       res.status(500).json({
         error: 'Failed to update questions',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Migration function to update questions to new schema using AI categorization
+ * - difficulty → ageGroups (array) - AI determines which age groups fit
+ * - category → categories (array) - AI determines which categories fit
+ * - Add targetAudience field
+ * Call this: https://europe-west1-geoquest2-7e45c.cloudfunctions.net/migrateQuestionsToNewSchema
+ */
+exports.migrateQuestionsToNewSchema = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 540, // 9 minutes
+  secrets: [anthropicApiKey, openaiApiKey, geminiApiKey]
+}, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      logger.info('Starting AI-powered migration of questions to new schema');
+
+      const migrationProviders = await getProvidersForPurpose('migration');
+      if (migrationProviders.length === 0) {
+        return res.status(500).json({
+          error: 'AI migration requires at least one provider to be enabled and configured'
+        });
+      }
+
+      logger.info('Migration providers resolved', {
+        providers: migrationProviders.map((provider) => provider.name)
+      });
+
+      const db = admin.firestore();
+      const questionsRef = db.collection('questions');
+      const snapshot = await questionsRef.get();
+
+      if (snapshot.empty) {
+        logger.info('No questions found in Firestore');
+        return res.status(200).json({ message: 'No questions found', migrated: 0 });
+      }
+
+      logger.info('Found ' + snapshot.size + ' questions to migrate with AI categorization');
+
+      let migratedCount = 0;
+      let previouslyMigratedCount = 0;
+      let failedCount = 0;
+      let svgGeneratedCount = 0;
+      let svgFailedCount = 0;
+      const updates = [];
+      const toArray = (value) => {
+        if (Array.isArray(value)) {
+          return value;
+        }
+        if (value && typeof value === 'object') {
+          return Object.values(value);
+        }
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return [value];
+        }
+        return [];
+      };
+
+      for (const doc of snapshot.docs) {
+        const data = doc.data();
+        const wasPreviouslyMigrated = Array.isArray(data.ageGroups) && Array.isArray(data.categories) && Boolean(data.targetAudience);
+        if (wasPreviouslyMigrated) {
+          previouslyMigratedCount++;
+        }
+
+        const questionTextRaw =
+          data.languages?.sv?.text ||
+          data.question?.sv ||
+          data.question ||
+          data.text ||
+          data.languages?.en?.text ||
+          '';
+        const questionText = typeof questionTextRaw === 'string' && questionTextRaw.trim().length > 0
+          ? questionTextRaw
+          : 'Okänd fråga från tidigare import';
+
+        const rawOptions =
+          data.languages?.sv?.options ||
+          data.options?.sv ||
+          data.options ||
+          data.languages?.en?.options ||
+          [];
+        const normalizedOptions = toArray(rawOptions)
+          .map((option) => (typeof option === 'string' ? option : String(option ?? '')))
+          .filter((option) => option.trim().length > 0);
+
+        const explanationText =
+          data.languages?.sv?.explanation ||
+          data.explanation?.sv ||
+          data.explanation ||
+          data.languages?.en?.explanation ||
+          '';
+
+        const questionPayload = {
+          question: questionText,
+          options: normalizedOptions,
+          explanation: explanationText
+        };
+
+        const categorizationOutcome = await runCategorizationWithProviders(questionPayload, migrationProviders, doc.id);
+
+        if (!categorizationOutcome) {
+          logger.error('All migration providers failed to categorize question ' + doc.id);
+          failedCount++;
+          const fallbackData = {
+            ageGroups: Array.isArray(data.ageGroups) && data.ageGroups.length > 0 ? data.ageGroups : ['adults'],
+            categories: Array.isArray(data.categories) && data.categories.length > 0 ? data.categories : ['Gåtor'],
+            targetAudience: data.targetAudience || 'swedish',
+            migrated: true,
+            migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+            migrationVersion: 'v2-reprocess',
+            migrationProvider: 'fallback',
+            migrationError: 'categorization_failed',
+            difficulty: admin.firestore.FieldValue.delete(),
+            category: admin.firestore.FieldValue.delete(),
+            migrationSvgProvider: admin.firestore.FieldValue.delete()
+          };
+          if (data.audience !== undefined) {
+            fallbackData.audience = admin.firestore.FieldValue.delete();
+          }
+          if (data.migrationReasoning) {
+            fallbackData.migrationReasoning = admin.firestore.FieldValue.delete();
+          }
+
+          updates.push({
+            ref: doc.ref,
+            data: fallbackData
+          });
+
+          continue;
+        }
+
+        const { result: categorization, provider: categorizeProvider } = categorizationOutcome;
+
+        const updateData = {
+          ageGroups: categorization.ageGroups,
+          categories: categorization.categories,
+          targetAudience: data.targetAudience || 'swedish',
+          migrated: true,
+          migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          migrationVersion: 'v2-reprocess',
+          migrationProvider: categorizeProvider.name,
+          difficulty: admin.firestore.FieldValue.delete(),
+          category: admin.firestore.FieldValue.delete()
+        };
+
+        if (data.audience !== undefined) {
+          updateData.audience = admin.firestore.FieldValue.delete();
+        }
+
+        if (categorization.reasoning) {
+          updateData.migrationReasoning = categorization.reasoning;
+        } else if (data.migrationReasoning) {
+          updateData.migrationReasoning = admin.firestore.FieldValue.delete();
+        }
+
+        const svgOutcome = await runSvgGenerationWithProviders(questionPayload, migrationProviders, doc.id, categorizeProvider);
+        if (svgOutcome) {
+          updateData.illustration = svgOutcome.svg;
+          updateData.migrationSvgProvider = svgOutcome.provider.name;
+          svgGeneratedCount++;
+        } else {
+          svgFailedCount++;
+          logger.warn('All migration providers failed to generate SVG for question ' + doc.id);
+          if (!data.illustration) {
+            updateData.illustration = admin.firestore.FieldValue.delete();
+          }
+        }
+
+        updates.push({
+          ref: doc.ref,
+          data: updateData
+        });
+
+        migratedCount++;
+      }
+
+      let currentBatch = db.batch();
+      let batchCount = 0;
+      const batchOps = [];
+
+      for (const update of updates) {
+        currentBatch.update(update.ref, update.data);
+        batchCount++;
+        if (batchCount >= 400) {
+          batchOps.push(currentBatch.commit());
+          currentBatch = db.batch();
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) {
+        batchOps.push(currentBatch.commit());
+      }
+
+      await Promise.all(batchOps);
+
+      logger.info('Finished migrating questions with AI', {
+        migrated: migratedCount,
+        svgGenerated: svgGeneratedCount,
+        svgFailed: svgFailedCount,
+        previouslyMigrated: previouslyMigratedCount,
+        failed: failedCount,
+        total: snapshot.size,
+        providers: migrationProviders.map((provider) => provider.name)
+      });
+
+      res.status(200).json({
+        message: 'Questions migrated successfully with AI categorization',
+        migrated: migratedCount,
+        svgGenerated: svgGeneratedCount,
+        svgFailed: svgFailedCount,
+        previouslyMigrated: previouslyMigratedCount,
+        failed: failedCount,
+        total: snapshot.size,
+        details: {
+          method: 'AI-powered categorization and illustration using configured providers',
+          ageGroupsIdentified: 'AI analyzed each question to determine suitable age groups',
+          categoriesIdentified: 'AI analyzed each question to determine relevant categories',
+          svgIllustrations: 'AI generated SVG illustrations for each question',
+          targetAudience: 'Set to swedish for all questions',
+          removedFields: 'difficulty, category, audience',
+          providers: migrationProviders.map((provider) => provider.name)
+        }
+      });
+    } catch (error) {
+      logger.error('Error migrating questions', { error: error.message, stack: error.stack });
+      res.status(500).json({
+        error: 'Failed to migrate questions',
+        message: error.message
+      });
+    }
+  });
+});
+
+exports.cleanupStuckTasks = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300, // 5 minutes
+}, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      logger.info('Starting cleanup of stuck background tasks');
+
+      const db = admin.firestore();
+      const tasksRef = db.collection('backgroundTasks');
+
+      // Find all tasks that are "processing" or "queued"
+      const processingSnapshot = await tasksRef.where('status', '==', 'processing').get();
+      const queuedSnapshot = await tasksRef.where('status', '==', 'queued').get();
+
+      const now = admin.firestore.Timestamp.now();
+      const thirtyMinutesAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 30 * 60 * 1000);
+      const threeHoursAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 3 * 60 * 60 * 1000);
+
+      let cleanedCount = 0;
+      const batchOps = [];
+      let currentBatch = db.batch();
+      let batchCount = 0;
+
+      // Check processing tasks
+      for (const doc of processingSnapshot.docs) {
+        const data = doc.data();
+        const createdAt = data.createdAt || data.startedAt;
+
+        // Batch validation tasks get 3 hours, others get 30 minutes
+        const taskType = data.taskType;
+        const timeoutThreshold = taskType === 'batchvalidation' ? threeHoursAgo : thirtyMinutesAgo;
+        const timeoutMinutes = taskType === 'batchvalidation' ? 180 : 30;
+
+        if (createdAt && createdAt.toMillis() < timeoutThreshold.toMillis()) {
+          currentBatch.update(doc.ref, {
+            status: 'failed',
+            error: `Task timed out after ${timeoutMinutes} minutes`,
+            finishedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          cleanedCount++;
+          batchCount++;
+
+          // Firestore batch limit is 500
+          if (batchCount >= 400) {
+            batchOps.push(currentBatch.commit());
+            currentBatch = db.batch();
+            batchCount = 0;
+          }
+        }
+      }
+
+      // Check queued tasks
+      for (const doc of queuedSnapshot.docs) {
+        const data = doc.data();
+        const createdAt = data.createdAt;
+
+        if (createdAt && createdAt.toMillis() < thirtyMinutesAgo.toMillis()) {
+          currentBatch.update(doc.ref, {
+            status: 'failed',
+            error: 'Task stuck in queue for more than 30 minutes',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+          cleanedCount++;
+          batchCount++;
+
+          if (batchCount >= 400) {
+            batchOps.push(currentBatch.commit());
+            currentBatch = db.batch();
+            batchCount = 0;
+          }
+        }
+      }
+
+      // Commit remaining batch
+      if (batchCount > 0) {
+        batchOps.push(currentBatch.commit());
+      }
+
+      await Promise.all(batchOps);
+
+      logger.info('Finished cleaning up stuck tasks', { cleaned: cleanedCount });
+
+      res.status(200).json({
+        message: 'Cleanup completed successfully',
+        cleaned: cleanedCount,
+        processingChecked: processingSnapshot.size,
+        queuedChecked: queuedSnapshot.size
+      });
+    } catch (error) {
+      logger.error('Error cleaning up stuck tasks', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to cleanup stuck tasks',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Admin function to delete all old completed and failed background tasks
+ * Call this: https://europe-west1-geoquest2-7e45c.cloudfunctions.net/deleteOldTasks
+ */
+exports.deleteOldTasks = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300, // 5 minutes
+}, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      logger.info('Starting deletion of old background tasks');
+
+      const db = admin.firestore();
+      const tasksRef = db.collection('backgroundTasks');
+
+      // Get query parameter for age threshold (default 24 hours)
+      const hoursOld = parseInt(req.query.hours) || 24;
+
+      const now = admin.firestore.Timestamp.now();
+      const thresholdTime = admin.firestore.Timestamp.fromMillis(now.toMillis() - hoursOld * 60 * 60 * 1000);
+
+      // Find all completed and failed tasks older than threshold
+      const completedSnapshot = await tasksRef
+        .where('status', '==', 'completed')
+        .where('finishedAt', '<', thresholdTime)
+        .get();
+
+      const failedSnapshot = await tasksRef
+        .where('status', '==', 'failed')
+        .where('finishedAt', '<', thresholdTime)
+        .get();
+
+      let deletedCount = 0;
+      const batchOps = [];
+      let currentBatch = db.batch();
+      let batchCount = 0;
+
+      // Delete completed tasks
+      for (const doc of completedSnapshot.docs) {
+        currentBatch.delete(doc.ref);
+        deletedCount++;
+        batchCount++;
+
+        if (batchCount >= 400) {
+          batchOps.push(currentBatch.commit());
+          currentBatch = db.batch();
+          batchCount = 0;
+        }
+      }
+
+      // Delete failed tasks
+      for (const doc of failedSnapshot.docs) {
+        currentBatch.delete(doc.ref);
+        deletedCount++;
+        batchCount++;
+
+        if (batchCount >= 400) {
+          batchOps.push(currentBatch.commit());
+          currentBatch = db.batch();
+          batchCount = 0;
+        }
+      }
+
+      // Commit remaining batch
+      if (batchCount > 0) {
+        batchOps.push(currentBatch.commit());
+      }
+
+      await Promise.all(batchOps);
+
+      logger.info('Finished deleting old tasks', { deleted: deletedCount, hoursOld });
+
+      res.status(200).json({
+        message: 'Old tasks deleted successfully',
+        deleted: deletedCount,
+        completedDeleted: completedSnapshot.size,
+        failedDeleted: failedSnapshot.size,
+        hoursOld
+      });
+    } catch (error) {
+      logger.error('Error deleting old tasks', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to delete old tasks',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Task-dispatched function to run AI migration.
+ */
+exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId } = req.data;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+    const existingSnapshot = await taskDocRef.get();
+    if (!existingSnapshot.exists) {
+        logger.error(`Migration task ${taskId} not found`);
+        return;
+    }
+    const existingData = existingSnapshot.data() || {};
+    if (['completed', 'failed', 'cancelled'].includes(existingData.status)) {
+        logger.info(`Skipping migration task ${taskId} because status is ${existingData.status}`);
+        return;
+    }
+
+    const safeUpdateProgress = async ({ phase = '', completed = 0, total = 0, details = '' }) => {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(taskDocRef);
+                if (!snapshot.exists) {
+                    throw new Error(`Task ${taskId} not found during progress update`);
+                }
+
+                const data = snapshot.data() || {};
+                const status = data.status;
+                if (['cancelled', 'failed', 'completed'].includes(status)) {
+                    return;
+                }
+
+                const nextProgress = {
+                    phase,
+                    completed: Math.max(0, completed),
+                    total: Math.max(0, total),
+                    details,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                transaction.update(taskDocRef, { progress: nextProgress });
+            });
+        } catch (progressError) {
+            logger.warn(`Failed to update progress for migration task ${taskId}`, { error: progressError.message });
+        }
+    };
+
+    try {
+        await taskDocRef.update({
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            progress: {
+                phase: 'Initierar',
+                completed: 0,
+                total: 0,
+                details: 'Förbereder AI-migrering...',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+        logger.info(`Processing AI migration task ${taskId}`);
+
+        const migrationProviders = await getProvidersForPurpose('migration');
+        if (migrationProviders.length === 0) {
+            throw new Error('AI migration requires at least one provider to be enabled and configured');
+        }
+
+        logger.info('Migration providers resolved', {
+            taskId,
+            providers: migrationProviders.map((provider) => provider.name)
+        });
+
+        const questionsRef = db.collection('questions');
+        const snapshot = await questionsRef.get();
+
+        if (snapshot.empty) {
+            throw new Error('No questions found in Firestore');
+        }
+
+        await safeUpdateProgress({
+            phase: 'Hämtar frågor',
+            completed: 0,
+            total: snapshot.size,
+            details: `Hittade ${snapshot.size} frågor att migrera`
+        });
+
+        let migratedCount = 0;
+        let previouslyMigratedCount = 0;
+        let failedCount = 0;
+        let svgGeneratedCount = 0;
+        let svgFailedCount = 0;
+        let processedCount = 0;
+        const updates = [];
+        const toArray = (value) => {
+            if (Array.isArray(value)) {
+                return value;
+            }
+            if (value && typeof value === 'object') {
+                return Object.values(value);
+            }
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return [value];
+            }
+            return [];
+        };
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const wasPreviouslyMigrated = Array.isArray(data.ageGroups) && Array.isArray(data.categories) && Boolean(data.targetAudience);
+            if (wasPreviouslyMigrated) {
+                previouslyMigratedCount++;
+            }
+
+            const questionTextRaw =
+                data.languages?.sv?.text ??
+                data.question?.sv ??
+                data.question ??
+                data.text ??
+                data.languages?.en?.text ??
+                '';
+            const questionText = typeof questionTextRaw === 'string' && questionTextRaw.trim().length > 0
+                ? questionTextRaw
+                : 'Okänd fråga från tidigare import';
+
+            const rawOptions =
+                data.languages?.sv?.options ??
+                data.options?.sv ??
+                data.options ??
+                data.languages?.en?.options ??
+                [];
+            const normalizedOptions = toArray(rawOptions)
+                .map((option) => (typeof option === 'string' ? option : String(option ?? '')))
+                .filter((option) => option.trim().length > 0);
+
+            const explanationText =
+                data.languages?.sv?.explanation ??
+                data.explanation?.sv ??
+                data.explanation ??
+                data.languages?.en?.explanation ??
+                '';
+
+            const questionPayload = {
+                question: questionText,
+                options: normalizedOptions,
+                explanation: explanationText
+            };
+
+            const categorizationOutcome = await runCategorizationWithProviders(questionPayload, migrationProviders, doc.id);
+
+        if (!categorizationOutcome) {
+          logger.error('All migration providers failed to categorize question ' + doc.id);
+          failedCount++;
+          const fallbackData = {
+            ageGroups: Array.isArray(data.ageGroups) && data.ageGroups.length > 0 ? data.ageGroups : ['adults'],
+            categories: Array.isArray(data.categories) && data.categories.length > 0 ? data.categories : ['Gåtor'],
+            targetAudience: data.targetAudience || 'swedish',
+            migrated: true,
+            migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+            migrationVersion: 'v2-reprocess',
+            migrationProvider: 'fallback',
+            migrationError: 'categorization_failed',
+            difficulty: admin.firestore.FieldValue.delete(),
+            category: admin.firestore.FieldValue.delete(),
+            migrationSvgProvider: admin.firestore.FieldValue.delete()
+          };
+                if (data.audience !== undefined) {
+                    fallbackData.audience = admin.firestore.FieldValue.delete();
+                }
+                if (data.migrationReasoning) {
+                    fallbackData.migrationReasoning = admin.firestore.FieldValue.delete();
+                }
+
+                updates.push({
+                    ref: doc.ref,
+                    data: fallbackData
+                });
+
+                processedCount++;
+                await safeUpdateProgress({
+                    phase: 'Migrerar & illustrerar',
+                    completed: processedCount,
+                    total: snapshot.size,
+                    details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade, ${failedCount} misslyckades`
+                });
+
+                continue;
+            }
+
+            const { result: categorization, provider: categorizeProvider } = categorizationOutcome;
+
+            const updateData = {
+                ageGroups: categorization.ageGroups,
+                categories: categorization.categories,
+                targetAudience: data.targetAudience || 'swedish',
+                migrated: true,
+                migratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                migrationVersion: 'v2-reprocess',
+                migrationProvider: categorizeProvider.name,
+                difficulty: admin.firestore.FieldValue.delete(),
+                category: admin.firestore.FieldValue.delete()
+            };
+
+            if (data.audience !== undefined) {
+                updateData.audience = admin.firestore.FieldValue.delete();
+            }
+
+            if (categorization.reasoning) {
+                updateData.migrationReasoning = categorization.reasoning;
+            } else if (data.migrationReasoning) {
+                updateData.migrationReasoning = admin.firestore.FieldValue.delete();
+            }
+
+        const svgOutcome = await runSvgGenerationWithProviders(questionPayload, migrationProviders, doc.id, categorizeProvider);
+        if (svgOutcome) {
+          updateData.illustration = svgOutcome.svg;
+          updateData.migrationSvgProvider = svgOutcome.provider.name;
+          svgGeneratedCount++;
+        } else {
+          svgFailedCount++;
+          logger.warn('All migration providers failed to generate SVG for question ' + doc.id);
+          if (!data.illustration) {
+            updateData.illustration = admin.firestore.FieldValue.delete();
+          }
+        }
+
+            updates.push({
+                ref: doc.ref,
+                data: updateData
+            });
+
+            migratedCount++;
+            processedCount++;
+            await safeUpdateProgress({
+                phase: 'Migrerar & illustrerar',
+                completed: processedCount,
+                total: snapshot.size,
+                details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade, ${failedCount} misslyckades`
+            });
+        }
+        await safeUpdateProgress({
+            phase: 'Sparar ändringar',
+            completed: snapshot.size,
+            total: snapshot.size,
+            details: `Sparar ${updates.length} uppdateringar till databasen...`
+        });
+
+        // Applicera alla uppdateringar i batchar
+        let currentBatch = db.batch();
+        let batchCount = 0;
+        const batchOps = [];
+
+        for (const update of updates) {
+            currentBatch.update(update.ref, update.data);
+            batchCount++;
+
+            if (batchCount >= 400) {
+                batchOps.push(currentBatch.commit());
+                currentBatch = db.batch();
+                batchCount = 0;
+            }
+        }
+
+        if (batchCount > 0) {
+            batchOps.push(currentBatch.commit());
+        }
+
+        await Promise.all(batchOps);
+
+        logger.info('Queued AI migration import summary', {
+            taskId,
+            migrated: migratedCount,
+            svgGenerated: svgGeneratedCount,
+            svgFailed: svgFailedCount,
+            previouslyMigrated: previouslyMigratedCount,
+            failed: failedCount,
+            total: snapshot.size,
+            providers: migrationProviders.map((provider) => provider.name)
+        });
+
+        const result = {
+            migrated: migratedCount,
+            svgGenerated: svgGeneratedCount,
+            svgFailed: svgFailedCount,
+            previouslyMigrated: previouslyMigratedCount,
+            failed: failedCount,
+            total: snapshot.size,
+            details: {
+                method: 'AI-powered categorization and SVG illustration using Claude',
+                ageGroupsIdentified: 'AI analyzed each question to determine suitable age groups',
+                categoriesIdentified: 'AI analyzed each question to determine relevant categories',
+                svgIllustrations: 'AI generated SVG illustrations for each question',
+                targetAudience: 'Set to swedish for all questions',
+                removedFields: 'difficulty, category, audience',
+                providers: migrationProviders.map((provider) => provider.name)
+            }
+        };
+
+        await taskDocRef.update({
+            status: 'completed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            result,
+            progress: {
+                phase: 'Klar',
+                completed: snapshot.size,
+                total: snapshot.size,
+                details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade (${svgFailedCount} illustrationer misslyckades, ${previouslyMigratedCount} tidigare migrerade, ${failedCount} misslyckades)`,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+        logger.info(`Successfully completed AI migration task ${taskId}`);
+
+    } catch (error) {
+        logger.error(`Failed AI migration task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: error.message,
+            progress: {
+                phase: 'Misslyckades',
+                completed: 0,
+                total: 0,
+                details: error.message,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+    }
+});
+
+/**
+ * Stop a single background task
+ * POST body: { taskId: string }
+ */
+exports.stopTask = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 60,
+}, async (req, res) => {
+  cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { taskId } = req.body;
+
+      if (!taskId) {
+        return res.status(400).json({ error: 'taskId is required' });
+      }
+
+      const db = admin.firestore();
+      const taskRef = db.collection('backgroundTasks').doc(taskId);
+      const taskDoc = await taskRef.get();
+
+      if (!taskDoc.exists) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const taskData = taskDoc.data();
+      const currentStatus = taskData.status;
+
+      // Only allow stopping tasks that are running
+      if (!['processing', 'queued', 'pending'].includes(currentStatus)) {
+        return res.status(400).json({
+          error: `Cannot stop task with status: ${currentStatus}`,
+          message: 'Only processing, queued, or pending tasks can be stopped'
+        });
+      }
+
+      await taskRef.update({
+        status: 'cancelled',
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        error: 'Task manually cancelled by user'
+      });
+
+      logger.info('Task stopped', { taskId });
+
+      res.status(200).json({
+        success: true,
+        message: 'Task stopped successfully',
+        taskId
+      });
+    } catch (error) {
+      logger.error('Error stopping task', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to stop task',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Delete a single background task
+ * POST body: { taskId: string }
+ */
+exports.deleteTask = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 60,
+}, async (req, res) => {
+  cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { taskId } = req.body;
+
+      if (!taskId) {
+        return res.status(400).json({ error: 'taskId is required' });
+      }
+
+      const db = admin.firestore();
+      const taskRef = db.collection('backgroundTasks').doc(taskId);
+      const taskDoc = await taskRef.get();
+
+      if (!taskDoc.exists) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      await taskRef.delete();
+
+      logger.info('Task deleted', { taskId });
+
+      res.status(200).json({
+        success: true,
+        message: 'Task deleted successfully',
+        taskId
+      });
+    } catch (error) {
+      logger.error('Error deleting task', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to delete task',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Stop multiple background tasks
+ * POST body: { taskIds: string[] }
+ */
+exports.bulkStopTasks = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300,
+}, async (req, res) => {
+  cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { taskIds } = req.body;
+
+      if (!Array.isArray(taskIds) || taskIds.length === 0) {
+        return res.status(400).json({ error: 'taskIds must be a non-empty array' });
+      }
+
+      const db = admin.firestore();
+      let stoppedCount = 0;
+      const batchOps = [];
+      let currentBatch = db.batch();
+      let batchCount = 0;
+
+      for (const taskId of taskIds) {
+        const taskRef = db.collection('backgroundTasks').doc(taskId);
+        const taskDoc = await taskRef.get();
+
+        if (taskDoc.exists) {
+          const taskData = taskDoc.data();
+          const currentStatus = taskData.status;
+
+          // Only stop tasks that are running
+          if (['processing', 'queued', 'pending'].includes(currentStatus)) {
+            currentBatch.update(taskRef, {
+              status: 'cancelled',
+              finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+              error: 'Task manually cancelled by user'
+            });
+            stoppedCount++;
+            batchCount++;
+
+            if (batchCount >= 400) {
+              batchOps.push(currentBatch.commit());
+              currentBatch = db.batch();
+              batchCount = 0;
+            }
+          }
+        }
+      }
+
+      // Commit remaining batch
+      if (batchCount > 0) {
+        batchOps.push(currentBatch.commit());
+      }
+
+      await Promise.all(batchOps);
+
+      logger.info('Bulk stop tasks completed', { stopped: stoppedCount, requested: taskIds.length });
+
+      res.status(200).json({
+        success: true,
+        message: `Stopped ${stoppedCount} tasks`,
+        stopped: stoppedCount,
+        requested: taskIds.length
+      });
+    } catch (error) {
+      logger.error('Error bulk stopping tasks', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to bulk stop tasks',
+        message: error.message
+      });
+    }
+  });
+});
+
+/**
+ * Delete multiple background tasks
+ * POST body: { taskIds: string[] }
+ */
+exports.bulkDeleteTasks = onRequest({
+  region: "europe-west1",
+  timeoutSeconds: 300,
+}, async (req, res) => {
+  cors(req, res, async () => {
+    if (!ensurePost(req, res)) {
+      return;
+    }
+
+    try {
+      const { taskIds } = req.body;
+
+      if (!Array.isArray(taskIds) || taskIds.length === 0) {
+        return res.status(400).json({ error: 'taskIds must be a non-empty array' });
+      }
+
+      const db = admin.firestore();
+      let deletedCount = 0;
+      const batchOps = [];
+      let currentBatch = db.batch();
+      let batchCount = 0;
+
+      for (const taskId of taskIds) {
+        const taskRef = db.collection('backgroundTasks').doc(taskId);
+        currentBatch.delete(taskRef);
+        deletedCount++;
+        batchCount++;
+
+        if (batchCount >= 400) {
+          batchOps.push(currentBatch.commit());
+          currentBatch = db.batch();
+          batchCount = 0;
+        }
+      }
+
+      // Commit remaining batch
+      if (batchCount > 0) {
+        batchOps.push(currentBatch.commit());
+      }
+
+      await Promise.all(batchOps);
+
+      logger.info('Bulk delete tasks completed', { deleted: deletedCount, requested: taskIds.length });
+
+      res.status(200).json({
+        success: true,
+        message: `Deleted ${deletedCount} tasks`,
+        deleted: deletedCount,
+        requested: taskIds.length
+      });
+    } catch (error) {
+      logger.error('Error bulk deleting tasks', { error: error.message });
+      res.status(500).json({
+        error: 'Failed to bulk delete tasks',
         message: error.message
       });
     }

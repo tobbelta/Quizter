@@ -2,7 +2,7 @@
  * Panel för AI-baserad validering av frågor
  * Kontrollerar att rätt svar verkligen är rätt och att inga andra alternativ också är korrekta
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { questionService } from '../../services/questionService';
 import { aiService } from '../../services/aiService';
 import { taskService } from '../../services/taskService';
@@ -11,6 +11,10 @@ import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 const AIValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [providerStatus, setProviderStatus] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState(null);
+  const [includeAllQuestions, setIncludeAllQuestions] = useState(false);
   const { registerTask } = useBackgroundTasks();
   const isMountedRef = useRef(true);
 
@@ -20,57 +24,162 @@ const AIValidationPanel = () => {
     };
   }, []);
 
+  const loadProviderStatus = useCallback(async () => {
+    setStatusLoading(true);
+    setStatusError(null);
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (isMountedRef.current) {
+        setProviderStatus(data.providers || null);
+      }
+    } catch (error) {
+      if (isMountedRef.current) {
+        setStatusError(error.message || 'Okänt fel');
+        setProviderStatus(null);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setStatusLoading(false);
+      }
+    }
+  }, []);
+
   const runAIValidation = async () => {
     setLoading(true);
+    setValidationResults(null);
     try {
-      const allQuestions = questionService.listAll();
-      const questionsToValidate = allQuestions.slice(0, 10);
-      const results = [];
+      const allQuestions = await questionService.loadAllQuestions();
 
-      for (const question of questionsToValidate) {
+      const unvalidatedQuestions = allQuestions.filter(
+        (q) => !q.aiValidated && !q.manuallyApproved && !q.manuallyRejected && !q.reported
+      );
+
+      const questionsToValidate = includeAllQuestions ? allQuestions : unvalidatedQuestions;
+
+      if (questionsToValidate.length === 0) {
+        alert('✅ Det finns inga frågor att validera just nu.');
+        return;
+      }
+
+      console.log(
+        `[AIValidationPanel] Startar batch-validering av ${questionsToValidate.length} frågor (inkluderar tidigare validerade: ${includeAllQuestions})`
+      );
+
+      // Bygg batch-payload
+      const batchQuestions = questionsToValidate.map(question => {
         const langData = question.languages?.sv || {
           text: question.text,
           options: question.options,
           explanation: question.explanation,
         };
 
-        try {
-          const { taskId } = await aiService.startAIValidation({
-            question: langData.text,
-            options: langData.options,
+        return {
+          id: question.id,
+          question: langData.text,
+          options: langData.options,
+          correctOption: question.correctOption,
+          explanation: langData.explanation,
+        };
+      });
+
+      // Starta ETT batch-jobb
+      const { taskId } = await aiService.startBatchAIValidation({ questions: batchQuestions });
+
+      console.log(`[AIValidationPanel] Batch-jobb startad med taskId ${taskId}`);
+
+      // Registrera bakgrundsjobb
+      if (taskId) {
+        registerTask(taskId, {
+          taskType: 'batchvalidation',
+          label: 'AI-validering (batch)',
+          description: includeAllQuestions
+            ? `Validerar om ${batchQuestions.length} frågor`
+            : `Validerar ${batchQuestions.length} frågor`,
+          createdAt: new Date(),
+        });
+      }
+
+      if (!taskId) {
+        throw new Error('Bakgrundsjobbet saknar taskId.');
+      }
+
+      // Vänta på att batch-jobbet blir klart
+      console.log(`[AIValidationPanel] Väntar på att batch-jobbet ${taskId} ska slutföras...`);
+      const taskData = await taskService.waitForCompletion(taskId);
+      console.log(`[AIValidationPanel] Batch-jobb klart:`, taskData);
+
+      const batchResult = taskData?.result || {};
+      const validationResults = batchResult.results || [];
+
+      console.log(`[AIValidationPanel] Fick ${validationResults.length} valideringsresultat från backend`);
+
+      // Bygg validationUpdates och results från batch-resultatet
+      const results = [];
+      const validationUpdates = [];
+
+      for (const result of validationResults) {
+        const question = questionsToValidate.find(q => q.id === result.questionId);
+        if (!question) continue;
+
+        const langData = question.languages?.sv || {
+          text: question.text,
+          options: question.options,
+          explanation: question.explanation,
+        };
+
+        const validationResult = {
+          valid: result.valid,
+          issues: Array.isArray(result.issues) ? result.issues : [],
+          suggestedCorrectOption: result.suggestedCorrectOption,
+          reasoning: result.reasoning || '',
+          providerResults: result.providerResults,
+          providersChecked: result.providersChecked,
+        };
+
+        validationUpdates.push({
+          questionId: result.questionId,
+          valid: validationResult.valid,
+          validationData: validationResult
+        });
+
+        // Samla ogiltiga frågor för UI-visning
+        if (!result.valid) {
+          results.push({
+            questionId: result.questionId,
+            questionText: langData.text,
+            issues: result.issues || [],
             correctOption: question.correctOption,
-            explanation: langData.explanation,
+            suggestedCorrectOption: result.suggestedCorrectOption,
           });
-
-          if (taskId) {
-            const preview = (langData.text || '').trim().slice(0, 60);
-            registerTask(taskId, {
-              taskType: 'validation',
-              label: 'AI-validering',
-              description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
-              createdAt: new Date(),
-            });
-          }
-
-          if (!taskId) {
-            throw new Error('Bakgrundsjobbet saknar taskId.');
-          }
-
-          const taskData = await taskService.waitForCompletion(taskId);
-          const data = taskData?.result || {};
-
-          if (data.valid === false) {
-            results.push({
-              questionId: question.id,
-              questionText: langData.text,
-              issues: data.issues || [],
-              correctOption: question.correctOption,
-              suggestedCorrectOption: data.suggestedCorrectOption,
-            });
-          }
-        } catch (error) {
-          console.error(`Fel vid AI-validering av ${question.id}:`, error);
         }
+      }
+
+      console.log(`[AIValidationPanel] Bearbetning klar, totalt ${validationUpdates.length} valideringar gjorda`);
+
+      // KRITISKT: Spara alla valideringsresultat till Firestore
+      if (validationUpdates.length > 0) {
+        console.log(`[AIValidationPanel] Sparar ${validationUpdates.length} valideringsresultat till Firestore...`);
+        console.log('[AIValidationPanel] Valideringsuppdateringar:', JSON.stringify(validationUpdates.map(u => ({
+          id: u.questionId,
+          valid: u.valid,
+          issues: u.validationData.issues
+        })), null, 2));
+
+        try {
+          await questionService.markManyAsValidated(validationUpdates);
+          console.log('[AIValidationPanel] ✅ Alla valideringsresultat sparade till Firestore!');
+        } catch (error) {
+          console.error('[AIValidationPanel] ❌ Fel vid sparande till Firestore:', error);
+          throw error;
+        }
+      } else {
+        console.warn('[AIValidationPanel] ⚠️ Inga valideringsuppdateringar att spara!');
       }
 
       if (isMountedRef.current) {
@@ -93,27 +202,109 @@ const AIValidationPanel = () => {
 
   return (
     <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold text-white">AI-validering av frågor</h2>
           <p className="text-sm text-gray-400 mt-1">
-            Validerar med alla tillgängliga AI-providers (Anthropic, Gemini)
+            Validerar med alla tillgängliga AI-providers (Anthropic, Gemini, OpenAI)
           </p>
         </div>
-        <button
-          onClick={runAIValidation}
-          disabled={loading}
-          className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400"
-        >
-          {loading ? '🤖 Validerar...' : '🤖 AI-Validera frågor'}
-        </button>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={includeAllQuestions}
+              onChange={(event) => setIncludeAllQuestions(event.target.checked)}
+              disabled={loading}
+              className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-purple-500 focus:ring-purple-400"
+            />
+            Validera om även redan kontrollerade frågor
+          </label>
+          <button
+            onClick={runAIValidation}
+            disabled={loading}
+            className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400"
+          >
+            {loading ? '🤖 Validerar...' : includeAllQuestions ? '🤖 Validera om alla' : '🤖 AI-Validera frågor'}
+          </button>
+        </div>
       </div>
 
       {/* Varning om kostnad */}
       <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
         <div className="text-sm text-amber-300">
-          ⚠️ <strong>Obs:</strong> AI-validering kostar pengar (API-anrop). Validerar för närvarande 10 frågor åt gången.
+          ⚠️ <strong>Obs:</strong> AI-validering kostar pengar (API-anrop). Validerar alla ovaliderade frågor i ett batch-jobb.
         </div>
+      </div>
+
+      {/* Providerstatus */}
+      <div className="mb-6 bg-slate-900 rounded-lg border border-slate-700 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-lg font-semibold text-white">AI-providerstatus</h3>
+            <p className="text-xs text-gray-400 mt-1">Kontrollerar Anthropic, Gemini och OpenAI</p>
+          </div>
+          <button
+            onClick={loadProviderStatus}
+            disabled={statusLoading}
+            className="text-xs px-3 py-1 border border-cyan-500/40 text-cyan-200 rounded hover:bg-cyan-500/10 disabled:opacity-50"
+          >
+            ↻ Uppdatera
+          </button>
+        </div>
+
+        {statusLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-400" />
+            Kontrollerar providers...
+          </div>
+        ) : statusError ? (
+          <div className="text-sm text-red-300">
+            Kunde inte läsa status: {statusError}
+          </div>
+        ) : providerStatus ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {Object.entries(providerStatus).map(([provider, status]) => {
+              const available = status.available;
+              const configured = status.configured;
+              const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+              return (
+                <div
+                  key={provider}
+                  className={`rounded-lg p-3 text-sm border ${
+                    available
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-red-500/40 bg-red-500/10 text-red-200'
+                  }`}
+                >
+                  <div className="font-semibold">{providerLabel}</div>
+                  <div className="text-xs mt-1">
+                    {configured ? (available ? 'Tillgänglig' : 'Ej tillgänglig') : 'Inte konfigurerad'}
+                  </div>
+                  {status.model && (
+                    <div className="text-[11px] text-gray-200/80 mt-1">
+                      Modell: {status.model}
+                    </div>
+                  )}
+                  {!available && status.error && (
+                    <div className="text-[11px] text-red-200/90 mt-2">
+                      Fel: {status.error}
+                    </div>
+                  )}
+                  {status.errorStatus && (
+                    <div className="text-[11px] text-red-200/70 mt-1">
+                      Statuskod: {status.errorStatus}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-400">
+            Ingen statusinformation tillgänglig.
+          </div>
+        )}
       </div>
 
       {/* Resultat */}

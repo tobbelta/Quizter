@@ -1,48 +1,71 @@
+const VALID_AGE_GROUPS = ["children", "youth", "adults"];
+const LEGACY_DIFFICULTY_MAP = {
+  easy: ["children"],
+  medium: ["youth"],
+  hard: ["adults"],
+  kid: ["children"],
+  family: ["children", "adults"],
+  adult: ["adults"],
+};
+const LEGACY_AUDIENCE_MAP = {
+  barn: ["children"],
+  kid: ["children"],
+  children: ["children"],
+  ungdom: ["youth"],
+  youth: ["youth"],
+  vuxen: ["adults"],
+  adult: ["adults"],
+  familj: ["children", "adults"],
+  family: ["children", "adults"],
+};
+const VALID_TARGET_AUDIENCES = [
+  "swedish",
+  "english",
+  "international",
+  "global",
+  "german",
+  "norwegian",
+  "danish",
+];
+const MIN_TEXT_LENGTH = 10;
+const REQUIRED_OPTION_COUNT = 4;
+
 /**
- * Validerar en enskild fråga
- * @param {Object} question Frågan som ska valideras
- * @param {string} language Språk att validera (sv eller en)
+ * Validerar en enskild fraga
+ * @param {Object} question Fragan som ska valideras
+ * @param {string} language Sprak att validera (sv eller en)
  * @returns {{valid: boolean, errors: string[]}}
  */
 function validateQuestion(question, language = "sv") {
   const errors = [];
 
-  let langData;
-  if (question.languages) {
-    langData = question.languages[language];
-    if (!langData) {
-      errors.push(`Frågan saknar ${language === "sv" ? "svensk" : "engelsk"} översättning`);
-      return {valid: false, errors};
-    }
-  } else {
-    langData = {
-      text: question.text,
-      options: question.options,
-      explanation: question.explanation,
-    };
+  const langData = resolveLanguageBlock(question, language);
+  if (!langData) {
+    errors.push(`Fragan saknar ${language === "sv" ? "svensk" : "engelsk"} oversattning`);
+    return { valid: false, errors };
   }
 
-  const {text, options, explanation} = langData;
+  const { text, options, explanation } = langData;
   const correctOption = question.correctOption;
 
-  if (!text || text.trim().length < 10) {
-    errors.push("Frågetexten måste vara minst 10 tecken lång");
+  if (!text || text.trim().length < MIN_TEXT_LENGTH) {
+    errors.push("Fragetexten maste vara minst 10 tecken lang");
   }
 
-  if (!options || !Array.isArray(options)) {
-    errors.push("Frågan måste ha svarsalternativ");
-  } else if (options.length !== 4) {
-    errors.push(`Frågan måste ha exakt 4 svarsalternativ (har ${options.length})`);
+  if (!Array.isArray(options)) {
+    errors.push("Fragan maste ha svarsalternativ");
+  } else if (options.length !== REQUIRED_OPTION_COUNT) {
+    errors.push(`Fragan maste ha exakt 4 svarsalternativ (har ${options.length})`);
   } else {
     options.forEach((option, index) => {
       if (!option || option.trim().length === 0) {
-        errors.push(`Alternativ ${index + 1} är tomt`);
+        errors.push(`Alternativ ${index + 1} ar tomt`);
       }
     });
 
     const uniqueOptions = new Set(options.map((option) => option.trim().toLowerCase()));
     if (uniqueOptions.size !== options.length) {
-      errors.push("Flera svarsalternativ är identiska");
+      errors.push("Flera svarsalternativ ar identiska");
     }
 
     const similarOptions = findSimilarOptions(options);
@@ -52,38 +75,36 @@ function validateQuestion(question, language = "sv") {
   }
 
   if (typeof correctOption !== "number") {
-    errors.push("Frågan måste ha ett korrekt svar angivet (correctOption)");
+    errors.push("Fragan maste ha ett korrekt svar angivet (correctOption)");
   } else if (correctOption < 0 || correctOption >= (options?.length || 0)) {
-    errors.push(`Korrekt svar (${correctOption}) är utanför giltigt intervall (0-${(options?.length || 1) - 1})`);
+    errors.push(`Korrekt svar (${correctOption}) ar utanfor giltigt intervall (0-${(options?.length || 1) - 1})`);
   }
 
-  if (!explanation || explanation.trim().length < 10) {
-    errors.push("Förklaringen måste vara minst 10 tecken lång");
+  if (!explanation || explanation.trim().length < MIN_TEXT_LENGTH) {
+    errors.push("Forklaringen maste vara minst 10 tecken lang");
   }
 
-  const validDifficulties = ["easy", "medium", "hard", "kid", "family", "adult"];
-  if (!question.difficulty || !validDifficulties.includes(question.difficulty)) {
-    errors.push(`Frågan måste ha en giltig svårighetsgrad (${validDifficulties.join("/")})`);
+  const ageGroups = resolveAgeGroups(question);
+  if (ageGroups.length === 0) {
+    errors.push("Fragan maste ha minst en ageGroup (children/youth/adults)");
   }
 
-  const validAudiences = ["barn", "vuxen", "familj", "kid", "family", "adult"];
-  if (!question.audience && !validAudiences.includes(question.difficulty)) {
-    if (!question.difficulty || !["kid", "family", "adult"].includes(question.difficulty)) {
-      errors.push(`Frågan måste ha en giltig målgrupp (${validAudiences.join("/")})`);
-    }
+  const targetAudience = resolveTargetAudience(question);
+  if (targetAudience && !VALID_TARGET_AUDIENCES.includes(targetAudience)) {
+    errors.push(`Fragan maste ha en giltig targetAudience (${VALID_TARGET_AUDIENCES.join("/")})`);
   }
 
-  if (!question.category &&
-    (!question.categories || !Array.isArray(question.categories) || question.categories.length === 0)) {
-    errors.push("Frågan måste ha minst en kategori");
+  const categories = resolveCategories(question);
+  if (categories.length === 0) {
+    errors.push("Fragan maste ha minst en kategori");
   }
 
   if (question.languages) {
     if (!question.languages.sv) {
-      errors.push("Frågan saknar svensk översättning");
+      errors.push("Fragan saknar svensk oversattning");
     }
     if (!question.languages.en) {
-      errors.push("Frågan saknar engelsk översättning");
+      errors.push("Fragan saknar engelsk oversattning");
     }
   }
 
@@ -91,6 +112,75 @@ function validateQuestion(question, language = "sv") {
     valid: errors.length === 0,
     errors,
   };
+}
+
+function resolveLanguageBlock(question, language) {
+  if (question.languages) {
+    return question.languages[language];
+  }
+
+  return {
+    text: question.text,
+    options: question.options,
+    explanation: question.explanation,
+  };
+}
+
+function resolveAgeGroups(question) {
+  const groups = new Set();
+
+  if (Array.isArray(question.ageGroups)) {
+    question.ageGroups.forEach((value) => {
+      if (typeof value !== "string") return;
+      const normalized = value.toLowerCase().trim();
+      if (VALID_AGE_GROUPS.includes(normalized)) {
+        groups.add(normalized);
+      }
+    });
+  }
+
+  const difficulty = typeof question.difficulty === "string"
+    ? question.difficulty.toLowerCase().trim()
+    : "";
+  if (LEGACY_DIFFICULTY_MAP[difficulty]) {
+    LEGACY_DIFFICULTY_MAP[difficulty].forEach((value) => groups.add(value));
+  }
+
+  const audience = typeof question.audience === "string"
+    ? question.audience.toLowerCase().trim()
+    : "";
+  if (LEGACY_AUDIENCE_MAP[audience]) {
+    LEGACY_AUDIENCE_MAP[audience].forEach((value) => groups.add(value));
+  }
+
+  return Array.from(groups);
+}
+
+function resolveTargetAudience(question) {
+  if (typeof question.targetAudience === "string" && question.targetAudience.trim().length > 0) {
+    return question.targetAudience.toLowerCase().trim();
+  }
+
+  if (typeof question.audience === "string" && question.audience.trim().length > 0) {
+    return question.audience.toLowerCase().trim();
+  }
+
+  return "";
+}
+
+function resolveCategories(question) {
+  if (Array.isArray(question.categories)) {
+    return question.categories
+      .filter((value) => typeof value === "string")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  if (typeof question.category === "string" && question.category.trim().length > 0) {
+    return [question.category.trim()];
+  }
+
+  return [];
 }
 
 function findSimilarOptions(options) {
@@ -146,10 +236,10 @@ function levenshteinDistance(str1, str2) {
 }
 
 /**
- * Hittar potentiella dubletter i frågebanken
- * @param {Array} questions Lista med frågor
- * @param {string} language Språk att jämföra
- * @param {number} threshold Likhetströskel (0-1, default 0.85)
+ * Hittar potentiella dubletter i fragebanken
+ * @param {Array} questions Lista med fragor
+ * @param {string} language Sprak att jamfora
+ * @param {number} threshold Likhetstraskel (0-1, default 0.85)
  * @returns {Array<{question1: Object, question2: Object, similarity: number}>}
  */
 function findDuplicates(questions, language = "sv", threshold = 0.85) {
@@ -189,9 +279,9 @@ function findDuplicates(questions, language = "sv", threshold = 0.85) {
 }
 
 /**
- * Validerar en batch av frågor
- * @param {Array} questions Lista med frågor
- * @param {string} language Språk att validera
+ * Validerar en batch av fragor
+ * @param {Array} questions Lista med fragor
+ * @param {string} language Sprak att validera
  * @returns {{total: number, valid: number, invalid: number, results: Array}}
  */
 function validateQuestions(questions, language = "sv") {

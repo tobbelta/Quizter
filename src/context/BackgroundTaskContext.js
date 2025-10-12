@@ -21,6 +21,8 @@ const BackgroundTaskContext = createContext({
   markTaskAsSeen: () => {},
   markAllTasksAsSeen: () => {},
   allTasks: [],
+  refreshUserTasks: () => {},
+  refreshAllTasks: () => {},
 });
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -55,6 +57,14 @@ export const BackgroundTaskProvider = ({ children }) => {
   const trackedTasksRef = useRef(new Map());
   const acknowledgedTaskIdsRef = useRef(new Set());
   const storageKeysRef = useRef({ tracked: null, acknowledged: null });
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Helpers to persist data in localStorage
   const persistTrackedTasks = useCallback(() => {
@@ -105,12 +115,111 @@ export const BackgroundTaskProvider = ({ children }) => {
     setTrackedEntries([]);
   }, []);
 
+const handleTaskSnapshot = useCallback((tasks) => {
+  if (!isMountedRef.current) return;
+
+  setUserTasksSnapshot(tasks);
+
+  const statusMap = {};
+  tasks.forEach((task) => {
+    statusMap[task.id] = task.status;
+  });
+
+  if (!initializedRef.current) {
+    statusHistoryRef.current = statusMap;
+    initializedRef.current = true;
+    return;
+  }
+
+  const nextUnseen = new Set(unseenTaskIdsRef.current);
+
+  tasks.forEach((task) => {
+    const previousStatus = statusHistoryRef.current[task.id];
+    const statusChanged = task.status !== previousStatus;
+    const isTracked = trackedTasksRef.current.has(task.id);
+    const isFinal = FINAL_STATUSES.has(task.status);
+    statusHistoryRef.current[task.id] = task.status;
+
+    if (isTracked && isFinal && statusChanged) {
+      if (!acknowledgedTaskIdsRef.current.has(task.id)) {
+        nextUnseen.add(task.id);
+      }
+
+      if (isSuperUser) {
+        const notificationKey = `${task.id}:${task.status}`;
+        if (!notifiedStatusesRef.current.has(notificationKey)) {
+          const meta = trackedTasksRef.current.get(task.id) || {};
+          const variant = STATUS_VARIANT[task.status] || 'info';
+          const baseTitle = meta.label || (task.taskType === 'generation' ? 'AI-generering' : 'AI-validering');
+          const messageParts = [];
+          if (task.status === 'completed') {
+            messageParts.push('Bakgrundsjobbet är klart.');
+            if (task.result?.count != null) {
+              messageParts.push(`Resultat: ${task.result.count}.`);
+            }
+          }
+          if (task.status === 'failed') {
+            messageParts.push('Bakgrundsjobbet misslyckades.');
+            if (task.error) {
+              messageParts.push(task.error);
+            }
+          }
+          if (task.status === 'cancelled') {
+            messageParts.push('Bakgrundsjobbet avbröts.');
+          }
+
+          pushToast({
+            title: baseTitle,
+            message: messageParts.join('\n'),
+            variant,
+          });
+          notifiedStatusesRef.current.add(notificationKey);
+        }
+      }
+    }
+  });
+
+  Array.from(nextUnseen).forEach((taskId) => {
+    if (!trackedTasksRef.current.has(taskId) || acknowledgedTaskIdsRef.current.has(taskId)) {
+      nextUnseen.delete(taskId);
+    }
+  });
+
+  unseenTaskIdsRef.current = nextUnseen;
+  setUnseenTaskIdsState(new Set(nextUnseen));
+  statusHistoryRef.current = statusMap;
+}, [isSuperUser, pushToast]);
+
+const refreshUserTasks = useCallback(async () => {
+  if (!currentUser || currentUser.isAnonymous) return;
+  try {
+    const tasks = await backgroundTaskService.fetchUserTasks(currentUser.uid);
+    handleTaskSnapshot(tasks);
+  } catch (error) {
+    console.error('[BackgroundTaskContext] Failed to fetch user background tasks:', error);
+  }
+}, [currentUser, handleTaskSnapshot]);
+
+const refreshAllTasks = useCallback(async () => {
+  if (!isSuperUser) return;
+  try {
+    const tasks = await backgroundTaskService.fetchAllTasks();
+    if (!isMountedRef.current) return;
+    setAllTasks(tasks);
+  } catch (error) {
+    console.error('[BackgroundTaskContext] Failed to fetch global background tasks:', error);
+  }
+}, [isSuperUser]);
+
+
   // Handle auth changes
   useEffect(() => {
     if (!currentUser || currentUser.isAnonymous) {
       resetState();
-      return () => {};
+      return undefined;
     }
+
+    resetState();
 
     const trackedKey = `geoquest:tasks:tracked:${currentUser.uid}`;
     const acknowledgedKey = `geoquest:tasks:ack:${currentUser.uid}`;
@@ -138,103 +247,54 @@ export const BackgroundTaskProvider = ({ children }) => {
     acknowledgedTaskIdsRef.current = new Set(storedAck);
     setTrackedEntries(Array.from(restoredTracked.entries()));
 
+    statusHistoryRef.current = {};
+    initializedRef.current = false;
+
     const unsubscribe = backgroundTaskService.subscribeToUserTasks(
       currentUser.uid,
-      (tasks) => {
-        setUserTasksSnapshot(tasks);
-
-        const statusMap = {};
-        tasks.forEach((task) => {
-          statusMap[task.id] = task.status;
-        });
-
-        if (!initializedRef.current) {
-          statusHistoryRef.current = statusMap;
-          initializedRef.current = true;
+      (tasks, error) => {
+        if (!isMountedRef.current) {
           return;
         }
-
-        const nextUnseen = new Set(unseenTaskIdsRef.current);
-
-        tasks.forEach((task) => {
-          const previousStatus = statusHistoryRef.current[task.id];
-          const statusChanged = task.status !== previousStatus;
-          const isTracked = trackedTasksRef.current.has(task.id);
-          const isFinal = FINAL_STATUSES.has(task.status);
-          statusHistoryRef.current[task.id] = task.status;
-
-          if (isTracked && isFinal && statusChanged) {
-            if (!acknowledgedTaskIdsRef.current.has(task.id)) {
-              nextUnseen.add(task.id);
-            }
-
-            if (isSuperUser) {
-              const notificationKey = `${task.id}:${task.status}`;
-              if (!notifiedStatusesRef.current.has(notificationKey)) {
-                const meta = trackedTasksRef.current.get(task.id) || {};
-                const variant = STATUS_VARIANT[task.status] || 'info';
-                const baseTitle = meta.label || (task.taskType === 'generation' ? 'AI-generering' : 'AI-validering');
-                const messageParts = [];
-                if (task.status === 'completed') {
-                  messageParts.push('Bakgrundsjobbet är klart.');
-                  if (task.result?.count != null) {
-                    messageParts.push(`Resultat: ${task.result.count}.`);
-                  }
-                }
-                if (task.status === 'failed') {
-                  messageParts.push('Bakgrundsjobbet misslyckades.');
-                  if (task.error) {
-                    messageParts.push(task.error);
-                  }
-                }
-                if (task.status === 'cancelled') {
-                  messageParts.push('Bakgrundsjobbet avbröts.');
-                }
-
-                pushToast({
-                  title: baseTitle,
-                  message: messageParts.join('\n'),
-                  variant,
-                });
-                notifiedStatusesRef.current.add(notificationKey);
-              }
-            }
-          }
-        });
-
-        // Clean up unseen set for tasks no longer tracked or acknowledged
-        Array.from(nextUnseen).forEach((taskId) => {
-          if (
-            !trackedTasksRef.current.has(taskId) ||
-            acknowledgedTaskIdsRef.current.has(taskId)
-          ) {
-            nextUnseen.delete(taskId);
-          }
-        });
-
-        unseenTaskIdsRef.current = nextUnseen;
-        setUnseenTaskIdsState(new Set(nextUnseen));
+        if (error) {
+          console.error('[BackgroundTaskContext] Realtime user-task subscription failed:', error);
+          return;
+        }
+        handleTaskSnapshot(tasks);
       },
     );
 
     return () => {
-      unsubscribe();
-      resetState();
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
     };
-  }, [currentUser, isSuperUser, pushToast, resetState]);
+  }, [currentUser, handleTaskSnapshot, resetState]);
 
-  // Superuser: subscribe to global task list
+
+  // Superuser: realtime subscription to global task list
   useEffect(() => {
     if (!isSuperUser) {
       setAllTasks([]);
-      return () => {};
+      return undefined;
     }
 
-    const unsubscribe = backgroundTaskService.subscribeToAllTasks((tasks) => {
+    const unsubscribe = backgroundTaskService.subscribeToAllTasks((tasks, error) => {
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (error) {
+        console.error('[BackgroundTaskContext] Realtime all-task subscription failed:', error);
+        return;
+      }
       setAllTasks(tasks);
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [isSuperUser]);
 
   const registerTask = useCallback((taskId, metadata) => {
@@ -258,7 +318,8 @@ export const BackgroundTaskProvider = ({ children }) => {
     persistTrackedTasks();
     persistAcknowledgedTasks();
     setTrackedEntries(Array.from(trackedTasksRef.current.entries()));
-  }, [clearNotifiedForTask, currentUser, persistAcknowledgedTasks, persistTrackedTasks]);
+    refreshUserTasks();
+  }, [clearNotifiedForTask, currentUser, persistAcknowledgedTasks, persistTrackedTasks, refreshUserTasks]);
 
   const markTaskAsSeen = useCallback((taskId) => {
     if (!taskId || !currentUser || currentUser.isAnonymous) return;
@@ -321,6 +382,7 @@ export const BackgroundTaskProvider = ({ children }) => {
         payload: firestoreTask?.payload,
         result: firestoreTask?.result,
         error: firestoreTask?.error,
+        progress: firestoreTask?.progress,
         statusHistory: firestoreTask?.statusHistory,
         tracked: true,
       };
@@ -339,7 +401,7 @@ export const BackgroundTaskProvider = ({ children }) => {
   const unreadCount = unreadTaskIds.size;
   const hasActiveTrackedTasks = myTrackedTasks.some((task) => !FINAL_STATUSES.has(task.status));
 
-  const contextValue = useMemo(() => ({
+const contextValue = useMemo(() => ({
     myTasks: userTasksSnapshot,
     myTrackedTasks,
     unreadTaskIds,
@@ -349,6 +411,8 @@ export const BackgroundTaskProvider = ({ children }) => {
     markTaskAsSeen,
     markAllTasksAsSeen,
     allTasks,
+    refreshUserTasks,
+    refreshAllTasks,
   }), [
     allTasks,
     hasActiveTrackedTasks,
@@ -356,6 +420,8 @@ export const BackgroundTaskProvider = ({ children }) => {
     markTaskAsSeen,
     myTrackedTasks,
     registerTask,
+    refreshAllTasks,
+    refreshUserTasks,
     unreadCount,
     unreadTaskIds,
     userTasksSnapshot,

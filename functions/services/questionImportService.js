@@ -1,20 +1,92 @@
 const {v4: uuidv4} = require("uuid");
 const {validateQuestions, findDuplicates} = require("./questionValidation");
 
+const DEFAULT_CATEGORY = 'Allmänt';
+const DEFAULT_AGE_GROUP = 'adults';
+
 function ensureLanguageStructure(question) {
-  if (question.languages) {
-    return question;
+  const normalized = question.languages
+    ? { ...question }
+    : {
+        ...question,
+        languages: {
+          sv: {
+            text: question.text,
+            options: question.options,
+            explanation: question.explanation || "",
+          },
+        },
+      };
+
+  const sv = normalized.languages?.sv || {};
+  const en = normalized.languages?.en || {};
+
+  normalized.languages = {
+    sv: {
+      text: sv.text || en.text || "",
+      options: Array.isArray(sv.options) && sv.options.length === 4 ? sv.options : en.options || [],
+      explanation: sv.explanation || en.explanation || "",
+    },
+    en: {
+      text: en.text || sv.text || "",
+      options: Array.isArray(en.options) && en.options.length === 4 ? en.options : sv.options || [],
+      explanation: en.explanation || sv.explanation || "",
+    },
+  };
+
+  // Normalisera kategorier
+  let categories = [];
+  if (Array.isArray(normalized.categories) && normalized.categories.length > 0) {
+    categories = normalized.categories;
+  } else if (typeof normalized.category === "string" && normalized.category.trim().length > 0) {
+    categories = [normalized.category.trim()];
+  }
+  categories = categories
+    .filter((cat) => typeof cat === "string" && cat.trim().length > 0)
+    .map((cat) => cat.trim());
+  if (categories.length === 0) {
+    categories = [DEFAULT_CATEGORY];
+  }
+
+  // Normalisera ageGroups
+  let ageGroups = [];
+  if (Array.isArray(normalized.ageGroups) && normalized.ageGroups.length > 0) {
+    ageGroups = normalized.ageGroups;
+  } else {
+    const audience = normalized.audience || normalized.difficulty;
+    if (audience === "kid" || audience === "children") {
+      ageGroups.push("children");
+    }
+    if (audience === "youth" || audience === "medium") {
+      ageGroups.push("youth");
+    }
+    if (audience === "adult" || audience === "adults" || audience === "difficult") {
+      ageGroups.push("adults");
+    }
+  }
+  if (ageGroups.length === 0) {
+    ageGroups = [DEFAULT_AGE_GROUP];
+  }
+  ageGroups = Array.from(new Set(ageGroups));
+
+  // Normalisera targetAudience
+  const targetAudience = normalized.targetAudience || "swedish";
+
+  // Normalisera correctOption
+  let correctOption = normalized.correctOption;
+  if (typeof correctOption === "string") {
+    const parsed = parseInt(correctOption, 10);
+    if (!Number.isNaN(parsed)) {
+      correctOption = parsed;
+    }
   }
 
   return {
-    ...question,
-    languages: {
-      sv: {
-        text: question.text,
-        options: question.options,
-        explanation: question.explanation || "",
-      },
-    },
+    ...normalized,
+    categories,
+    ageGroups,
+    targetAudience,
+    correctOption,
   };
 }
 

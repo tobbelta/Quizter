@@ -25,9 +25,16 @@ const defaultForm = {
   difficulty: 'family',
   categories: [],
   lengthMeters: 3000,
-  questionCount: 8,
+  questionCount: 9,
   preferGreenAreas: false,
 };
+
+const difficultyOptions = [
+  { value: 'children', label: 'Barn (6-12 år)' },
+  { value: 'youth', label: 'Ungdom (13-17 år)' },
+  { value: 'adults', label: 'Vuxen (18+ år)' },
+  { value: 'family', label: 'Familj (1/3 av varje)' },
+];
 
 const categoryOptions = [
   { value: 'Geografi', label: 'Geografi' },
@@ -262,10 +269,34 @@ const GenerateRunPage = () => {
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    const parsedValue = type === 'checkbox' ? checked : value;
+
+    setForm((prev) => {
+      const next = { ...prev };
+
+      if (name === 'questionCount') {
+        const numericValue = Math.max(3, Number(parsedValue) || 3);
+        if (prev.difficulty === 'family') {
+          const adjusted = Math.max(3, Math.round(numericValue / 3) * 3);
+          next.questionCount = adjusted;
+        } else {
+          next.questionCount = numericValue;
+        }
+        return next;
+      }
+
+      if (name === 'difficulty') {
+        next.difficulty = parsedValue;
+        if (parsedValue === 'family') {
+          const adjusted = Math.max(3, Math.round((prev.questionCount || 9) / 3) * 3);
+          next.questionCount = adjusted;
+        }
+        return next;
+      }
+
+      next[name] = parsedValue;
+      return next;
+    });
   };
 
   const toggleCategory = (category) => {
@@ -540,10 +571,18 @@ const GenerateRunPage = () => {
                 onChange={handleChange}
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
               >
-                <option value="kid">Barn (lätt)</option>
-                <option value="family">Familj (medel)</option>
-                <option value="adult">Vuxen (svår)</option>
+                {difficultyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
+              <p className="mt-1 text-xs text-gray-400">
+                {form.difficulty === 'children' && 'Endast frågor märkta för barn (ageGroups: children).'}
+                {form.difficulty === 'youth' && 'Endast frågor märkta för ungdomar (ageGroups: youth).'}
+                {form.difficulty === 'adults' && 'Endast frågor märkta för vuxna (ageGroups: adults).'}
+                {form.difficulty === 'family' && 'Familjeläge blandar 1/3 barn-, 1/3 ungdoms- och 1/3 vuxenfrågor.'}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -593,10 +632,17 @@ const GenerateRunPage = () => {
                   name="questionCount"
                   min={3}
                   max={20}
+                  step={form.difficulty === 'family' ? 3 : 1}
                   value={form.questionCount}
                   onChange={handleChange}
                   className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
                 />
+                {form.difficulty === 'family' && (
+                  <p className="text-xs text-gray-400">
+                    Familjeläge använder en tredjedel per åldersgrupp. Antal frågor rundas till närmaste
+                    multipel av tre.
+                  </p>
+                )}
               </div>
             </div>
 

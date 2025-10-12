@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 
@@ -55,13 +56,39 @@ const toDuration = (start, end) => {
 };
 
 const SuperUserTasksPage = () => {
-  const { allTasks } = useBackgroundTasks();
+  const navigate = useNavigate();
+  const { allTasks, refreshAllTasks } = useBackgroundTasks();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState(null);
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
+  const [updateCreatedAtLoading, setUpdateCreatedAtLoading] = useState(false);
+  const [updateCreatedAtResult, setUpdateCreatedAtResult] = useState(null);
+  const [selectedTasks, setSelectedTasks] = useState(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  const sortedTasks = useMemo(() => {
+    if (!allTasks || allTasks.length === 0) {
+      return [];
+    }
+
+    return [...allTasks].sort((a, b) => {
+      const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
+      const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
+      return a.id.localeCompare(b.id);
+    });
+  }, [allTasks]);
 
   const filteredTasks = useMemo(() => {
-    return allTasks.filter((task) => {
+    return sortedTasks.filter((task) => {
       if (statusFilter !== 'all' && task.status !== statusFilter) {
         return false;
       }
@@ -87,7 +114,7 @@ const SuperUserTasksPage = () => {
       }
       return true;
     });
-  }, [allTasks, statusFilter, typeFilter, searchTerm]);
+  }, [sortedTasks, statusFilter, typeFilter, searchTerm]);
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -121,6 +148,314 @@ const SuperUserTasksPage = () => {
     }, initial);
   }, [allTasks]);
 
+  const handleCleanup = async () => {
+    if (!window.confirm('Vill du städa hängande bakgrundsjobb (äldre än 30 minuter)?')) {
+      return;
+    }
+
+    setCleanupLoading(true);
+    setCleanupResult(null);
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/cleanupStuckTasks');
+      const data = await response.json();
+
+      if (response.ok) {
+        setCleanupResult({
+          success: true,
+          message: `Städat ${data.cleaned} hängande jobb (${data.processingChecked} processing, ${data.queuedChecked} queued)`
+        });
+      } else {
+        setCleanupResult({
+          success: false,
+          message: data.error || 'Något gick fel'
+        });
+      }
+    } catch (error) {
+      setCleanupResult({
+        success: false,
+        message: `Fel: ${error.message}`
+      });
+    } finally {
+      setCleanupLoading(false);
+      await refreshAllTasks();
+      // Töm resultatet efter 5 sekunder
+      setTimeout(() => setCleanupResult(null), 5000);
+    }
+  };
+
+  const handleDeleteOldTasks = async () => {
+    if (!window.confirm('Vill du ta bort alla gamla klara och misslyckade jobb (äldre än 24 timmar)?\n\nDetta går INTE att ångra!')) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    setDeleteResult(null);
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/deleteOldTasks');
+      const data = await response.json();
+
+      if (response.ok) {
+        setDeleteResult({
+          success: true,
+          message: `Raderat ${data.deleted} gamla jobb (${data.completedDeleted} klara, ${data.failedDeleted} misslyckade)`
+        });
+      } else {
+        setDeleteResult({
+          success: false,
+          message: data.error || 'Något gick fel'
+        });
+      }
+    } catch (error) {
+      setDeleteResult({
+        success: false,
+        message: `Fel: ${error.message}`
+      });
+    } finally {
+      setDeleteLoading(false);
+      await refreshAllTasks();
+      // Töm resultatet efter 5 sekunder
+      setTimeout(() => setDeleteResult(null), 5000);
+    }
+  };
+
+  const handleMigrateQuestions = async () => {
+    if (!window.confirm('⚠️ Vill du migrera alla frågor till nytt schema?\n\n' +
+      'Detta kommer att köras som ett bakgrundsjobb med progress-rapportering.\n\n' +
+      'Migrering uppdaterar:\n' +
+      '• difficulty → ageGroups (array)\n' +
+      '• category → categories (array)\n' +
+      '• Lägger till targetAudience\n\n' +
+      'Redan migrerade frågor hoppas över.')) {
+      return;
+    }
+
+    setMigrateLoading(true);
+    setMigrateResult(null);
+
+    try {
+      // Hämta auth token från Firebase
+      const { auth } = await import('../firebaseClient');
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Du måste vara inloggad');
+      }
+      const idToken = await user.getIdToken();
+
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/queueMigration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMigrateResult({
+          success: true,
+          message: `✅ Migrering köad!\n\nJobb-ID: ${data.taskId}\n\nDu kan följa progress nedan i tabellen.`
+        });
+        // Uppdatera task-listan så att det nya jobbet visas
+        await refreshAllTasks();
+      } else {
+        setMigrateResult({
+          success: false,
+          message: data.error || 'Något gick fel'
+        });
+      }
+    } catch (error) {
+      setMigrateResult({
+        success: false,
+        message: `Fel: ${error.message}`
+      });
+    } finally {
+      setMigrateLoading(false);
+      setTimeout(() => setMigrateResult(null), 10000);
+    }
+  };
+
+  const handleUpdateCreatedAt = async () => {
+    if (!window.confirm('Vill du uppdatera createdAt-fält på alla frågor som saknar det?\n\n' +
+      'Detta lägger till createdAt-fält baserat på generatedAt (om det finns) eller nuvarande tidpunkt.\n\n' +
+      'Frågor som redan har createdAt hoppas över.')) {
+      return;
+    }
+
+    setUpdateCreatedAtLoading(true);
+    setUpdateCreatedAtResult(null);
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt');
+      const data = await response.json();
+
+      if (response.ok) {
+        setUpdateCreatedAtResult({
+          success: true,
+          message: `✅ Uppdatering klar!\n\n` +
+                  `Uppdaterade: ${data.updated} frågor\n` +
+                  `Hade redan fältet: ${data.alreadyHad}\n` +
+                  `Totalt: ${data.total} frågor`
+        });
+      } else {
+        setUpdateCreatedAtResult({
+          success: false,
+          message: data.error || 'Något gick fel'
+        });
+      }
+    } catch (error) {
+      setUpdateCreatedAtResult({
+        success: false,
+        message: `Fel: ${error.message}`
+      });
+    } finally {
+      setUpdateCreatedAtLoading(false);
+      setTimeout(() => setUpdateCreatedAtResult(null), 10000);
+    }
+  };
+
+  const handleToggleTask = (taskId) => {
+    setSelectedTasks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleToggleAll = () => {
+    if (selectedTasks.size === filteredTasks.length) {
+      setSelectedTasks(new Set());
+    } else {
+      setSelectedTasks(new Set(filteredTasks.map(t => t.id)));
+    }
+  };
+
+  const handleStopTask = async (taskId) => {
+    if (!window.confirm('Vill du stoppa detta jobb?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/stopTask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`✅ Jobb stoppat: ${data.message}`);
+      } else {
+        alert(`❌ Kunde inte stoppa jobb: ${data.error || 'Okänt fel'}`);
+      }
+    } catch (error) {
+      alert(`❌ Fel vid stopp: ${error.message}`);
+    } finally {
+      await refreshAllTasks();
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!window.confirm('Vill du radera detta jobb permanent?\n\nDetta går INTE att ångra!')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/deleteTask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`✅ Jobb raderat!`);
+      } else {
+        alert(`❌ Kunde inte radera jobb: ${data.error || 'Okänt fel'}`);
+      }
+    } catch (error) {
+      alert(`❌ Fel vid radering: ${error.message}`);
+    } finally {
+      setBulkActionLoading(false);
+      await refreshAllTasks();
+    }
+  };
+
+  const handleBulkStop = async () => {
+    if (selectedTasks.size === 0) {
+      alert('Välj minst ett jobb att stoppa');
+      return;
+    }
+
+    if (!window.confirm(`Vill du stoppa ${selectedTasks.size} valda jobb?`)) {
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const taskIds = Array.from(selectedTasks);
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/bulkStopTasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`✅ Stoppat ${data.stopped} jobb`);
+        setSelectedTasks(new Set());
+      } else {
+        alert(`❌ Kunde inte stoppa jobb: ${data.error || 'Okänt fel'}`);
+      }
+    } catch (error) {
+      alert(`❌ Fel vid stopp: ${error.message}`);
+    } finally {
+      setBulkActionLoading(false);
+      await refreshAllTasks();
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTasks.size === 0) {
+      alert('Välj minst ett jobb att radera');
+      return;
+    }
+
+    if (!window.confirm(`⚠️ VARNING: Vill du radera ${selectedTasks.size} valda jobb permanent?\n\nDetta går INTE att ångra!`)) {
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      const taskIds = Array.from(selectedTasks);
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/bulkDeleteTasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds })
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        alert(`✅ Raderat ${data.deleted} jobb`);
+        setSelectedTasks(new Set());
+      } else {
+        alert(`❌ Kunde inte radera jobb: ${data.error || 'Okänt fel'}`);
+      }
+    } catch (error) {
+      alert(`❌ Fel vid radering: ${error.message}`);
+    } finally {
+      setBulkActionLoading(false);
+      await refreshAllTasks();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-gray-100">
       <Header title="Bakgrundsjobb" />
@@ -144,8 +479,76 @@ const SuperUserTasksPage = () => {
           </div>
         </section>
 
+        {/* Underhåll-sektion */}
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Developer Tools</h3>
+              <p className="text-sm text-slate-400 mt-1">
+                Städa gamla jobb, migrera frågor eller konfigurera AI-providers
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => navigate('/superuser/ai-providers')}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                ⚙️ AI Providers
+              </button>
+              <button
+                onClick={handleMigrateQuestions}
+                disabled={migrateLoading}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                {migrateLoading ? '🔄 Migrerar...' : '🔄 Migrera schema'}
+              </button>
+              <button
+                onClick={handleUpdateCreatedAt}
+                disabled={updateCreatedAtLoading}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                {updateCreatedAtLoading ? '📅 Uppdaterar...' : '📅 Uppdatera createdAt'}
+              </button>
+              <button
+                onClick={handleCleanup}
+                disabled={cleanupLoading}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                {cleanupLoading ? '🧹 Städar...' : '🧹 Städa hängande'}
+              </button>
+              <button
+                onClick={handleDeleteOldTasks}
+                disabled={deleteLoading}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                {deleteLoading ? '🗑️ Raderar...' : '🗑️ Radera gamla'}
+              </button>
+            </div>
+          </div>
+          {migrateResult && (
+            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${migrateResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
+              {migrateResult.message}
+            </div>
+          )}
+          {updateCreatedAtResult && (
+            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${updateCreatedAtResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
+              {updateCreatedAtResult.message}
+            </div>
+          )}
+          {cleanupResult && (
+            <div className={`mt-4 p-3 rounded-lg ${cleanupResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
+              {cleanupResult.message}
+            </div>
+          )}
+          {deleteResult && (
+            <div className={`mt-3 p-3 rounded-lg ${deleteResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
+              {deleteResult.message}
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div className="flex flex-wrap items-center gap-3">
               <select
                 value={statusFilter}
@@ -167,6 +570,8 @@ const SuperUserTasksPage = () => {
                 <option value="all">Alla typer</option>
                 <option value="generation">Generering</option>
                 <option value="validation">Validering</option>
+                <option value="batchvalidation">Batch-validering</option>
+                <option value="migration">Migrering</option>
               </select>
             </div>
             <input
@@ -178,10 +583,45 @@ const SuperUserTasksPage = () => {
             />
           </div>
 
+          {/* Bulk Actions */}
+          {selectedTasks.size > 0 && (
+            <div className="mb-4 bg-slate-800 rounded-lg p-3 border border-cyan-500/30">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm text-white">
+                  <span className="font-semibold">{selectedTasks.size}</span> jobb valda
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleBulkStop}
+                    disabled={bulkActionLoading}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-sm rounded-md font-semibold transition-colors"
+                  >
+                    ⏸️ Stoppa valda
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={bulkActionLoading}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-sm rounded-md font-semibold transition-colors"
+                  >
+                    🗑️ Radera valda
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-sm border-separate" style={{ borderSpacing: 0 }}>
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
+                  <th className="px-4 py-2 border-b border-slate-800 w-10">
+                    <input
+                      type="checkbox"
+                      checked={filteredTasks.length > 0 && selectedTasks.size === filteredTasks.length}
+                      onChange={handleToggleAll}
+                      className="w-4 h-4 bg-slate-700 border-slate-600 rounded focus:ring-2 focus:ring-cyan-500"
+                    />
+                  </th>
                   <th className="px-4 py-2 border-b border-slate-800">Jobb</th>
                   <th className="px-4 py-2 border-b border-slate-800">Status</th>
                   <th className="px-4 py-2 border-b border-slate-800">Start</th>
@@ -189,12 +629,13 @@ const SuperUserTasksPage = () => {
                   <th className="px-4 py-2 border-b border-slate-800">Tid</th>
                   <th className="px-4 py-2 border-b border-slate-800">Användare</th>
                   <th className="px-4 py-2 border-b border-slate-800">Detaljer</th>
+                  <th className="px-4 py-2 border-b border-slate-800">Åtgärder</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                       Inga jobb matchar dina filter just nu.
                     </td>
                   </tr>
@@ -207,16 +648,107 @@ const SuperUserTasksPage = () => {
                     if (task.payload?.difficulty) payloadDetails.push(`Nivå: ${task.payload.difficulty}`);
                     if (task.payload?.amount) payloadDetails.push(`Antal: ${task.payload.amount}`);
                     if (task.result?.provider) payloadDetails.push(`Provider: ${task.result.provider}`);
-                    if (task.result?.count != null) payloadDetails.push(`Resultat: ${task.result.count}`);
+
+                    // För batch-validering: visa resultat från result-objektet
+                    if (task.taskType === 'batchvalidation' && task.result && task.status === 'completed') {
+                      if (task.result.validated != null && task.result.failed != null) {
+                        payloadDetails.push(`✓ ${task.result.validated} godkända`);
+                        payloadDetails.push(`✗ ${task.result.failed} underkända`);
+                      }
+                    } else if (task.taskType === 'generation' && task.result && task.status === 'completed') {
+                      // För generation: visa detaljerad information
+                      if (task.result.details) {
+                        if (task.result.details.imported != null) {
+                          payloadDetails.push(`✓ ${task.result.details.imported} importerade`);
+                        }
+                        if (task.result.details.duplicatesBlocked > 0) {
+                          payloadDetails.push(`⊘ ${task.result.details.duplicatesBlocked} dubletter blockerade`);
+                        }
+                        if (task.result.details.category) {
+                          payloadDetails.push(`Kategori: ${task.result.details.category}`);
+                        }
+                        if (task.result.details.ageGroup) {
+                          payloadDetails.push(`Åldersgrupp: ${task.result.details.ageGroup}`);
+                        }
+                      } else if (task.result.count != null) {
+                        payloadDetails.push(`Resultat: ${task.result.count}`);
+                      }
+                    } else if (task.result?.count != null) {
+                      // För andra tasks
+                      payloadDetails.push(`Resultat: ${task.result.count}`);
+                    }
+
                     if (task.error) payloadDetails.push(`Fel: ${task.error}`);
+
+                    // Progress för batch-validering och generering
+                    const hasProgress = task.progress && (task.progress.total > 0 || task.progress.phase);
+                    const progressPercent = hasProgress && task.progress.total > 0
+                      ? Math.round((task.progress.completed / task.progress.total) * 100)
+                      : 0;
 
                     return (
                       <tr key={task.id} className="border-b border-slate-800/60">
                         <td className="px-4 py-3 align-top">
-                          <div className="text-white font-semibold">
-                            {task.taskType === 'generation' ? 'AI-generering' : 'AI-validering'}
+                          <input
+                            type="checkbox"
+                            checked={selectedTasks.has(task.id)}
+                            onChange={() => handleToggleTask(task.id)}
+                            className="w-4 h-4 bg-slate-700 border-slate-600 rounded focus:ring-2 focus:ring-cyan-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="flex items-center gap-2">
+                            <div className="text-white font-semibold">
+                              {task.taskType === 'generation' ? 'AI-generering' :
+                               task.taskType === 'batchvalidation' ? 'AI-validering (batch)' :
+                               task.taskType === 'migration' ? 'AI-migrering' : 'AI-validering'}
+                            </div>
+                            {task.taskType === 'batchvalidation' && task.payload?.questions?.length && (
+                              <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-200 rounded">
+                                {task.payload.questions.length} frågor
+                              </span>
+                            )}
                           </div>
-                          <div className="text-xs text-slate-500">{task.id}</div>
+                          <div className="text-xs text-slate-500">{task.id.substring(0, 8)}...</div>
+
+                          {/* Progress bar för batch-jobb */}
+                          {hasProgress && task.status === 'processing' && (
+                            <div className="mt-2 space-y-1">
+                              {task.progress.total > 0 && (
+                                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="bg-cyan-500 h-full transition-all duration-300"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
+                                </div>
+                              )}
+                              <div className="text-xs text-slate-400">
+                                {task.progress.phase && <div className="font-semibold">{task.progress.phase}</div>}
+                                {task.progress.total > 0 && (
+                                  <div>
+                                    {task.progress.completed} / {task.progress.total}
+                                    {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
+                                      ` (${task.progress.validated} godkända, ${task.progress.failed} underkända)`}
+                                    {task.taskType === 'migration' && task.progress.details &&
+                                      ` - ${task.progress.details}`}
+                                  </div>
+                                )}
+                                {task.progress.details && <div className="text-slate-500">{task.progress.details}</div>}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Slutlig progress för klara jobb */}
+                          {hasProgress && task.status === 'completed' && (
+                            <div className="mt-1 text-xs text-slate-400">
+                              {task.taskType === 'batchvalidation' && task.progress.validated != null &&
+                                `${task.progress.validated} godkända, ${task.progress.failed} underkända`}
+                              {task.taskType === 'generation' && task.progress.details &&
+                                task.progress.details}
+                              {task.taskType === 'migration' && task.progress.details &&
+                                task.progress.details}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusBadge}`}>
@@ -243,6 +775,28 @@ const SuperUserTasksPage = () => {
                           ) : (
                             <span className="text-slate-500">Ingen metadata</span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="flex gap-2">
+                            {/* Stop knapp - visa bara för pågående jobb */}
+                            {(task.status === 'processing' || task.status === 'queued' || task.status === 'pending') && (
+                              <button
+                                onClick={() => handleStopTask(task.id)}
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-semibold transition-colors"
+                                title="Stoppa jobb"
+                              >
+                                ⏸️
+                              </button>
+                            )}
+                            {/* Delete knapp - visa alltid */}
+                            <button
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded font-semibold transition-colors"
+                              title="Radera jobb"
+                            >
+                              🗑️
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

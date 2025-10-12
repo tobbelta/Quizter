@@ -88,18 +88,28 @@ const Header = ({ title = 'RouteQuest' }) => {
     }
   }, [currentUser]);
 
-    // Lyssna på olästa meddelanden i realtid
+    // Hämta aktuell oläst-meddelanderäkning
   useEffect(() => {
+    let isMounted = true;
     const deviceId = analyticsService.getDeviceId();
     const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
-    // Prenumerera på meddelanden i realtid
-    const unsubscribe = messageService.subscribeToMessages(userId, deviceId, (messages) => {
-      const unreadCount = messages.filter(m => !m.read && !m.deleted).length;
-      setUnreadMessageCount(unreadCount);
-    });
+    const loadUnread = async () => {
+      try {
+        const count = await messageService.getUnreadCount(userId, deviceId);
+        if (isMounted) {
+          setUnreadMessageCount(count);
+        }
+      } catch (error) {
+        console.error('[Header] Failed to load unread message count:', error);
+      }
+    };
 
-    return () => unsubscribe();
+    loadUnread();
+
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser]);
 
   useEffect(() => {
@@ -574,6 +584,7 @@ const Header = ({ title = 'RouteQuest' }) => {
           <MessagesDropdown
             isOpen={showMessages}
             onClose={() => setShowMessages(false)}
+            onUnreadChange={setUnreadMessageCount}
           />
         </div>
       </>

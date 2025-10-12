@@ -18,21 +18,16 @@ const defaultForm = {
   audience: 'family',
   difficulty: 'family',
   categories: [], // Valda kategorier (tom = alla)
-  questionCount: 6,
+  questionCount: 9,
   lengthMeters: 2000,
   allowAnonymous: true
 };
 
-const audienceOptions = [
-  { value: 'kid', label: 'Barn' },
-  { value: 'family', label: 'Familj' },
-  { value: 'adult', label: 'Vuxen' }
-];
-
 const difficultyOptions = [
-  { value: 'kid', label: 'Barn' },
-  { value: 'family', label: 'Familj' },
-  { value: 'adult', label: 'Vuxen' }
+  { value: 'children', label: 'Barn (6-12 år)' },
+  { value: 'youth', label: 'Ungdom (13-17 år)' },
+  { value: 'adults', label: 'Vuxen (18+ år)' },
+  { value: 'family', label: 'Familj (1/3 av varje)' }
 ];
 
 const categoryOptions = [
@@ -55,7 +50,6 @@ const CreateRunPage = () => {
   const [form, setForm] = useState(defaultForm);
   const [availableQuestions, setAvailableQuestions] = useState(questionService.listAll());
   const [error, setError] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
   const [createdRun, setCreatedRun] = useState(null);
   const [isQRCodeFullscreen, setIsQRCodeFullscreen] = useState(false);
 
@@ -87,10 +81,33 @@ const CreateRunPage = () => {
   /** Uppdaterar formuläret när admin ändrar fält. */
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    const parsedValue = type === 'checkbox' ? checked : value;
+
+    setForm((prev) => {
+      const next = { ...prev };
+
+      if (name === 'questionCount') {
+        const numericValue = Math.max(3, Number(parsedValue) || 3);
+        if (prev.difficulty === 'family') {
+          next.questionCount = Math.max(3, Math.round(numericValue / 3) * 3);
+        } else {
+          next.questionCount = numericValue;
+        }
+        return next;
+      }
+
+      if (name === 'difficulty') {
+        next.difficulty = parsedValue;
+        next.audience = parsedValue;
+        if (parsedValue === 'family') {
+          next.questionCount = Math.max(3, Math.round((prev.questionCount || 9) / 3) * 3);
+        }
+        return next;
+      }
+
+      next[name] = parsedValue;
+      return next;
+    });
   };
 
   /** Togglar kategori i multichoice */
@@ -216,9 +233,10 @@ const CreateRunPage = () => {
                 ))}
               </select>
               <p className="mt-1 text-xs text-gray-400">
-                {form.difficulty === 'kid' && 'Enkla frågor lämpliga för barn 6-12 år'}
-                {form.difficulty === 'family' && 'Blandar barn- och vuxenfrågor för hela familjen'}
-                {form.difficulty === 'adult' && 'Utmanande frågor för vuxna'}
+                {form.difficulty === 'children' && 'Endast frågor märkta för barn (ageGroups: children).'}
+                {form.difficulty === 'youth' && 'Endast frågor märkta för ungdomar (ageGroups: youth).'}
+                {form.difficulty === 'adults' && 'Endast frågor märkta för vuxna (ageGroups: adults).'}
+                {form.difficulty === 'family' && 'Familjeläge blandar 1/3 barn-, 1/3 ungdoms- och 1/3 vuxenfrågor.'}
               </p>
             </div>
 
@@ -258,10 +276,17 @@ const CreateRunPage = () => {
                   name="questionCount"
                   min={3}
                   max={20}
+                  step={form.difficulty === 'family' ? 3 : 1}
                   value={form.questionCount}
                   onChange={handleChange}
                   className="w-full rounded-lg bg-slate-800 border border-slate-600 px-4 py-3 text-white"
                 />
+                {form.difficulty === 'family' && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Familjeläge använder en tredjedel per åldersgrupp. Antalet avrundas till närmaste multipel av
+                    tre.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-2 block text-sm font-semibold text-cyan-200">Längd (meter)</label>

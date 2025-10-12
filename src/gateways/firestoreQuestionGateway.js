@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, deleteDoc, writeBatch, serverTimestamp, updateDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, deleteDoc, writeBatch, serverTimestamp, updateDoc, onSnapshot } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 
 const QUESTIONS_COLLECTION = 'questions';
@@ -11,6 +11,27 @@ const listQuestions = async () => {
   const db = getFirebaseDb();
   const querySnapshot = await getDocs(collection(db, QUESTIONS_COLLECTION));
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+const getQuestion = async (questionId) => {
+  if (!questionId) return null;
+  const db = getFirebaseDb();
+  const snap = await getDoc(doc(db, QUESTIONS_COLLECTION, questionId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
+};
+
+const getQuestionsByIds = async (questionIds = []) => {
+  if (!Array.isArray(questionIds) || questionIds.length === 0) {
+    return [];
+  }
+
+  const db = getFirebaseDb();
+  const reads = questionIds.map((id) => getDoc(doc(db, QUESTIONS_COLLECTION, id)));
+  const snapshots = await Promise.all(reads);
+  return snapshots
+    .filter((snap) => snap.exists())
+    .map((snap) => ({ id: snap.id, ...snap.data() }));
 };
 
 /**
@@ -133,6 +154,8 @@ const updateManyQuestions = async (updates) => {
 
 const firestoreQuestionGateway = {
   listQuestions,
+  getQuestion,
+  getQuestionsByIds,
   subscribeToQuestions,
   deleteQuestion,
   deleteQuestions,

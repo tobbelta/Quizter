@@ -22,9 +22,16 @@ const generateJoinCode = () => {
 /**
  * Hämtar frågebanken från questionService och faller tillbaka till den bundlade listan.
  */
-const resolveQuestionPool = () => {
+/**
+ * Hämtar den aktuella frågebanken från Firestore eller fallback-listan.
+ */
+const resolveQuestionPool = async () => {
   try {
-    return questionService.listAll();
+    const questions = await questionService.loadAllQuestions();
+    if (questions.length === 0) {
+      return QUESTION_BANK;
+    }
+    return questions;
   } catch (error) {
     return QUESTION_BANK;
   }
@@ -33,10 +40,89 @@ const resolveQuestionPool = () => {
 /**
  * Räknar antalet godkända frågor som matchar givna kriterier.
  * Används för att varna användaren om det inte finns tillräckligt med frågor.
+ *
+ * NYTT SCHEMA:
+ * - Stöder både ageGroups (array) och difficulty (string)
+ * - Stöder både categories (array) och category (string)
  */
-export const countAvailableQuestions = ({ audience, difficulty, categories = [] }) => {
-  const pool = resolveQuestionPool();
+const distributeFamilyCounts = (total) => {
+  const safeTotal = Math.max(0, total);
+  const base = Math.floor(safeTotal / 3);
+  const remainder = safeTotal - base * 3;
+  const order = ['children', 'youth', 'adults'];
+  const counts = {
+    children: base,
+    youth: base,
+    adults: base,
+  };
 
+  for (let index = 0; index < remainder; index += 1) {
+    counts[order[index % order.length]] += 1;
+  }
+
+  return counts;
+};
+
+export const countAvailableQuestions = async ({ audience, difficulty, categories = [], questionCount = 0 }) => {
+  const pool = await resolveQuestionPool();
+
+  // Special case för family - räkna alla åldersgrupper separat
+  if (difficulty === 'family') {
+    const counts = distributeFamilyCounts(questionCount > 0 ? questionCount : 3);
+    const countForAgeGroup = (ageGroup) => {
+      return pool.filter((question) => {
+        const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+        if (isRejected) return false;
+
+        // Matcha åldersgrupp (stöd både nytt och gammalt schema)
+        let matchesAge = false;
+        if (Array.isArray(question.ageGroups)) {
+          matchesAge = question.ageGroups.includes(ageGroup);
+        } else {
+          if (ageGroup === 'children') {
+            matchesAge = question.difficulty === 'kid' || question.audience === 'kid';
+          } else if (ageGroup === 'youth') {
+            matchesAge = question.difficulty === 'medium' || question.audience === 'medium';
+          } else if (ageGroup === 'adults') {
+            matchesAge = question.difficulty === 'adult' || question.audience === 'adult' ||
+                         question.difficulty === 'expert' || question.difficulty === 'hard';
+          }
+        }
+
+        if (!matchesAge) return false;
+
+        // Matcha kategorier - en fråga behöver bara matcha EN av de valda
+        if (categories.length === 0) return true;
+
+        if (Array.isArray(question.categories)) {
+          return question.categories.some(cat => categories.includes(cat));
+        } else if (question.category) {
+          return categories.includes(question.category);
+        }
+
+      return false;
+    }).length;
+  };
+
+    const availableChildren = countForAgeGroup('children');
+    const availableYouth = countForAgeGroup('youth');
+    const availableAdults = countForAgeGroup('adults');
+
+    if (questionCount > 0) {
+      const ratios = [
+        counts.children > 0 ? Math.floor(availableChildren / counts.children) : Number.POSITIVE_INFINITY,
+        counts.youth > 0 ? Math.floor(availableYouth / counts.youth) : Number.POSITIVE_INFINITY,
+        counts.adults > 0 ? Math.floor(availableAdults / counts.adults) : Number.POSITIVE_INFINITY,
+      ].filter((ratio) => Number.isFinite(ratio));
+
+      const maxCompleteSets = ratios.length > 0 ? Math.min(...ratios) : 0;
+      return Math.max(0, maxCompleteSets) * questionCount;
+    }
+
+    return Math.min(availableChildren, availableYouth, availableAdults) * 3;
+  }
+
+  // För specifik åldersgrupp eller ingen filtrering
   const filtered = pool.filter((question) => {
     // Exkludera underkända och rapporterade frågor
     const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
@@ -44,27 +130,37 @@ export const countAvailableQuestions = ({ audience, difficulty, categories = [] 
       return false;
     }
 
-    // Filtrera efter svårighetsgrad/målgrupp
-    let matchesDifficulty = false;
+    // Filtrera efter åldersgrupp (stöd både nytt och gammalt schema)
+    let matchesAgeGroup = false;
 
-    if (difficulty === 'family') {
-      matchesDifficulty = question.audience === 'kid' ||
-                          question.difficulty === 'kid' ||
-                          question.audience === 'adult' ||
-                          question.difficulty === 'adult';
-    } else if (difficulty === 'kid') {
-      matchesDifficulty = question.audience === 'kid' || question.difficulty === 'kid';
-    } else if (difficulty === 'adult') {
-      matchesDifficulty = question.audience === 'adult' || question.difficulty === 'adult';
+    if (Array.isArray(question.ageGroups) && question.ageGroups.length > 0) {
+      matchesAgeGroup = question.ageGroups.includes(difficulty);
     } else {
-      matchesDifficulty = true;
+      // Gammalt schema fallback
+      if (difficulty === 'children' || difficulty === 'kid') {
+        matchesAgeGroup = question.audience === 'kid' || question.difficulty === 'kid';
+      } else if (difficulty === 'youth' || difficulty === 'medium') {
+        matchesAgeGroup = question.audience === 'medium' || question.difficulty === 'medium';
+      } else if (difficulty === 'adults' || difficulty === 'adult') {
+        matchesAgeGroup = question.audience === 'adult' || question.difficulty === 'adult';
+      } else {
+        matchesAgeGroup = true;
+      }
     }
 
-    // Filtrera efter kategorier
-    const matchesCategory = categories.length === 0 ||
-                           categories.includes(question.category);
+    // Filtrera efter kategorier - en fråga behöver bara matcha EN av de valda
+    let matchesCategory = false;
+    if (categories.length === 0) {
+      matchesCategory = true;
+    } else {
+      if (Array.isArray(question.categories)) {
+        matchesCategory = question.categories.some(cat => categories.includes(cat));
+      } else if (question.category) {
+        matchesCategory = categories.includes(question.category);
+      }
+    }
 
-    return matchesDifficulty && matchesCategory;
+    return matchesAgeGroup && matchesCategory;
   });
 
   return filtered.length;
@@ -73,9 +169,14 @@ export const countAvailableQuestions = ({ audience, difficulty, categories = [] 
 /**
  * Filtrerar och väljer ut rätt antal frågor baserat på målgrupp, svårighet och kategorier.
  * Exkluderar underkända frågor och förhindrar duplicerade frågor i samma runda.
+ *
+ * NYTT SCHEMA:
+ * - difficulty/ageGroup: 'children', 'youth', 'adults', eller 'family' (33/33/33)
+ * - question.ageGroups: array av åldersgrupper som frågan passar för
+ * - question.categories: array av kategorier (kan vara flera)
  */
-const pickQuestions = ({ audience, difficulty, questionCount, categories = [] }) => {
-  const pool = resolveQuestionPool();
+const pickQuestions = async ({ audience, difficulty, questionCount, categories = [] }) => {
+  const pool = await resolveQuestionPool();
 
   if (pool.length === 0) {
     throw new Error('Frågebanken är tom. Kontrollera att frågor har laddats korrekt från databasen.');
@@ -85,60 +186,195 @@ const pickQuestions = ({ audience, difficulty, questionCount, categories = [] })
     throw new Error(`Ogiltigt antal frågor (${questionCount}). Välj mellan 1 och 50 frågor.`);
   }
 
+  // Special handling för family mode - blanda 33/33/33 från alla åldersgrupper
+  if (difficulty === 'family') {
+    return pickFamilyQuestions(pool, questionCount, categories);
+  }
+
+  // Filtrera frågor baserat på åldersgrupp och kategorier
   const filtered = pool.filter((question) => {
     // VIKTIGT: Exkludera alla underkända och rapporterade frågor
-    // En fråga är underkänd om:
-    // 1. aiValidated === false (AI-validering misslyckades eller strukturfel)
-    // 2. manuallyRejected === true (manuellt underkänd)
-    // 3. reported === true (rapporterad och i karantän)
     const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
     if (isRejected) {
-      return false; // Skippa denna fråga
+      return false;
     }
 
-    // Filtrera efter svårighetsgrad/målgrupp
-    let matchesDifficulty = false;
+    // Stöd både nytt schema (ageGroups array) och gammalt schema (difficulty/audience string)
+    let matchesAgeGroup = false;
 
-    if (difficulty === 'family') {
-      // Familj: blanda kid och adult frågor (50/50)
-      matchesDifficulty = question.audience === 'kid' ||
-                          question.difficulty === 'kid' ||
-                          question.audience === 'adult' ||
-                          question.difficulty === 'adult';
-    } else if (difficulty === 'kid') {
-      matchesDifficulty = question.audience === 'kid' || question.difficulty === 'kid';
-    } else if (difficulty === 'adult') {
-      matchesDifficulty = question.audience === 'adult' || question.difficulty === 'adult';
+    if (Array.isArray(question.ageGroups) && question.ageGroups.length > 0) {
+      // NYTT SCHEMA: Kolla om frågan passar för vald åldersgrupp
+      matchesAgeGroup = question.ageGroups.includes(difficulty);
     } else {
-      matchesDifficulty = true; // Ingen svårighetsfiltrering
+      // GAMMALT SCHEMA: Fallback till gamla fälten
+      if (difficulty === 'children' || difficulty === 'kid') {
+        matchesAgeGroup = question.audience === 'kid' || question.difficulty === 'kid';
+      } else if (difficulty === 'youth' || difficulty === 'medium') {
+        matchesAgeGroup = question.audience === 'medium' || question.difficulty === 'medium';
+      } else if (difficulty === 'adults' || difficulty === 'adult') {
+        matchesAgeGroup = question.audience === 'adult' || question.difficulty === 'adult';
+      } else {
+        matchesAgeGroup = true;
+      }
     }
 
-    // Filtrera efter kategorier (om några är valda)
-    const matchesCategory = categories.length === 0 ||
-                           categories.includes(question.category);
+    // Filtrera efter kategorier (stöd både array och string)
+    let matchesCategory = false;
+    if (categories.length === 0) {
+      matchesCategory = true;
+    } else {
+      // NYTT SCHEMA: categories är array
+      if (Array.isArray(question.categories)) {
+        matchesCategory = question.categories.some(cat => categories.includes(cat));
+      } else if (question.category) {
+        // GAMMALT SCHEMA: category är string
+        matchesCategory = categories.includes(question.category);
+      }
+    }
 
-    return matchesDifficulty && matchesCategory;
+    return matchesAgeGroup && matchesCategory;
   });
 
   const shuffled = [...filtered].sort(() => Math.random() - 0.5);
 
-  // Om vi inte har tillräckligt många frågor, kasta fel (inga duplicerade)
   if (shuffled.length === 0) {
     const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
-    throw new Error(`Inga godkända frågor matchar vald svårighetsgrad (${difficulty})${categoryText}. Prova en annan kombination eller validera fler frågor.`);
+    throw new Error(`Inga godkända frågor matchar vald åldersgrupp (${difficulty})${categoryText}. Prova en annan kombination eller validera fler frågor.`);
   }
 
   if (shuffled.length < questionCount) {
-    // NYTT: Kasta fel istället för att återanvända frågor
     const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
     throw new Error(
-      `Det finns endast ${shuffled.length} godkända frågor som matchar vald svårighetsgrad (${difficulty})${categoryText}, men du behöver ${questionCount} frågor.\n\n` +
+      `Det finns endast ${shuffled.length} godkända frågor som matchar vald åldersgrupp (${difficulty})${categoryText}, men du behöver ${questionCount} frågor.\n\n` +
       `Välj ett lägre antal frågor eller validera fler frågor i frågebanken.`
     );
   }
 
-  // Returnera unika frågor (inga duplicerade ID:n)
   return shuffled.slice(0, questionCount);
+};
+
+/**
+ * Väljer frågor för family mode - blandar 33% children, 33% youth, 33% adults
+ * @param {Array} pool - Alla tillgängliga frågor
+ * @param {number} questionCount - Totalt antal frågor att välja
+ * @param {Array} categories - Valda kategorier att filtrera på
+ * @returns {Array} Blandade frågor från alla tre åldersgrupper
+ */
+const pickFamilyQuestions = (pool, questionCount, categories) => {
+  // Filtrera ut godkända frågor för varje åldersgrupp
+  const getQuestionsForAgeGroup = (ageGroup) => {
+    return pool.filter((question) => {
+      // Exkludera underkända/rapporterade
+      const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+      if (isRejected) return false;
+
+      // Matcha åldersgrupp (stöd både nytt och gammalt schema)
+      let matchesAge = false;
+      if (Array.isArray(question.ageGroups)) {
+        matchesAge = question.ageGroups.includes(ageGroup);
+      } else {
+        // Gammalt schema mapping
+        if (ageGroup === 'children') {
+          matchesAge = question.difficulty === 'kid' || question.audience === 'kid';
+        } else if (ageGroup === 'youth') {
+          matchesAge = question.difficulty === 'medium' || question.audience === 'medium';
+        } else if (ageGroup === 'adults') {
+          matchesAge = question.difficulty === 'adult' || question.audience === 'adult' ||
+                       question.difficulty === 'expert' || question.difficulty === 'hard';
+        }
+      }
+
+      if (!matchesAge) return false;
+
+      // Matcha kategorier (om några är valda)
+      if (categories.length === 0) return true;
+
+      if (Array.isArray(question.categories)) {
+        return question.categories.some(cat => categories.includes(cat));
+      } else if (question.category) {
+        return categories.includes(question.category);
+      }
+
+      return false;
+    });
+  };
+
+  // Hämta frågor för varje åldersgrupp
+  const childrenQuestions = getQuestionsForAgeGroup('children');
+  const youthQuestions = getQuestionsForAgeGroup('youth');
+  const adultsQuestions = getQuestionsForAgeGroup('adults');
+
+  // Beräkna hur många frågor från varje grupp (33/33/33-fördelning med rester)
+  const distribution = distributeFamilyCounts(questionCount);
+  const childrenCount = distribution.children;
+  const youthCount = distribution.youth;
+  const adultsCount = distribution.adults;
+
+  // Validera att vi har tillräckligt många frågor i varje grupp
+  if (childrenQuestions.length < childrenCount) {
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(
+      `För få barnfrågor tillgängliga${categoryText}. Behöver ${childrenCount} men har bara ${childrenQuestions.length}.\n\n` +
+      `Validera fler barnfrågor eller välj färre frågor totalt.`
+    );
+  }
+  if (youthQuestions.length < youthCount) {
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(
+      `För få ungdomsfrågor tillgängliga${categoryText}. Behöver ${youthCount} men har bara ${youthQuestions.length}.\n\n` +
+      `Validera fler ungdomsfrågor eller välj färre frågor totalt.`
+    );
+  }
+  if (adultsQuestions.length < adultsCount) {
+    const categoryText = categories.length > 0 ? ` och kategorier (${categories.join(', ')})` : '';
+    throw new Error(
+      `För få vuxenfrågor tillgängliga${categoryText}. Behöver ${adultsCount} men har bara ${adultsQuestions.length}.\n\n` +
+      `Validera fler vuxenfrågor eller välj färre frågor totalt.`
+    );
+  }
+
+  // Shuffla och välj från varje grupp
+  const selectedChildren = [...childrenQuestions]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, childrenCount);
+
+  const selectedYouth = [...youthQuestions]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, youthCount);
+
+  const selectedAdults = [...adultsQuestions]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, adultsCount);
+
+  const selections = {
+    children: selectedChildren,
+    youth: selectedYouth,
+    adults: selectedAdults,
+  };
+
+  const order = ['children', 'youth', 'adults'].sort(() => Math.random() - 0.5);
+  const combined = [];
+  let index = 0;
+  while (combined.length < questionCount) {
+    let pushed = false;
+    for (const group of order) {
+      const items = selections[group];
+      if (index < items.length) {
+        combined.push(items[index]);
+        pushed = true;
+        if (combined.length === questionCount) {
+          break;
+        }
+      }
+    }
+
+    if (!pushed) {
+      break;
+    }
+    index += 1;
+  }
+
+  return combined;
 };
 
 /**
@@ -262,7 +498,7 @@ export const buildHostedRun = async ({
   language = 'sv',
   origin = null
 }, creator) => {
-  const questions = pickQuestions({ audience, difficulty, questionCount, categories });
+  const questions = await pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
 
   // Först skapa rutten, sedan placera checkpoints längs den
@@ -368,7 +604,7 @@ export const buildGeneratedRun = async ({
   seed,
   preferGreenAreas
 }, creator) => {
-  const questions = pickQuestions({ audience, difficulty, questionCount, categories });
+  const questions = await pickQuestions({ audience, difficulty, questionCount, categories });
   const joinCode = generateJoinCode();
   const checkpointData = await createGeneratedCheckpoints(questions, { lengthMeters, origin, seed, preferGreenAreas });
 
