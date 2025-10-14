@@ -150,7 +150,14 @@ const handleTaskSnapshot = useCallback((tasks) => {
         if (!notifiedStatusesRef.current.has(notificationKey)) {
           const meta = trackedTasksRef.current.get(task.id) || {};
           const variant = STATUS_VARIANT[task.status] || 'info';
-          const baseTitle = meta.label || (task.taskType === 'generation' ? 'AI-generering' : 'AI-validering');
+          const getTitle = () => {
+            if (meta.label) return meta.label;
+            if (task.taskType === 'generation') return 'AI-generering';
+            if (task.taskType === 'validation') return 'AI-validering';
+            if (task.taskType === 'batchregenerateemojis') return 'Mass-regenerering Emojis';
+            return 'Bakgrundsjobb';
+          };
+          const baseTitle = getTitle();
           const messageParts = [];
           if (task.status === 'completed') {
             messageParts.push('Bakgrundsjobbet är klart.');
@@ -373,7 +380,7 @@ const refreshAllTasks = useCallback(async () => {
         id: taskId,
         taskType: firestoreTask?.taskType || meta.taskType || 'task',
         status,
-        label: meta.label || firestoreTask?.taskType || 'Bakgrundsjobb',
+        label: meta.label,
         description: meta.description || firestoreTask?.description || null,
         createdAt,
         startedAt: firestoreTask?.startedAt || null,

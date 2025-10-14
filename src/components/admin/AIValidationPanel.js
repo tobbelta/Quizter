@@ -15,6 +15,8 @@ const AIValidationPanel = () => {
   const [statusLoading, setStatusLoading] = useState(false);
   const [statusError, setStatusError] = useState(null);
   const [includeAllQuestions, setIncludeAllQuestions] = useState(false);
+  const [maxQuestions, setMaxQuestions] = useState(50);
+  const [limitQuestions, setLimitQuestions] = useState(true);
   const { registerTask } = useBackgroundTasks();
   const isMountedRef = useRef(true);
 
@@ -60,7 +62,12 @@ const AIValidationPanel = () => {
         (q) => !q.aiValidated && !q.manuallyApproved && !q.manuallyRejected && !q.reported
       );
 
-      const questionsToValidate = includeAllQuestions ? allQuestions : unvalidatedQuestions;
+      let questionsToValidate = includeAllQuestions ? allQuestions : unvalidatedQuestions;
+
+      // Begränsa antalet frågor om limitQuestions är aktiverat
+      if (limitQuestions && maxQuestions > 0 && questionsToValidate.length > maxQuestions) {
+        questionsToValidate = questionsToValidate.slice(0, maxQuestions);
+      }
 
       if (questionsToValidate.length === 0) {
         alert('✅ Det finns inga frågor att validera just nu.');
@@ -68,7 +75,7 @@ const AIValidationPanel = () => {
       }
 
       console.log(
-        `[AIValidationPanel] Startar batch-validering av ${questionsToValidate.length} frågor (inkluderar tidigare validerade: ${includeAllQuestions})`
+        `[AIValidationPanel] Startar batch-validering av ${questionsToValidate.length} frågor (inkluderar tidigare validerade: ${includeAllQuestions}, begränsat till: ${limitQuestions ? maxQuestions : 'alla'})`
       );
 
       // Bygg batch-payload
@@ -95,12 +102,18 @@ const AIValidationPanel = () => {
 
       // Registrera bakgrundsjobb
       if (taskId) {
+        const descriptionParts = [`${batchQuestions.length} frågor`];
+        if (includeAllQuestions) {
+          descriptionParts.push('inkl. redan validerade');
+        }
+        if (limitQuestions) {
+          descriptionParts.push(`max ${maxQuestions}`);
+        }
+
         registerTask(taskId, {
           taskType: 'batchvalidation',
           label: 'AI-validering (batch)',
-          description: includeAllQuestions
-            ? `Validerar om ${batchQuestions.length} frågor`
-            : `Validerar ${batchQuestions.length} frågor`,
+          description: descriptionParts.join(' · '),
           createdAt: new Date(),
         });
       }
@@ -202,38 +215,75 @@ const AIValidationPanel = () => {
 
   return (
     <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-white">AI-validering av frågor</h2>
-          <p className="text-sm text-gray-400 mt-1">
-            Validerar med alla tillgängliga AI-providers (Anthropic, Gemini, OpenAI)
-          </p>
+      <div className="flex flex-col gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-white">AI-validering av frågor</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              Validerar med alla tillgängliga AI-providers (Anthropic, Gemini, OpenAI)
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-300">
+
+        {/* Kontroller */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* Antal frågor */}
+          <div>
+            <label className="block text-xs font-semibold text-cyan-200 mb-2">
+              Antal frågor att validera
+            </label>
             <input
-              type="checkbox"
-              checked={includeAllQuestions}
-              onChange={(event) => setIncludeAllQuestions(event.target.checked)}
-              disabled={loading}
-              className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-purple-500 focus:ring-purple-400"
+              type="number"
+              min="1"
+              max="1000"
+              value={maxQuestions}
+              onChange={(e) => setMaxQuestions(Math.max(1, parseInt(e.target.value) || 1))}
+              disabled={loading || !limitQuestions}
+              className="w-full rounded bg-slate-900 border border-slate-600 px-3 py-2 text-white text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none disabled:opacity-50"
             />
-            Validera om även redan kontrollerade frågor
-          </label>
-          <button
-            onClick={runAIValidation}
-            disabled={loading}
-            className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400"
-          >
-            {loading ? '🤖 Validerar...' : includeAllQuestions ? '🤖 Validera om alla' : '🤖 AI-Validera frågor'}
-          </button>
+          </div>
+
+          {/* Checkboxes */}
+          <div className="flex flex-col gap-2 justify-end">
+            <label className="flex items-center gap-2 text-xs text-gray-300">
+              <input
+                type="checkbox"
+                checked={limitQuestions}
+                onChange={(event) => setLimitQuestions(event.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-purple-500 focus:ring-purple-400"
+              />
+              Begränsa antal frågor
+            </label>
+            <label className="flex items-center gap-2 text-xs text-gray-300">
+              <input
+                type="checkbox"
+                checked={includeAllQuestions}
+                onChange={(event) => setIncludeAllQuestions(event.target.checked)}
+                disabled={loading}
+                className="h-4 w-4 rounded border-slate-500 bg-slate-800 text-purple-500 focus:ring-purple-400"
+              />
+              Inkludera redan validerade frågor
+            </label>
+          </div>
+
+          {/* Validera-knapp */}
+          <div className="flex items-end">
+            <button
+              onClick={runAIValidation}
+              disabled={loading}
+              className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-400 disabled:bg-slate-600 disabled:text-gray-400 transition-colors"
+            >
+              {loading ? '🤖 Validerar...' : `🤖 Validera ${limitQuestions ? `${maxQuestions}` : 'alla'} frågor`}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Varning om kostnad */}
       <div className="mb-4 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
         <div className="text-sm text-amber-300">
-          ⚠️ <strong>Obs:</strong> AI-validering kostar pengar (API-anrop). Validerar alla ovaliderade frågor i ett batch-jobb.
+          ⚠️ <strong>Obs:</strong> AI-validering kostar pengar (API-anrop). {limitQuestions ? `Kommer att validera upp till ${maxQuestions} frågor.` : 'Kommer att validera alla frågor.'} {includeAllQuestions ? 'Inkluderar redan validerade frågor.' : 'Validerar endast frågor som inte redan är validerade.'}
         </div>
       </div>
 

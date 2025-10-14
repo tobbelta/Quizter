@@ -573,6 +573,13 @@ export const questionService = {
           valid: true,
           validationType: 'manual',
           reasoning: 'Manuellt godkänd efter granskning'
+        },
+        structureValidationResult: {
+          valid: true,
+          validationType: 'manual',
+          reasoning: 'Manuellt godkänd efter granskning',
+          issues: [],
+          checkedAt: new Date()
         }
       });
 
@@ -586,6 +593,13 @@ export const questionService = {
           valid: true,
           validationType: 'manual',
           reasoning: 'Manuellt godkänd efter granskning'
+        },
+        structureValidationResult: {
+          valid: true,
+          validationType: 'manual',
+          reasoning: 'Manuellt godkänd efter granskning',
+          issues: [],
+          checkedAt: new Date()
         }
       }));
       return true;
@@ -709,7 +723,7 @@ export const questionService = {
   },
 
   // Underkänn rapporterad fråga (markerar som manuellt underkänd)
-  regenerateIllustration: async (questionId, preferredProvider) => {
+  regenerateEmoji: async (questionId, preferredProvider) => {
     if (!questionId) {
       throw new Error('questionId is required');
     }
@@ -717,8 +731,16 @@ export const questionService = {
     await ensureCache();
 
     try {
-      const response = await aiService.regenerateQuestionIllustration({ questionId, provider: preferredProvider });
+      const response = await aiService.regenerateQuestionEmoji({ questionId, provider: preferredProvider });
       const { svg, provider } = response || {};
+
+      const updateData = {
+        illustration: svg,
+        illustrationProvider: provider,
+        illustrationGeneratedAt: new Date(),
+      };
+
+      await questionRepository.updateQuestion(questionId, updateData);
 
       updateCachedQuestion(questionId, (current) => {
         if (!current) {
@@ -727,15 +749,13 @@ export const questionService = {
 
         return {
           ...current,
-          illustration: svg || current.illustration,
-          migrationSvgProvider: provider || current.migrationSvgProvider,
-          migrationSvgUpdatedAt: new Date(),
+          ...updateData
         };
       });
 
       return response;
     } catch (error) {
-      console.error('[questionService] Kunde inte regenerera illustration:', error);
+      console.error('[questionService] Kunde inte regenerera emoji:', error);
       throw error;
     }
   },

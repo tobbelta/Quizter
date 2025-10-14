@@ -30,6 +30,11 @@ const AIProviderSettingsPage = () => {
       anthropic: true,
       openai: false,
       gemini: false
+    },
+    illustration: {
+      anthropic: true,
+      openai: true,
+      gemini: true
     }
   });
 
@@ -50,7 +55,11 @@ const AIProviderSettingsPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setSettings(data.settings);
+        // Merga med default-värden för att säkerställa att alla purposes finns
+        setSettings(prev => ({
+          ...prev,
+          ...data.settings
+        }));
       } else {
         throw new Error(data.error || 'Failed to load settings');
       }
@@ -65,8 +74,8 @@ const AIProviderSettingsPage = () => {
     setSettings(prev => ({
       ...prev,
       [purpose]: {
-        ...prev[purpose],
-        [provider]: !prev[purpose][provider]
+        ...(prev[purpose] || {}),
+        [provider]: prev[purpose] ? !prev[purpose][provider] : true
       }
     }));
   };
@@ -136,6 +145,12 @@ const AIProviderSettingsPage = () => {
       icon: '✓'
     },
     {
+      key: 'illustration',
+      title: 'Illustration (SVG)',
+      description: 'Vilka providers ska användas för att generera SVG-illustrationer till frågor',
+      icon: '🎨'
+    },
+    {
       key: 'migration',
       title: 'Migrering',
       description: 'Vilka providers ska användas för schema-migrering (rekommenderat: endast Anthropic)',
@@ -191,13 +206,13 @@ const AIProviderSettingsPage = () => {
                 <p className="text-sm text-slate-400 mt-1">{purpose.description}</p>
               </div>
               <div className="text-xs text-slate-500">
-                {Object.values(settings[purpose.key]).filter(Boolean).length} / {providers.length} aktiva
+                {settings[purpose.key] ? Object.values(settings[purpose.key]).filter(Boolean).length : 0} / {providers.length} aktiva
               </div>
             </div>
 
             <div className="space-y-3">
               {providers.map(provider => {
-                const isEnabled = settings[purpose.key][provider.key];
+                const isEnabled = settings[purpose.key] ? settings[purpose.key][provider.key] : false;
                 return (
                   <div
                     key={provider.key}

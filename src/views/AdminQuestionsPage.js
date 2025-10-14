@@ -30,7 +30,7 @@ const QuestionCard = ({
   registerTask
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
-  const [regeneratingIllustration, setRegeneratingIllustration] = useState(false);
+  const [regeneratingEmoji, setRegeneratingEmoji] = useState(false);
   const [validatingAI, setValidatingAI] = useState(false);
 
   // Hämta data för valt språk
@@ -60,21 +60,21 @@ const QuestionCard = ({
     }
   });
   const targetAudience = question.targetAudience;
-  const handleRegenerateIllustration = async () => {
-    if (regeneratingIllustration) {
+  const handleRegenerateEmoji = async () => {
+    if (regeneratingEmoji) {
       return;
     }
 
-    setRegeneratingIllustration(true);
+    setRegeneratingEmoji(true);
     try {
-      const response = await questionService.regenerateIllustration(question.id);
+      const response = await questionService.regenerateEmoji(question.id);
       const providerName = response?.provider ? response.provider.toUpperCase() : 'AI';
-      alert(`🎨 Ny illustration genererades (${providerName})!`);
+      alert(`🎨 Nya emojis genererades (${providerName})!\n\n${response.svg || ''}`);
     } catch (error) {
-      console.error('[AdminQuestionsPage] Kunde inte regenerera illustration:', error);
-      alert(`⚠️ Kunde inte generera illustration: ${error.message}`);
+      console.error('[AdminQuestionsPage] Kunde inte regenerera emojis:', error);
+      alert(`⚠️ Kunde inte generera emojis: ${error.message}`);
     } finally {
-      setRegeneratingIllustration(false);
+      setRegeneratingEmoji(false);
     }
   };
   const handleValidateWithAI = async () => {
@@ -283,12 +283,19 @@ const QuestionCard = ({
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
-                className="text-lg font-semibold text-left hover:text-cyan-300 transition-colors"
-              >
-                {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
-              </button>
+              <div className="flex items-center gap-4">
+                {question.illustration && (
+                  <span className="text-2xl" title={question.illustration.includes('<svg') ? 'SVG Illustration' : 'Emoji'}>
+                    {question.illustration.includes('<svg') ? '🖼️' : question.illustration}
+                  </span>
+                )}
+                <button
+                  onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
+                  className="text-lg font-semibold text-left hover:text-cyan-300 transition-colors flex-1"
+                >
+                  {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
+                </button>
+              </div>
             </div>
             <div className="flex gap-2">
               {question.reported === true ? (
@@ -319,14 +326,14 @@ const QuestionCard = ({
                     {validatingAI ? 'Validerar...' : 'AI-validera'}
                   </button>
                   <button
-                    onClick={handleRegenerateIllustration}
-                    disabled={regeneratingIllustration}
+                    onClick={handleRegenerateEmoji}
+                    disabled={regeneratingEmoji}
                     className="rounded bg-teal-600 px-3 py-1 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-600 disabled:text-gray-400"
-                    title="Generera en ny illustration"
+                    title="Generera nya emojis för frågan"
                   >
-                    {regeneratingIllustration ? '🎨 Genererar...' : '🎨 Ny illustration'}
+                    {regeneratingEmoji ? '🎨 Genererar...' : '🎨 Nya emojis'}
                   </button>
-                  {hasAiIssue && !question.manuallyApproved && (
+                  {!question.manuallyApproved && (
                     <button
                       onClick={() => handleManualApprove(question.id)}
                       className="rounded bg-blue-600 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-500"
@@ -359,18 +366,62 @@ const QuestionCard = ({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-slate-700 space-y-4">
-          {/* SVG Illustration */}
-          {question.illustration && (
-            <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
-              <p className="text-sm font-semibold text-gray-300 mb-3">Illustration:</p>
-              <div className="mx-auto w-full max-w-xs">
-                <div
-                  className="rounded bg-white/5 p-3 shadow-inner [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-60 [&_svg]:w-full"
-                  dangerouslySetInnerHTML={{ __html: question.illustration }}
-                />
+          {/* Illustration (Emoji eller SVG) */}
+          {question.illustration && (() => {
+            // Stöd både nya och gamla fältnamn
+            const illustrationDate = question.illustrationGeneratedAt || question.migrationSvgUpdatedAt;
+            const illustrationProvider = question.illustrationProvider || question.migrationSvgProvider;
+
+            // Kolla om det är emoji eller SVG
+            const isSvg = question.illustration.includes('<svg');
+            const isEmoji = !isSvg;
+
+            return (
+              <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-300">Illustration:</p>
+                  {(illustrationDate || illustrationProvider) && (
+                    <p className="text-xs text-gray-400">
+                      {illustrationDate && (
+                        <>
+                          {illustrationDate.toDate ?
+                            illustrationDate.toDate().toLocaleString('sv-SE', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) :
+                            new Date(illustrationDate).toLocaleString('sv-SE', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                        </>
+                      )}
+                      {illustrationProvider && ` · ${illustrationProvider.charAt(0).toUpperCase() + illustrationProvider.slice(1)}`}
+                    </p>
+                  )}
+                </div>
+                <div className="mx-auto w-full max-w-xs">
+                  {isEmoji ? (
+                    <div className="flex items-center justify-center py-8">
+                      <span className="text-8xl" role="img" aria-label="Question illustration">
+                        {question.illustration}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      className="rounded bg-white/5 p-3 shadow-inner [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-60 [&_svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: question.illustration }}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="space-y-2">
             <p className="text-sm font-semibold text-gray-300 mb-2">Svarsalternativ ({currentLang.toUpperCase()}):</p>
@@ -541,17 +592,23 @@ const QuestionCard = ({
 
               {question.manuallyApprovedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Manuellt godkänd: {new Date(question.manuallyApprovedAt).toLocaleString('sv-SE')}
+                  Manuellt godkänd: {question.manuallyApprovedAt.toDate ?
+                    question.manuallyApprovedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.manuallyApprovedAt).toLocaleString('sv-SE')}
                 </p>
               )}
               {question.manuallyRejectedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Manuellt underkänd: {new Date(question.manuallyRejectedAt).toLocaleString('sv-SE')}
+                  Manuellt underkänd: {question.manuallyRejectedAt.toDate ?
+                    question.manuallyRejectedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.manuallyRejectedAt).toLocaleString('sv-SE')}
                 </p>
               )}
               {question.aiValidatedAt && !question.manuallyApprovedAt && !question.manuallyRejectedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Validerad: {new Date(question.aiValidatedAt).toLocaleString('sv-SE')}
+                  Validerad: {question.aiValidatedAt.toDate ?
+                    question.aiValidatedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.aiValidatedAt).toLocaleString('sv-SE')}
                 </p>
               )}
             </div>
@@ -606,6 +663,7 @@ const AdminQuestionsPage = () => {
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [isBatchRegeneratingEmojis, setIsBatchRegeneratingEmojis] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
@@ -1023,6 +1081,36 @@ const AdminQuestionsPage = () => {
     }
   };
 
+  const handleBatchRegenerateEmojis = async () => {
+    if (selectedQuestions.size === 0) return;
+
+    if (!window.confirm(`Är du säker på att du vill regenerera emojis för ${selectedQuestions.size} fråga(r)?`)) {
+      return;
+    }
+
+    setIsBatchRegeneratingEmojis(true);
+    try {
+      const questionIds = Array.from(selectedQuestions);
+      const { taskId } = await aiService.startBatchEmojiRegeneration({ questionIds });
+
+      if (taskId) {
+        registerTask(taskId, {
+          taskType: 'batchregenerateemojis',
+          label: 'Mass-regenerering Emojis',
+          description: `Genererar om emojis för ${questionIds.length} frågor.`,
+          createdAt: new Date(),
+        });
+        alert(`Påbörjade mass-generering av emojis för ${questionIds.length} frågor. Du kan följa förloppet under "Bakgrundsjobb".`);
+      }
+      setSelectedQuestions(new Set()); // Avmarkera efter start
+    } catch (error) {
+      console.error('Kunde inte starta mass-regenerering av emojis:', error);
+      alert('Ett fel uppstod vid start av mass-regenerering: ' + error.message);
+    } finally {
+      setIsBatchRegeneratingEmojis(false);
+    }
+  };
+
   // Alla frågor kan raderas nu (inga inbyggda frågor)
   const deletableQuestions = filteredQuestions;
   const isAllSelected = selectedQuestions.size > 0 && selectedQuestions.size === deletableQuestions.length;
@@ -1197,7 +1285,14 @@ const AdminQuestionsPage = () => {
               {selectedQuestions.size > 0 ? `${selectedQuestions.size} valda` : 'Markera alla'}
             </label>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBatchRegenerateEmojis}
+              disabled={selectedQuestions.size === 0 || isBatchRegeneratingEmojis}
+              className="rounded bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
+            >
+              {isBatchRegeneratingEmojis ? '🎨 Genererar...' : '🎨 Regenerera Emojis'}
+            </button>
             <button onClick={handleDeleteSelected} disabled={selectedQuestions.size === 0} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:bg-slate-700 disabled:cursor-not-allowed">
               Radera markerade
             </button>

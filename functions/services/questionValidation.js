@@ -99,12 +99,13 @@ function validateQuestion(question, language = "sv") {
     errors.push("Fragan maste ha minst en kategori");
   }
 
+  // Kräv minst ett språk, men inte båda
   if (question.languages) {
-    if (!question.languages.sv) {
-      errors.push("Fragan saknar svensk oversattning");
-    }
-    if (!question.languages.en) {
-      errors.push("Fragan saknar engelsk oversattning");
+    const hasSv = question.languages.sv?.text && Array.isArray(question.languages.sv?.options) && question.languages.sv.options.length === 4;
+    const hasEn = question.languages.en?.text && Array.isArray(question.languages.en?.options) && question.languages.en.options.length === 4;
+
+    if (!hasSv && !hasEn) {
+      errors.push("Fragan maste ha minst ett komplett sprak (svensk eller engelsk)");
     }
   }
 

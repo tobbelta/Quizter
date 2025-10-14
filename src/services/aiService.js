@@ -68,9 +68,15 @@ export const aiService = {
     return await queueTask('batchValidateQuestions', { questions });
   },
 
-  regenerateQuestionIllustration: async ({ questionId, provider }) => {
-    return await queueTask('regenerateQuestionIllustration', { questionId, provider });
+  regenerateAllIllustrations: async () => {
+    return await queueTask('regenerateAllIllustrations', {});
+  },
+
+  regenerateQuestionEmoji: async ({ questionId, provider }) => {
+    return await queueTask('regenerateQuestionEmoji', { questionId, provider });
+  },
+
+  startBatchEmojiRegeneration: async ({ questionIds }) => {
+    return await queueTask('batchRegenerateEmojis', { questionIds });
   },
 };
-
-

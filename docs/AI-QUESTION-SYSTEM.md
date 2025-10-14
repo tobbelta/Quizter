@@ -104,7 +104,7 @@ Användare kan generera frågor via Admin UI med följande parametrar:
 Schemalagd funktion (`questionImport`) körs var 6:e timme och genererar 20 nya frågor:
 
 ```javascript
-// functions/index.js:489-638
+// functions/index.js (sök efter "exports.questionImport")
 exports.questionImport = onSchedule({
   schedule: "every 6 hours",
   region: "europe-west1",
@@ -135,6 +135,7 @@ exports.questionImport = onSchedule({
 ```
 
 > **Illustrationer:** Standardflödet skapar SVG:er via Anthropic Claude (Haiku). Motiven måste bestå av flera grafiska element (ingen text, inga siffror, inga frågetecken) och vi sanerar resultatet så att varken frågetext eller svarsalternativ förekommer i SVG-koden. Om API-nyckeln saknas hoppar systemet över illustreringssteget men redovisar det som `svg.skipped` i resultatet.
+> **Emoji:** Emoji-generering ska aldrig avslöja eller peka ut det korrekta svaret. Välj neutrala symboler som stödjer frågans tema utan att ge bort lösningen.
 
 ### Progress-rapportering
 
@@ -236,32 +237,43 @@ AI-validatorer kontrollerar:
 5. ✅ **Förklaring** - Är förklaringen tydlig och korrekt?
 6. ✅ **Målgrupp** - Passar innehållet åldersgruppen?
 
-**Strukturvalidering:** Under importen m�ste varje fr�ga ange `ageGroups` (children/youth/adults), minst en kategori samt en `targetAudience` (t.ex. `swedish`). B�de `languages.sv` och `languages.en` m�ste inneh�lla text, fyra svarsalternativ och en f�rklaring. Detta ers�tter den tidigare kontrollen av `difficulty` och `audience`.
+**Strukturvalidering:** Under importen måste varje fråga ange `ageGroups` (children/youth/adults), minst en kategori samt en `targetAudience` (t.ex. `swedish`). Frågan måste ha **minst ett komplett språk** (antingen `languages.sv` eller `languages.en`) med text, fyra svarsalternativ och en förklaring. Båda språk krävs inte längre. Detta ersätter den tidigare kontrollen av `difficulty` och `audience`.
 
 ### Validerings-resultat
 
 ```javascript
 {
-  valid: true, // eller false
-  issues: [], // Lista med problem om valid: false
+  valid: true, // eller false (baserat på majoritet)
+  consensus: {
+    valid: 2,        // Antal providers som godkänner
+    invalid: 1,      // Antal providers som underkänner
+    total: 3,        // Totalt antal providers
+    method: 'majority'
+  },
+  issues: [], // Lista med problem från providers som underkänner
   reasoning: "**Anthropic:** Frågan är korrekt...\n\n**Gemini:** Bra fråga...",
   providerResults: {
     anthropic: { valid: true, reasoning: "..." },
     openai: { valid: true, reasoning: "..." },
-    gemini: { valid: true, reasoning: "..." }
+    gemini: { valid: false, reasoning: "...", issues: ["..."] }
   },
   providersChecked: 3,
-  suggestedCorrectOption: 2 // Om AI hittar fel i correctOption
+  suggestedCorrectOption: 2 // Om AI hittar fel i correctOption (valfritt)
 }
 ```
 
 ### Multi-Provider Consensus
 
-Validering använder alla tillgängliga providers för att säkerställa kvalitet:
+Validering använder alla tillgängliga providers med **majoritetsbased konsensus**:
 
-- Om **alla providers** godkänner → Frågan är giltig ✅
-- Om **någon provider** underkänner → Frågan är ogiltig ❌
-- Om **providers är oeniga** → Frågan markeras som tveksam ⚠️
+- Om **majoriteten godkänner** → Frågan är giltig ✅
+- Om **majoriteten underkänner** → Frågan är ogiltig ❌
+- Vid **lika röstfördelning** → Frågan underkänns (säkerhetsprincip) ⚠️
+
+Exempel:
+- **2 godkänner, 1 underkänner** → Giltig ✅ (2/3 majoritet)
+- **1 godkänner, 2 underkänner** → Ogiltig ❌ (2/3 majoritet)
+- **1 godkänner, 1 underkänner** → Ogiltig ❌ (lika, säkerhetsprincip)
 
 ### Admin-flikar för validering
 
@@ -270,15 +282,21 @@ Validering använder alla tillgängliga providers för att säkerställa kvalite
 - **Frågebankens frågekort:** har återigen en knapp för enskild AI-validering (`AI-validera`). Den köar `validateQuestionWithAI`, registrerar bakgrundsjobbet och skriver resultatet via `questionService.markAsValidated/markAsInvalid`.
 - Frågelistans filter stödjer nu de migrerade fälten (`categories`, `ageGroups`, `targetAudience`) och sökningen matchar även ID, kategorier och målgrupper.
 
-### Statusuppdatering (2025-XX-XX)
+### Statusuppdatering
 
-**Gjort**
-- Återinfört enskild AI-validering direkt på frågekortet i `AdminQuestionsPage.js`. Funktionen använder befintliga Cloud Functions (`validateQuestionWithAI`) och markerar resultat i Firestore via `questionService.markAsValidated/markAsInvalid`.
+**Implementerat**
+- ✅ Enskild AI-validering direkt på frågekortet i `AdminQuestionsPage.js`
+- ✅ Använder Cloud Functions (`validateQuestionWithAI`) och markerar resultat via `questionService.markAsValidated/markAsInvalid`
+- ✅ Batchvalidering via Cloud Tasks med progressrapportering
+- ✅ Strukturvalidering i webbläsaren innan AI-validering
+- ✅ Dublettkontroll vid import med Levenshtein-distans
+- ✅ **Majoritetsbased konsensus** - Frågor godkänns om majoriteten av providers säger ja
+- ✅ **Flexibel språkvalidering** - Frågor kan ha antingen svenska eller engelska (eller båda)
 
-**Kvar / Felaktigt**
-- Listvyn visar fortfarande `0` godkända frågor efter batchvalidering. Kontrollera att `aiValidated`, `aiValidatedAt` och `aiValidationResult.valid` faktiskt skrivs på varje dokument. Om de saknas, felsök `questionService.markManyAsValidated` (t.ex. rättigheter eller misslyckade Firestore-uppdateringar).
-- Multi-provider-konsensusen är strikt: ett enda negativt resultat gör att AI-status blir underkänd. Utvärdera om UI ska visa mer granular feedback (t.ex. vilka providers som blockerar) eller om vi behöver fallback-hantering när en provider ofta returnerar `valid: false`.
-- När en fråga saknar komplett språkversion (saknar svensk text eller fyra alternativ) stoppar per-fråga-valideringen. Lägg till editorstöd för att komplettera eller acceptera engelska fallback innan validering.
+**Förbättringar (2025-01-13)**
+- 🔧 Multi-provider-konsensus använder nu majoritet istället för unanimitet
+- 🔧 Strukturvalidering kräver endast ett komplett språk (inte båda)
+- 🔧 Validerings-resultat inkluderar nu `consensus`-objekt med röstfördelning
 
 ---
 
@@ -334,6 +352,7 @@ Alla AI-operationer körs som bakgrundsjobb för att inte blockera UI.
 1. **generation** - AI-generering av frågor
 2. **validation** - Validering av en fråga
 3. **batchvalidation** - Validering av flera frågor
+4. **batchregenerateemojis** - Mass-generering av emojis för valda frågor
 
 ### Task-status
 
@@ -611,8 +630,14 @@ functions/
 │   ├── aiQuestionValidator.js        # Anthropic validering
 │   ├── openaiQuestionValidator.js    # OpenAI validering
 │   ├── geminiQuestionValidator.js    # Gemini validering
-│   ├── aiQuestionCategorizer.js      # AI-kategorisering
-│   └── questionImportService.js      # Dublettkontroll & import
+│   ├── aiQuestionCategorizer.js      # AI-kategorisering (Anthropic)
+│   ├── openaiQuestionCategorizer.js  # AI-kategorisering (OpenAI)
+│   ├── geminiQuestionCategorizer.js  # AI-kategorisering (Gemini)
+│   ├── aiSvgGenerator.js             # SVG-illustrationer (Anthropic)
+│   ├── openaiSvgGenerator.js         # SVG-illustrationer (OpenAI)
+│   ├── geminiSvgGenerator.js         # SVG-illustrationer (Gemini)
+│   ├── questionImportService.js      # Dublettkontroll & import
+│   └── questionValidation.js         # Strukturvalidering
 
 src/
 ├── views/
@@ -620,9 +645,14 @@ src/
 │   ├── SuperUserTasksPage.js         # Bakgrundsjobb UI
 │   └── CreateRunPage.js              # Skapa tipspromenad
 ├── services/
-│   └── questionService.js            # Frontend question service
-└── hooks/
-    └── useBackgroundTasks.js         # React hook för tasks
+│   ├── questionService.js            # Frontend question service
+│   ├── questionValidationService.js  # Validering & dublettkontroll
+│   └── aiService.js                  # AI-kommunikation
+├── components/
+│   └── admin/
+│       └── AIValidationPanel.js      # AI-validering UI
+└── context/
+    └── BackgroundTaskContext.js      # Background task state management
 
 docs/
 └── AI-QUESTION-SYSTEM.md             # Detta dokument
@@ -1008,10 +1038,136 @@ https://europe-west1-geoquest2-7e45c.cloudfunctions.net/[funktionsnamn]
 
 ---
 
+## Kända fel och åtgärdade problem
+
+### Åtgärdade fel (2025-01-13)
+
+Följande fel från QA-listan är nu åtgärdade:
+- Schemalagd import kör numera både dublettkontroll och AI-validering innan frågor sparas.
+- Superuser kan välja vilka AI-providers som används för SVG-generering direkt i samma panel som övriga ändamål.
+- SVG-genereringen har fått uppdaterade promptar och krav så att illustrationerna blir tydligare och mer relevanta.
+- Valideringsdatumet i frågebanken läses nu från rätt fält och visas alltid med svensk datumformattering.
+- Frågebanken visar även när illustrationerna genererades och vilken provider som användes.
+
+#### ✅ Kritiskt fel: Batchvalidering visar 0 godkända frågor
+**Problem:** Efter batchvalidering visades 0 godkända frågor trots att valideringen rapporterade framgång.
+
+**Orsak:** Frågor sparades inte omedelbart under valideringsloopen – endast i minnet. När frontend-komponenten hämtade frågor fanns inga uppdaterade resultat.
+
+**Lösning:** Lagt till `await questionService.markAsValidated(questionId, validationData)` direkt i valideringsloopen i `batchValidateQuestions` (functions/index.js). Varje fråga sparas nu synkront till Firestore innan nästa validering startar.
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
+#### ✅ Fel 1: Schemalagd import kör inte AI-validering
+**Problem:** Den schemalagda importen (`questionImport` som körs var 6:e timme) körde endast dublettkontroll men ingen AI-validering på de importerade frågorna.
+
+**Orsak:** Import-funktionen saknade logik för att köa AI-validering efter lyckad import.
+
+**Lösning:** Lagt till automatisk AI-validering efter import är klar. När `questionImport` har sparat frågor till Firestore köas nu ett batch-valideringsjobb via Cloud Tasks med taskId-spårning. Detta säkerställer att schemalagda frågor får samma kvalitetskontroll som manuellt genererade frågor.
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
+#### ✅ Fel 2: SVG-providers kan inte väljas i superuser-läge
+**Problem:** Superuser-inställningarna saknade möjlighet att konfigurera vilka AI-providers som ska användas för SVG-illustration-generering. Systemet använde hårdkodade providers eller migration-providers.
+
+**Orsak:** Provider-konfigurationen hade endast tre ändamål definierade: `generation`, `validation` och `migration`. Illustration-generering delade providers med migration vilket inte var optimalt.
+
+**Lösning:**
+- Lagt till nytt ändamål `illustration` i provider-inställningar (både frontend och backend)
+- Uppdaterat `AIProviderSettingsPage.js` med nytt avsnitt för illustration-providers (🎨)
+- Uppdaterat `getProvidersForPurpose()` i functions/index.js för att returnera illustration-providers
+- Uppdaterat alla SVG-genererings-anrop att använda `getProvidersForPurpose('illustration')` istället för hårdkodade eller migration-providers
+- Detta gäller: AI-generering (aiGenerateQuestions), migration (migrateQuestionsToNewSchema) och regenerering (regenerateQuestionIllustration)
+
+**Filer som ändrades:**
+- `functions/index.js` (line 493-514, 781-796, 1250-1300, 2324-2337, 2795-2807, 681-691)
+- `src/views/AIProviderSettingsPage.js` (line 34-38, 143-148)
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
+#### ✅ Fel 3: SVG-generering behöver förbättras (mer illustrativ)
+**Problem:** Genererade SVG-illustrationer var svåra att koppla till frågorna. Illustrationerna var för abstrakta och inte tillräckligt specifika för frågeinnehållet.
+
+**Orsak:** AI-prompten var inte tillräckligt tydlig om att illustrationerna måste vara direkt relevanta och specifika för frågeinnehållet.
+
+**Lösning:**
+- Omskrivet system-prompt och user-prompt i alla tre SVG-generatorer
+- Lagt till tydliga instruktioner: "Om frågan handlar om ett djur → rita djuret (inte bara en abstrakt siluett)"
+- Ökat komplexitetskrav från 3-5 element till 5-10 element för mer detaljerade illustrationer
+- Ökat färgpalett från 3-5 till 3-6 harmoniska färger
+- Lagt till konkreta exempel på vad "tydlig" illustration innebär
+- Ökat max_tokens från 2000 till 3000 för mer detaljerade SVG:er
+- Ökat temperature från 0.6 till 0.7 för mer kreativ variation
+
+**Filer som ändrades:**
+- `functions/services/aiSvgGenerator.js` (line 59-82, 93-101, 106-110)
+- `functions/services/openaiSvgGenerator.js` (samma ändringar)
+- `functions/services/geminiSvgGenerator.js` (samma ändringar)
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
+#### ✅ Fel 4: Valideringsdatum visas felaktigt
+**Problem:** Valideringsdatum (`aiValidatedAt`, `manuallyApprovedAt`, `manuallyRejectedAt`) visades felaktigt i frågebanken eftersom Firestore Timestamps inte konverterades korrekt.
+
+**Orsak:** Firestore returnerar Timestamp-objekt som har en `.toDate()`-metod, men koden anropade `.toLocaleString()` direkt på Timestamp-objektet.
+
+**Lösning:**
+- Lagt till villkorskontroll för `.toDate()` innan `.toLocaleString()` anropas
+- Implementerat fallback för vanliga JavaScript Date-objekt
+- Format: `timestamp.toDate ? timestamp.toDate().toLocaleString('sv-SE') : new Date(timestamp).toLocaleString('sv-SE')`
+
+**Filer som ändrades:**
+- `src/views/AdminQuestionsPage.js` (line 203-220)
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
+#### ✅ Fel 5: Saknar datum för illustration-generering
+**Problem:** Det fanns ingen synlig information om när en illustration genererades eller vilken provider som användes.
+
+**Orsak:** Systemet sparade inte `illustrationGeneratedAt` eller `illustrationProvider` när SVG:er genererades.
+
+**Lösning:**
+- Lagt till `illustrationGeneratedAt` (serverTimestamp) när SVG genereras
+- Lagt till `illustrationProvider` (provider.name) för spårning av vilken AI som användes
+- Uppdaterat alla tre SVG-genererings-punkter: AI-generering, migration och regenerering
+- Uppdaterat AdminQuestionsPage att visa generation-datum och provider i illustration-sektionen
+
+**Filer som ändrades:**
+- `functions/index.js` (line 1285-1293, 706-713, 2471, 2949)
+- `src/views/AdminQuestionsPage.js` (line 367-381)
+
+**Status:** ✅ Löst 2025-01-13
+
+---
+
 ## Kontakt
 
 För frågor om systemet, kontakta utvecklingsteamet eller läs koden i:
 - `functions/index.js`
 - `functions/services/`
 
-*Senast uppdaterad: 2025-10-11*
+*Senast uppdaterad: 2025-01-13*
+id klick på knappen "🎨 Nya emojis" på ett frågekort kraschade applikationen med ett `TypeError`.
+
+**Orsak:** Koden i `questionService.js` anropade en funktion (`regenerateQuestionIllustration`) som inte existerade i `aiService.js`. Namngivningen av funktioner och variabler var också missvisande (använde "illustration" istället för "emoji").
+
+**Lösning:**
+- Funktionen i `questionService.js` döptes om från `regenerateIllustration` till `regenerateEmoji` för tydlighet.
+- Anropet i `regenerateEmoji` pekar nu på den korrekta funktionen `aiService.regenerateQuestionEmoji`.
+- Frontend-komponenten `AdminQuestionsPage.js` har uppdaterats för att använda de nya, tydligare funktions- och variabelnamnen.
+
+**Status:** ✅ Löst 2025-10-14
+
+---
+
+*Senast uppdaterad: 2025-10-14*

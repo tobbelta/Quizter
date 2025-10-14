@@ -10,11 +10,11 @@ const admin = require("firebase-admin");
 const {CloudTasksClient} = require("@google-cloud/tasks");
 const {prepareQuestionsForImport, loadExistingQuestions} = require("./services/questionImportService");
 const {categorizeQuestion: categorizeWithAnthropic} = require('./services/aiQuestionCategorizer');
-const {generateSvgIllustration: generateSvgWithAnthropic} = require('./services/aiSvgGenerator');
+const {generateEmoji: generateEmojiWithAnthropic} = require('./services/aiEmojiGenerator.js');
 const {categorizeQuestion: categorizeWithOpenAI} = require('./services/openaiQuestionCategorizer');
-const {generateSvgIllustration: generateSvgWithOpenAI} = require('./services/openaiSvgGenerator');
+const {generateEmoji: generateEmojiWithOpenAI} = require('./services/openaiEmojiGenerator.js');
 const {categorizeQuestion: categorizeWithGemini} = require('./services/geminiQuestionCategorizer');
-const {generateSvgIllustration: generateSvgWithGemini} = require('./services/geminiSvgGenerator');
+const {generateEmoji: generateEmojiWithGemini} = require('./services/geminiEmojiGenerator.js');
 
 // CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
@@ -491,8 +491,7 @@ exports.getProviderSettings = createHttpsHandler(async (req, res) => {
             const settingsDoc = await db.collection('aiProviderSettings').doc('config').get();
 
             const defaultSettings = {
-                generation: {
-                    anthropic: true,
+                generation: { anthropic: true,
                     openai: true,
                     gemini: true
                 },
@@ -505,6 +504,11 @@ exports.getProviderSettings = createHttpsHandler(async (req, res) => {
                     anthropic: true,
                     openai: false,
                     gemini: false
+                },
+                illustration: {
+                    anthropic: true,
+                    openai: true,
+                    gemini: true
                 }
             };
 
@@ -593,9 +597,9 @@ exports.updateProviderSettings = createHttpsHandler(async (req, res) => {
 });
 
 /**
- * Regenerate SVG illustration for a single question using configured providers.
+ * Regenerate emoji illustration for a single question using configured providers.
  */
-exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => {
+exports.regenerateQuestionEmoji = createHttpsHandler(async (req, res) => {
     return cors(req, res, async () => {
         if (!ensurePost(req, res)) {
             return;
@@ -647,7 +651,7 @@ exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => 
 
             const questionText = typeof questionTextRaw === 'string' && questionTextRaw.trim().length > 0
                 ? questionTextRaw
-                : 'Ok�nd fr�ga fr�n tidigare import';
+                : 'Okänd fråga från tidigare import';
 
             const rawOptions =
                 questionData.languages?.sv?.options ??
@@ -673,10 +677,10 @@ exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => 
                 explanation: explanationText
             };
 
-            const providers = await getProvidersForPurpose('migration');
+            const providers = await getProvidersForPurpose('illustration');
             if (providers.length === 0) {
                 return res.status(500).json({
-                    error: 'AI migration requires at least one provider to be enabled and configured'
+                    error: 'No illustration providers are enabled and configured'
                 });
             }
 
@@ -685,22 +689,24 @@ exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => 
                 preferredProvider = providers.find((p) => p.name === provider);
             }
 
-            const svgOutcome = await runSvgGenerationWithProviders(
+            const emojiOutcome = await runEmojiGenerationWithProviders(
                 questionPayload,
                 providers,
                 questionId,
                 preferredProvider
             );
 
-            if (!svgOutcome) {
+            if (!emojiOutcome) {
                 return res.status(500).json({
                     error: 'Failed to generate illustration with available providers'
                 });
             }
 
             const updateData = {
-                illustration: svgOutcome.svg,
-                migrationSvgProvider: svgOutcome.provider.name,
+                illustration: emojiOutcome.emoji,
+                illustrationProvider: emojiOutcome.provider.name,
+                illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                migrationSvgProvider: emojiOutcome.provider.name,
                 migrationSvgUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             };
@@ -709,7 +715,7 @@ exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => 
 
             logger.info('Regenerated illustration for question', {
                 questionId,
-                provider: svgOutcome.provider.name,
+                provider: emojiOutcome.provider.name,
                 requestedProvider: provider || 'auto',
                 userId: decodedToken.uid,
             });
@@ -717,12 +723,44 @@ exports.regenerateQuestionIllustration = createHttpsHandler(async (req, res) => 
             res.status(200).json({
                 success: true,
                 questionId,
-                provider: svgOutcome.provider.name,
-                svg: svgOutcome.svg,
+                provider: emojiOutcome.provider.name,
+                emoji: emojiOutcome.emoji,
             });
         } catch (error) {
             logger.error('Error regenerating illustration', { error: error.message, stack: error.stack });
             res.status(500).json({ error: "Failed to regenerate illustration", message: error.message });
+        }
+    });
+});
+
+exports.regenerateAllIllustrations = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const taskId = await enqueueTask('emojiregeneration', {}, userId);
+
+            res.status(202).json({
+                success: true,
+                message: "Illustration regeneration has been queued.",
+                taskId: taskId
+            });
+        } catch (error) {
+            logger.error("Error queueing illustration regeneration", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue illustration regeneration task.", message: error.message });
         }
     });
 });
@@ -776,7 +814,8 @@ async function getProviderSettings() {
     const defaultSettings = {
       generation: { anthropic: true, openai: true, gemini: true },
       validation: { anthropic: true, openai: true, gemini: true },
-      migration: { anthropic: true, openai: false, gemini: false }
+      migration: { anthropic: true, openai: false, gemini: false },
+      illustration: { anthropic: true, openai: true, gemini: true }
     };
 
     return settingsDoc.exists ? settingsDoc.data() : defaultSettings;
@@ -785,7 +824,8 @@ async function getProviderSettings() {
     return {
       generation: { anthropic: true, openai: true, gemini: true },
       validation: { anthropic: true, openai: true, gemini: true },
-      migration: { anthropic: true, openai: false, gemini: false }
+      migration: { anthropic: true, openai: false, gemini: false },
+      illustration: { anthropic: true, openai: true, gemini: true }
     };
   }
 }
@@ -823,7 +863,10 @@ async function getProvidersForPurpose(purpose = 'generation') {
     }
     if (purpose === 'migration') {
       provider.categorize = (payload) => categorizeWithAnthropic(payload, anthropicKey);
-      provider.generateSvg = (payload) => generateSvgWithAnthropic(payload, anthropicKey);
+      provider.generateEmoji = (payload) => generateEmojiWithAnthropic(payload, anthropicKey);
+    }
+    if (purpose === 'illustration') {
+      provider.generateEmoji = (payload) => generateEmojiWithAnthropic(payload, anthropicKey);
     }
     providers.push(provider);
   }
@@ -839,7 +882,10 @@ async function getProvidersForPurpose(purpose = 'generation') {
     }
     if (purpose === 'migration') {
       provider.categorize = (payload) => categorizeWithOpenAI(payload, openaiKey);
-      provider.generateSvg = (payload) => generateSvgWithOpenAI(payload, openaiKey);
+      provider.generateEmoji = (payload) => generateEmojiWithOpenAI(payload, openaiKey);
+    }
+    if (purpose === 'illustration') {
+      provider.generateEmoji = (payload) => generateEmojiWithOpenAI(payload, openaiKey);
     }
     providers.push(provider);
   }
@@ -855,7 +901,10 @@ async function getProvidersForPurpose(purpose = 'generation') {
     }
     if (purpose === 'migration') {
       provider.categorize = (payload) => categorizeWithGemini(payload, geminiKey);
-      provider.generateSvg = (payload) => generateSvgWithGemini(payload, geminiKey);
+      provider.generateEmoji = (payload) => generateEmojiWithGemini(payload, geminiKey);
+    }
+    if (purpose === 'illustration') {
+      provider.generateEmoji = (payload) => generateEmojiWithGemini(payload, geminiKey);
     }
     providers.push(provider);
   }
@@ -906,8 +955,8 @@ async function runCategorizationWithProviders(questionPayload, providers, docId)
   return null;
 }
 
-async function runSvgGenerationWithProviders(questionPayload, providers, docId, preferredProvider) {
-  const availableProviders = providers.filter((provider) => typeof provider.generateSvg === 'function');
+async function runEmojiGenerationWithProviders(questionPayload, providers, docId, preferredProvider) {
+  const availableProviders = providers.filter((provider) => typeof provider.generateEmoji === 'function');
   if (availableProviders.length === 0) {
     return null;
   }
@@ -922,10 +971,10 @@ async function runSvgGenerationWithProviders(questionPayload, providers, docId, 
 
   for (const provider of order) {
     try {
-      const svg = await provider.generateSvg(questionPayload);
-      return { svg, provider };
+      const emoji = await provider.generateEmoji(questionPayload);
+      return { emoji, provider };
     } catch (error) {
-      logger.warn(`SVG generation failed for provider ${provider.name}`, {
+      logger.warn(`Emoji generation failed for provider ${provider.name}`, {
         questionId: docId,
         error: error.message,
       });
@@ -1019,6 +1068,33 @@ exports.questionImport = onSchedule(
         timestamp: event.scheduleTime,
         validation: stats,
       });
+
+      // Köa AI-validering av de importerade frågorna (asynkront)
+      try {
+        const questionsForValidation = questionsToImport.map(q => ({
+          id: q.id,
+          question: q.languages?.sv?.text || q.question?.sv || '',
+          options: q.languages?.sv?.options || q.options?.sv || [],
+          correctOption: q.correctOption || 0,
+          explanation: q.languages?.sv?.explanation || q.explanation?.sv || ''
+        }));
+
+        if (questionsForValidation.length > 0) {
+          const taskId = await enqueueTask('batchvalidation', {
+            questions: questionsForValidation
+          }, 'system');
+
+          logger.info(`Queued AI validation for ${questionsForValidation.length} imported questions`, {
+            taskId,
+            count: questionsForValidation.length
+          });
+        }
+      } catch (validationError) {
+        logger.warn('Failed to queue AI validation for imported questions', {
+          error: validationError.message
+        });
+        // Continue even if validation queueing fails
+      }
 
       // Skapa notis till superusers
       try {
@@ -1213,46 +1289,56 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             throw new Error('No new questions passed validation/dublettkontroll.');
         }
 
-        // Generera SVG-illustrationer för frågorna
-        const canGenerateSvg = Boolean(anthropicKey);
+        // Generera Emoji-illustrationer för frågorna med konfigurerade providers
+        const illustrationProviders = await getProvidersForPurpose('illustration');
+        const canGenerateEmoji = illustrationProviders.length > 0;
+
         await safeUpdateProgress({
             phase: 'Genererar illustrationer',
-            completed: canGenerateSvg ? 0 : questionsToImport.length,
+            completed: canGenerateEmoji ? 0 : questionsToImport.length,
             total: questionsToImport.length,
-            details: canGenerateSvg
-                ? 'Skapar SVG-illustrationer med AI...'
-                : 'Anthropic-nyckel saknas - hoppar över SVG-generering'
+            details: canGenerateEmoji
+                ? 'Skapar Emoji-illustrationer med AI...'
+                : 'Inga illustration-providers aktiverade - hoppar över Emoji-generering'
         });
 
-        const { generateSvgIllustration } = require('./services/aiSvgGenerator');
-        let svgGeneratedCount = 0;
-        let svgFailedCount = 0;
-        let svgSkippedCount = 0;
+        let emojiGeneratedCount = 0;
+        let emojiFailedCount = 0;
+        let emojiSkippedCount = 0;
 
-        if (!canGenerateSvg) {
-            svgSkippedCount = questionsToImport.length;
-            logger.warn('Skipping SVG generation for AI questions - Anthropic API key is missing');
+        if (!canGenerateEmoji) {
+            emojiSkippedCount = questionsToImport.length;
+            logger.warn('Skipping Emoji generation for AI questions - no illustration providers available');
         } else {
             for (const question of questionsToImport) {
-                try {
-                    const svg = await generateSvgIllustration({
-                        question: question.languages?.sv?.text || question.question?.sv || question.question,
-                        options: question.languages?.sv?.options || question.options?.sv || question.options || [],
-                        explanation: question.languages?.sv?.explanation || question.explanation?.sv || question.explanation
-                    }, anthropicKey);
+                const questionPayload = {
+                    question: question.languages?.sv?.text || question.question?.sv || question.question,
+                    options: question.languages?.sv?.options || question.options?.sv || question.options || [],
+                    explanation: question.languages?.sv?.explanation || question.explanation?.sv || question.explanation
+                };
 
-                    question.illustration = svg;
-                    svgGeneratedCount++;
-                } catch (error) {
-                    logger.warn(`Failed to generate SVG for question ${question.id}`, { error: error.message });
-                    svgFailedCount++;
+                const emojiOutcome = await runEmojiGenerationWithProviders(
+                    questionPayload,
+                    illustrationProviders,
+                    question.id,
+                    null
+                );
+
+                if (emojiOutcome) {
+                    question.illustration = emojiOutcome.emoji;
+                    question.illustrationGeneratedAt = admin.firestore.FieldValue.serverTimestamp();
+                    question.illustrationProvider = emojiOutcome.provider.name;
+                    emojiGeneratedCount++;
+                } else {
+                    emojiFailedCount++;
+                    logger.warn(`Failed to generate Emoji for question ${question.id}`);
                 }
 
                 await safeUpdateProgress({
                     phase: 'Genererar illustrationer',
-                    completed: svgGeneratedCount + svgFailedCount,
+                    completed: emojiGeneratedCount + emojiFailedCount,
                     total: questionsToImport.length,
-                    details: `${svgGeneratedCount} illustrationer skapade, ${svgFailedCount} misslyckades`
+                    details: `${emojiGeneratedCount} illustrationer skapade, ${emojiFailedCount} misslyckades`
                 });
             }
         }
@@ -1284,9 +1370,9 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             duplicatesBlocked: stats.duplicatesBlocked,
             invalidCount: stats.invalidCount,
             imported: questionsToImport.length,
-            svgGenerated: svgGeneratedCount,
-            svgFailed: svgFailedCount,
-            svgSkipped: svgSkippedCount,
+            emojiGenerated: emojiGeneratedCount,
+            emojiFailed: emojiFailedCount,
+            emojiSkipped: emojiSkippedCount,
         });
 
         const result = {
@@ -1294,10 +1380,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             provider: usedProvider,
             questionIds: questionsToImport.map(q => q.id),
             validation: stats,
-            svg: {
-                generated: svgGeneratedCount,
-                failed: svgFailedCount,
-                skipped: svgSkippedCount
+            emoji: {
+                generated: emojiGeneratedCount,
+                failed: emojiFailedCount,
+                skipped: emojiSkippedCount
             },
             details: {
                 requested: amount,
@@ -1307,9 +1393,9 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 invalidCount: stats.invalidCount,
                 category: category || 'Alla',
                 ageGroup: ageGroup || 'Blandad',
-                svgGenerated: svgGeneratedCount,
-                svgFailed: svgFailedCount,
-                svgSkipped: svgSkippedCount
+                emojiGenerated: emojiGeneratedCount,
+                emojiFailed: emojiFailedCount,
+                emojiSkipped: emojiSkippedCount
             }
         };
 
@@ -1317,10 +1403,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         let finalDetails = stats.duplicatesBlocked > 0
             ? `${questionsToImport.length} frågor importerade (${stats.duplicatesBlocked} dubletter blockerade)`
             : `${questionsToImport.length} frågor importerade`;
-        if (svgSkippedCount > 0) {
-            finalDetails += ' (SVG-generering hoppades över)';
-        } else if (svgFailedCount > 0) {
-            finalDetails += ` (${svgFailedCount} illustrationer misslyckades)`;
+        if (emojiSkippedCount > 0) {
+            finalDetails += ' (Emoji-generering hoppades över)';
+        } else if (emojiFailedCount > 0) {
+            finalDetails += ` (${emojiFailedCount} illustrationer misslyckades)`;
         }
 
         await taskDocRef.update({
@@ -1347,6 +1433,219 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 phase: 'Misslyckades',
                 completed: 0,
                 total: amount,
+                details: error.message,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+    }
+});
+
+exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId } = req.data;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+
+    const safeUpdateProgress = async ({ phase = '', completed = 0, total = 0, details = '' }) => {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(taskDocRef);
+                if (!snapshot.exists) {
+                    throw new Error(`Task ${taskId} not found during progress update`);
+                }
+
+                const data = snapshot.data() || {};
+                const status = data.status;
+                if (['cancelled', 'failed'].includes(status)) {
+                    return;
+                }
+
+                const nextProgress = {
+                    phase,
+                    completed: Math.max(0, completed),
+                    total: Math.max(0, total),
+                    details,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                transaction.update(taskDocRef, { progress: nextProgress });
+            });
+        } catch (progressError) {
+            logger.warn(`Failed to update progress for emoji regeneration task ${taskId}`, { error: progressError.message });
+        }
+    };
+
+    try {
+        await taskDocRef.update({
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            progress: {
+                phase: 'Initierar',
+                completed: 0,
+                total: 0,
+                details: 'Förbereder regenerering av illustrationer...',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+        logger.info(`Processing illustration regeneration task ${taskId}`);
+
+        const illustrationProviders = await getProvidersForPurpose('illustration');
+        if (illustrationProviders.length === 0) {
+            throw new Error('No illustration providers are enabled and configured');
+        }
+
+        const questionsRef = db.collection('questions');
+        const snapshot = await questionsRef.get();
+
+        if (snapshot.empty) {
+            throw new Error('No questions found in Firestore');
+        }
+
+        await safeUpdateProgress({
+            phase: 'Hämtar frågor',
+            completed: 0,
+            total: snapshot.size,
+            details: `Hittade ${snapshot.size} frågor att uppdatera`
+        });
+
+        let generatedCount = 0;
+        let failedCount = 0;
+        let processedCount = 0;
+        const updates = [];
+
+        const toArray = (value) => {
+            if (Array.isArray(value)) {
+                return value;
+            }
+            if (value && typeof value === 'object') {
+                return Object.values(value);
+            }
+            if (typeof value === 'string' && value.trim().length > 0) {
+                return [value];
+            }
+            return [];
+        };
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+
+            const questionTextRaw =
+                data.languages?.sv?.text ??
+                data.question?.sv ??
+                data.question ??
+                data.text ??
+                data.languages?.en?.text ??
+                '';
+            const questionText = typeof questionTextRaw === 'string' && questionTextRaw.trim().length > 0
+                ? questionTextRaw
+                : 'Okänd fråga från tidigare import';
+
+            const rawOptions =
+                data.languages?.sv?.options ??
+                data.options?.sv ??
+                data.options ??
+                data.languages?.en?.options ??
+                [];
+            const normalizedOptions = toArray(rawOptions)
+                .map((option) => (typeof option === 'string' ? option : String(option ?? '')))
+                .filter((option) => option.trim().length > 0);
+
+            const explanationText =
+                data.languages?.sv?.explanation ??
+                data.explanation?.sv ??
+                data.explanation ??
+                data.languages?.en?.explanation ??
+                '';
+
+            const questionPayload = {
+                question: questionText,
+                options: normalizedOptions,
+                explanation: explanationText
+            };
+
+            const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+
+            if (emojiOutcome) {
+                updates.push({
+                    ref: doc.ref,
+                    data: {
+                        illustration: emojiOutcome.emoji,
+                        illustrationProvider: emojiOutcome.provider.name,
+                        illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }
+                });
+                generatedCount++;
+            } else {
+                failedCount++;
+                logger.warn('All illustration providers failed to generate emoji for question ' + doc.id);
+            }
+
+            processedCount++;
+            await safeUpdateProgress({
+                phase: 'Regenererar illustrationer',
+                completed: processedCount,
+                total: snapshot.size,
+                details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`
+            });
+        }
+
+        await safeUpdateProgress({
+            phase: 'Sparar ändringar',
+            completed: snapshot.size,
+            total: snapshot.size,
+            details: `Sparar ${updates.length} uppdateringar till databasen...`
+        });
+
+        let currentBatch = db.batch();
+        let batchCount = 0;
+        const batchOps = [];
+
+        for (const update of updates) {
+            currentBatch.update(update.ref, update.data);
+            batchCount++;
+
+            if (batchCount >= 400) {
+                batchOps.push(currentBatch.commit());
+                currentBatch = db.batch();
+                batchCount = 0;
+            }
+        }
+
+        if (batchCount > 0) {
+            batchOps.push(currentBatch.commit());
+        }
+
+        await Promise.all(batchOps);
+
+        const result = {
+            generated: generatedCount,
+            failed: failedCount,
+            total: snapshot.size,
+        };
+
+        await taskDocRef.update({
+            status: 'completed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            result,
+            progress: {
+                phase: 'Klar',
+                completed: snapshot.size,
+                total: snapshot.size,
+                details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+        logger.info(`Successfully completed illustration regeneration task ${taskId}`);
+
+    } catch (error) {
+        logger.error(`Failed illustration regeneration task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: error.message,
+            progress: {
+                phase: 'Misslyckades',
+                completed: 0,
+                total: 0,
                 details: error.message,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             }
@@ -1497,6 +1796,11 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         }
 
         const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
+        const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
+
+        // Majoritetsbased konsensus: frågan är giltig om majoriteten säger ja
+        const majorityValid = validProviders.length > invalidProviders.length;
+
         const issues = invalidProviders.flatMap(([providerName, result]) => {
             const providerLabel = formatProviderName(providerName);
             if (Array.isArray(result.issues) && result.issues.length > 0) {
@@ -1515,7 +1819,13 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         }
 
         const finalResult = {
-            valid: invalidProviders.length === 0,
+            valid: majorityValid,
+            consensus: {
+                valid: validProviders.length,
+                invalid: invalidProviders.length,
+                total: successfulProviders.length,
+                method: 'majority'
+            },
             issues,
             reasoning: reasoningSections.join('\n\n').trim(),
             providerResults: validationResults,
@@ -1582,7 +1892,7 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
 
             res.status(202).json({
                 success: true,
-                message: `Batch validation of ${questions.length} questions has been queued.`,
+                message: `Batch validation of ${questions.length} questions has been queued.`, 
                 taskId: taskId,
                 questionCount: questions.length
             });
@@ -1795,6 +2105,11 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
                 }
 
                 const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
+                const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
+
+                // Majoritetsbased konsensus: frågan är giltig om majoriteten säger ja
+                const majorityValid = validProviders.length > invalidProviders.length;
+
                 const issues = invalidProviders.flatMap(([providerName, result]) => {
                     const providerLabel = formatProviderName(providerName);
                     if (Array.isArray(result.issues) && result.issues.length > 0) {
@@ -1812,7 +2127,7 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
                     }
                 }
 
-                const questionValid = invalidProviders.length === 0;
+                const questionValid = majorityValid;
                 const reasoning = reasoningSections.join('\n\n').trim();
 
                 completedCount++;
@@ -1832,6 +2147,12 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
                 const questionResult = {
                     questionId: id,
                     valid: questionValid,
+                    consensus: {
+                        valid: validProviders.length,
+                        invalid: invalidProviders.length,
+                        total: successfulProviders.length,
+                        method: 'majority'
+                    },
                     issues,
                     reasoning,
                     providerResults: validationResults,
@@ -1849,6 +2170,20 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
                             provider: formatProviderName(providerName),
                             error: result.error
                         }));
+                }
+
+                // SPARA RESULTATET TILL FIRESTORE-FRÅGEDOKUMENTET
+                try {
+                    const questionRef = db.collection('questions').doc(id);
+                    await questionRef.update({
+                        aiValidated: questionValid,
+                        ...(questionValid ? { aiValidatedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
+                        aiValidationResult: questionResult
+                    });
+                    logger.info(`Updated question ${id} with validation result: ${questionValid ? 'valid' : 'invalid'}`);
+                } catch (updateError) {
+                    logger.error(`Failed to update question ${id} with validation result`, { error: updateError.message });
+                    // Continue processing even if update fails
                 }
 
                 results.push(questionResult);
@@ -1917,6 +2252,174 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             status: 'failed',
             finishedAt: admin.firestore.FieldValue.serverTimestamp(),
             error: error.message
+        });
+    }
+});
+
+/**
+ * Queue a task to regenerate emojis for multiple questions.
+ */
+exports.batchRegenerateEmojis = createHttpsHandler(async (req, res) => {
+    return cors(req, res, async () => {
+        if (!ensurePost(req, res)) {
+            return;
+        }
+
+        try {
+            const idToken = req.headers.authorization?.split('Bearer ')[1];
+            if (!idToken) {
+                return res.status(401).json({ error: "Unauthorized: No token provided" });
+            }
+
+            const decodedToken = await admin.auth().verifyIdToken(idToken);
+            const userId = decodedToken.uid;
+
+            const { questionIds } = req.body;
+
+            if (!Array.isArray(questionIds) || questionIds.length === 0) {
+                return res.status(400).json({ error: "questionIds must be a non-empty array" });
+            }
+
+            const taskId = await enqueueTask('batchregenerateemojis', { questionIds }, userId);
+
+            res.status(202).json({
+                success: true,
+                message: `Batch emoji regeneration of ${questionIds.length} questions has been queued.`,
+                taskId: taskId,
+                questionCount: questionIds.length
+            });
+        } catch (error) {
+            logger.error("Error queueing batch emoji regeneration", { error: error.message, stack: error.stack });
+            if (error.code === 'auth/id-token-expired' || error.code === 'auth/argument-error') {
+                return res.status(401).json({ error: "Unauthorized: Invalid token" });
+            }
+            res.status(500).json({ error: "Failed to queue batch emoji regeneration task.", message: error.message });
+        }
+    });
+});
+
+/**
+ * Task-dispatched function to run batch emoji regeneration.
+ */
+exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async (req) => {
+    const { taskId, questionIds } = req.data;
+    const db = admin.firestore();
+    const taskDocRef = db.collection('backgroundTasks').doc(taskId);
+
+    const safeUpdateProgress = async ({ phase = '', completed = 0, total = 0, details = '' }) => {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(taskDocRef);
+                if (!snapshot.exists) {
+                    throw new Error(`Task ${taskId} not found during progress update`);
+                }
+                const data = snapshot.data() || {};
+                if (['cancelled', 'failed', 'completed'].includes(data.status)) {
+                    return;
+                }
+                const nextProgress = { phase, completed, total, details, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+                transaction.update(taskDocRef, { progress: nextProgress });
+            });
+        } catch (progressError) {
+            logger.warn(`Failed to update progress for batch emoji task ${taskId}`, { error: progressError.message });
+        }
+    };
+
+    try {
+        await taskDocRef.update({
+            status: 'processing',
+            startedAt: admin.firestore.FieldValue.serverTimestamp(),
+            progress: { phase: 'Initierar', completed: 0, total: questionIds.length, details: 'Förbereder regenerering av emojis...' }
+        });
+
+        const illustrationProviders = await getProvidersForPurpose('illustration');
+        if (illustrationProviders.length === 0) {
+            throw new Error('No illustration providers are enabled and configured');
+        }
+
+        let generatedCount = 0;
+        let failedCount = 0;
+        const updates = [];
+
+        const questionRefs = questionIds.map(id => db.collection('questions').doc(id));
+        const questionSnapshots = await db.getAll(...questionRefs);
+
+        await safeUpdateProgress({ phase: 'Hämtar frågor', completed: 0, total: questionIds.length, details: `Hittade ${questionSnapshots.length} frågor att uppdatera` });
+
+        const toArray = (value) => {
+            if (Array.isArray(value)) return value;
+            if (value && typeof value === 'object') return Object.values(value);
+            if (typeof value === 'string' && value.trim().length > 0) return [value];
+            return [];
+        };
+
+        for (const doc of questionSnapshots) {
+            if (!doc.exists) {
+                logger.warn(`Question ${doc.id} not found in batch emoji regeneration.`);
+                failedCount++;
+                continue;
+            }
+            const data = doc.data();
+            const questionPayload = {
+                question: data.languages?.sv?.text || data.question?.sv || data.question || data.text || '',
+                options: toArray(data.languages?.sv?.options || data.options?.sv || data.options || []),
+                explanation: data.languages?.sv?.explanation || data.explanation?.sv || data.explanation || ''
+            };
+
+            const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+
+            if (emojiOutcome) {
+                updates.push({
+                    ref: doc.ref,
+                    data: {
+                        illustration: emojiOutcome.emoji,
+                        illustrationProvider: emojiOutcome.provider.name,
+                        illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }
+                });
+                generatedCount++;
+            } else {
+                failedCount++;
+                logger.warn('All illustration providers failed to generate emoji for question ' + doc.id);
+            }
+            await safeUpdateProgress({ phase: 'Regenererar emojis', completed: generatedCount + failedCount, total: questionIds.length, details: `${generatedCount} emojis uppdaterade, ${failedCount} misslyckades` });
+        }
+
+        await safeUpdateProgress({ phase: 'Sparar ändringar', completed: questionIds.length, total: questionIds.length, details: `Sparar ${updates.length} uppdateringar...` });
+
+        let currentBatch = db.batch();
+        let batchCount = 0;
+        const batchOps = [];
+        for (const update of updates) {
+            currentBatch.update(update.ref, update.data);
+            batchCount++;
+            if (batchCount >= 400) {
+                batchOps.push(currentBatch.commit());
+                currentBatch = db.batch();
+                batchCount = 0;
+            }
+        }
+        if (batchCount > 0) {
+            batchOps.push(currentBatch.commit());
+        }
+        await Promise.all(batchOps);
+
+        const result = { generated: generatedCount, failed: failedCount, total: questionIds.length };
+        await taskDocRef.update({
+            status: 'completed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            result,
+            progress: { phase: 'Klar', completed: questionIds.length, total: questionIds.length, details: `${generatedCount} emojis uppdaterade, ${failedCount} misslyckades` }
+        });
+        logger.info(`Successfully completed batch emoji regeneration task ${taskId}`);
+
+    } catch (error) {
+        logger.error(`Failed batch emoji regeneration task ${taskId}`, { error: error.message, stack: error.stack });
+        await taskDocRef.update({
+            status: 'failed',
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: error.message,
+            progress: { phase: 'Misslyckades', details: error.message }
         });
     }
 });
@@ -2207,14 +2710,14 @@ exports.updateQuestionsCreatedAt = onRequest({
 
       logger.info('Finished updating questions', {
         updated: updatedCount,
-        alreadyHad: alreadyHasCount,
+        alreadyHas: alreadyHasCount,
         total: snapshot.size
       });
 
       res.status(200).json({
         message: 'Questions updated successfully',
         updated: updatedCount,
-        alreadyHad: alreadyHasCount,
+        alreadyHas: alreadyHasCount,
         total: snapshot.size
       });
     } catch (error) {
@@ -2250,8 +2753,12 @@ exports.migrateQuestionsToNewSchema = onRequest({
         });
       }
 
+      // Get illustration providers separately for Emoji generation
+      const illustrationProviders = await getProvidersForPurpose('illustration');
+
       logger.info('Migration providers resolved', {
-        providers: migrationProviders.map((provider) => provider.name)
+        categorization: migrationProviders.map((provider) => provider.name),
+        illustration: illustrationProviders.map((provider) => provider.name)
       });
 
       const db = admin.firestore();
@@ -2268,8 +2775,8 @@ exports.migrateQuestionsToNewSchema = onRequest({
       let migratedCount = 0;
       let previouslyMigratedCount = 0;
       let failedCount = 0;
-      let svgGeneratedCount = 0;
-      let svgFailedCount = 0;
+      let emojiGeneratedCount = 0;
+      let emojiFailedCount = 0;
       const updates = [];
       const toArray = (value) => {
         if (Array.isArray(value)) {
@@ -2382,14 +2889,16 @@ exports.migrateQuestionsToNewSchema = onRequest({
           updateData.migrationReasoning = admin.firestore.FieldValue.delete();
         }
 
-        const svgOutcome = await runSvgGenerationWithProviders(questionPayload, migrationProviders, doc.id, categorizeProvider);
-        if (svgOutcome) {
-          updateData.illustration = svgOutcome.svg;
-          updateData.migrationSvgProvider = svgOutcome.provider.name;
-          svgGeneratedCount++;
+        const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+        if (emojiOutcome) {
+          updateData.illustration = emojiOutcome.emoji;
+          updateData.illustrationProvider = emojiOutcome.provider.name;
+          updateData.illustrationGeneratedAt = admin.firestore.FieldValue.serverTimestamp();
+          updateData.migrationSvgProvider = emojiOutcome.provider.name;
+          emojiGeneratedCount++;
         } else {
-          svgFailedCount++;
-          logger.warn('All migration providers failed to generate SVG for question ' + doc.id);
+          emojiFailedCount++;
+          logger.warn('All illustration providers failed to generate Emoji for question ' + doc.id);
           if (!data.illustration) {
             updateData.illustration = admin.firestore.FieldValue.delete();
           }
@@ -2425,8 +2934,8 @@ exports.migrateQuestionsToNewSchema = onRequest({
 
       logger.info('Finished migrating questions with AI', {
         migrated: migratedCount,
-        svgGenerated: svgGeneratedCount,
-        svgFailed: svgFailedCount,
+        emojiGenerated: emojiGeneratedCount,
+        emojiFailed: emojiFailedCount,
         previouslyMigrated: previouslyMigratedCount,
         failed: failedCount,
         total: snapshot.size,
@@ -2436,8 +2945,8 @@ exports.migrateQuestionsToNewSchema = onRequest({
       res.status(200).json({
         message: 'Questions migrated successfully with AI categorization',
         migrated: migratedCount,
-        svgGenerated: svgGeneratedCount,
-        svgFailed: svgFailedCount,
+        emojiGenerated: emojiGeneratedCount,
+        emojiFailed: emojiFailedCount,
         previouslyMigrated: previouslyMigratedCount,
         failed: failedCount,
         total: snapshot.size,
@@ -2445,7 +2954,7 @@ exports.migrateQuestionsToNewSchema = onRequest({
           method: 'AI-powered categorization and illustration using configured providers',
           ageGroupsIdentified: 'AI analyzed each question to determine suitable age groups',
           categoriesIdentified: 'AI analyzed each question to determine relevant categories',
-          svgIllustrations: 'AI generated SVG illustrations for each question',
+          emojiIllustrations: 'AI generated Emoji illustrations for each question',
           targetAudience: 'Set to swedish for all questions',
           removedFields: 'difficulty, category, audience',
           providers: migrationProviders.map((provider) => provider.name)
@@ -2715,9 +3224,13 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             throw new Error('AI migration requires at least one provider to be enabled and configured');
         }
 
+        // Get illustration providers separately for Emoji generation
+        const illustrationProviders = await getProvidersForPurpose('illustration');
+
         logger.info('Migration providers resolved', {
             taskId,
-            providers: migrationProviders.map((provider) => provider.name)
+            categorization: migrationProviders.map((provider) => provider.name),
+            illustration: illustrationProviders.map((provider) => provider.name)
         });
 
         const questionsRef = db.collection('questions');
@@ -2737,8 +3250,8 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         let migratedCount = 0;
         let previouslyMigratedCount = 0;
         let failedCount = 0;
-        let svgGeneratedCount = 0;
-        let svgFailedCount = 0;
+        let emojiGeneratedCount = 0;
+        let emojiFailedCount = 0;
         let processedCount = 0;
         const updates = [];
         const toArray = (value) => {
@@ -2830,7 +3343,7 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                     phase: 'Migrerar & illustrerar',
                     completed: processedCount,
                     total: snapshot.size,
-                    details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade, ${failedCount} misslyckades`
+                    details: `${migratedCount} uppdaterade, ${emojiGeneratedCount} Emoji skapade, ${failedCount} misslyckades`
                 });
 
                 continue;
@@ -2860,14 +3373,16 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 updateData.migrationReasoning = admin.firestore.FieldValue.delete();
             }
 
-        const svgOutcome = await runSvgGenerationWithProviders(questionPayload, migrationProviders, doc.id, categorizeProvider);
-        if (svgOutcome) {
-          updateData.illustration = svgOutcome.svg;
-          updateData.migrationSvgProvider = svgOutcome.provider.name;
-          svgGeneratedCount++;
+        const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+        if (emojiOutcome) {
+          updateData.illustration = emojiOutcome.emoji;
+          updateData.illustrationProvider = emojiOutcome.provider.name;
+          updateData.illustrationGeneratedAt = admin.firestore.FieldValue.serverTimestamp();
+          updateData.migrationSvgProvider = emojiOutcome.provider.name;
+          emojiGeneratedCount++;
         } else {
-          svgFailedCount++;
-          logger.warn('All migration providers failed to generate SVG for question ' + doc.id);
+          emojiFailedCount++;
+          logger.warn('All illustration providers failed to generate Emoji for question ' + doc.id);
           if (!data.illustration) {
             updateData.illustration = admin.firestore.FieldValue.delete();
           }
@@ -2884,7 +3399,7 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 phase: 'Migrerar & illustrerar',
                 completed: processedCount,
                 total: snapshot.size,
-                details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade, ${failedCount} misslyckades`
+                details: `${migratedCount} uppdaterade, ${emojiGeneratedCount} Emoji skapade, ${failedCount} misslyckades`
             });
         }
         await safeUpdateProgress({
@@ -2919,8 +3434,8 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         logger.info('Queued AI migration import summary', {
             taskId,
             migrated: migratedCount,
-            svgGenerated: svgGeneratedCount,
-            svgFailed: svgFailedCount,
+            emojiGenerated: emojiGeneratedCount,
+            emojiFailed: emojiFailedCount,
             previouslyMigrated: previouslyMigratedCount,
             failed: failedCount,
             total: snapshot.size,
@@ -2929,16 +3444,16 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
         const result = {
             migrated: migratedCount,
-            svgGenerated: svgGeneratedCount,
-            svgFailed: svgFailedCount,
+            emojiGenerated: emojiGeneratedCount,
+            emojiFailed: emojiFailedCount,
             previouslyMigrated: previouslyMigratedCount,
             failed: failedCount,
             total: snapshot.size,
             details: {
-                method: 'AI-powered categorization and SVG illustration using Claude',
+                method: 'AI-powered categorization and Emoji illustration using Claude',
                 ageGroupsIdentified: 'AI analyzed each question to determine suitable age groups',
                 categoriesIdentified: 'AI analyzed each question to determine relevant categories',
-                svgIllustrations: 'AI generated SVG illustrations for each question',
+                emojiIllustrations: 'AI generated Emoji illustrations for each question',
                 targetAudience: 'Set to swedish for all questions',
                 removedFields: 'difficulty, category, audience',
                 providers: migrationProviders.map((provider) => provider.name)
@@ -2953,7 +3468,7 @@ exports.runaimigration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 phase: 'Klar',
                 completed: snapshot.size,
                 total: snapshot.size,
-                details: `${migratedCount} uppdaterade, ${svgGeneratedCount} SVG skapade (${svgFailedCount} illustrationer misslyckades, ${previouslyMigratedCount} tidigare migrerade, ${failedCount} misslyckades)`,
+                details: `${migratedCount} uppdaterade, ${emojiGeneratedCount} Emoji skapade (${emojiFailedCount} illustrationer misslyckades, ${previouslyMigratedCount} tidigare migrerade, ${failedCount} misslyckades)`,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             }
         });
@@ -3045,7 +3560,8 @@ exports.stopTask = onRequest({
 exports.deleteTask = onRequest({
   region: "europe-west1",
   timeoutSeconds: 60,
-}, async (req, res) => {
+},
+async (req, res) => {
   cors(req, res, async () => {
     if (!ensurePost(req, res)) {
       return;
@@ -3092,7 +3608,8 @@ exports.deleteTask = onRequest({
 exports.bulkStopTasks = onRequest({
   region: "europe-west1",
   timeoutSeconds: 300,
-}, async (req, res) => {
+},
+async (req, res) => {
   cors(req, res, async () => {
     if (!ensurePost(req, res)) {
       return;
@@ -3170,7 +3687,8 @@ exports.bulkStopTasks = onRequest({
 exports.bulkDeleteTasks = onRequest({
   region: "europe-west1",
   timeoutSeconds: 300,
-}, async (req, res) => {
+},
+async (req, res) => {
   cors(req, res, async () => {
     if (!ensurePost(req, res)) {
       return;
