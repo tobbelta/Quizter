@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
-import { aiService } from '../services/aiService';
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -68,8 +67,6 @@ const SuperUserTasksPage = () => {
   const [deleteResult, setDeleteResult] = useState(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  const [regenerateIllustrationsLoading, setRegenerateIllustrationsLoading] = useState(false);
-  const [regenerateIllustrationsResult, setRegenerateIllustrationsResult] = useState(null);
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -216,32 +213,6 @@ const SuperUserTasksPage = () => {
       await refreshAllTasks();
       // Töm resultatet efter 5 sekunder
       setTimeout(() => setDeleteResult(null), 5000);
-    }
-  };
-
-  const handleRegenerateIllustrations = async () => {
-    if (!window.confirm('Vill du regenerera alla illustrationer? Detta kommer att köa ett bakgrundsjobb.')) {
-      return;
-    }
-
-    setRegenerateIllustrationsLoading(true);
-    setRegenerateIllustrationsResult(null);
-
-    try {
-      const data = await aiService.regenerateAllIllustrations();
-      setRegenerateIllustrationsResult({
-        success: true,
-        message: `✅ Regenerering av illustrationer köad!\n\nJobb-ID: ${data.taskId}`
-      });
-      await refreshAllTasks();
-    } catch (error) {
-      setRegenerateIllustrationsResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setRegenerateIllustrationsLoading(false);
-      setTimeout(() => setRegenerateIllustrationsResult(null), 10000);
     }
   };
 
@@ -437,13 +408,6 @@ const SuperUserTasksPage = () => {
               >
                 {deleteLoading ? '🗑️ Raderar...' : '🗑️ Radera gamla'}
               </button>
-              <button
-                onClick={handleRegenerateIllustrations}
-                disabled={regenerateIllustrationsLoading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {regenerateIllustrationsLoading ? '🎨 Regenererar...' : '🎨 Regenerera illustrationer'}
-              </button>
             </div>
           </div>
           {cleanupResult && (
@@ -454,11 +418,6 @@ const SuperUserTasksPage = () => {
           {deleteResult && (
             <div className={`mt-3 p-3 rounded-lg ${deleteResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
               {deleteResult.message}
-            </div>
-          )}
-          {regenerateIllustrationsResult && (
-            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${regenerateIllustrationsResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {regenerateIllustrationsResult.message}
             </div>
           )}
         </section>
