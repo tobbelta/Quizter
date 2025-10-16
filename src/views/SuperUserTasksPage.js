@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
-import { aiService } from '../services/aiService';
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -66,14 +65,8 @@ const SuperUserTasksPage = () => {
   const [cleanupResult, setCleanupResult] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteResult, setDeleteResult] = useState(null);
-  const [migrateLoading, setMigrateLoading] = useState(false);
-  const [migrateResult, setMigrateResult] = useState(null);
-  const [updateCreatedAtLoading, setUpdateCreatedAtLoading] = useState(false);
-  const [updateCreatedAtResult, setUpdateCreatedAtResult] = useState(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
-  const [regenerateIllustrationsLoading, setRegenerateIllustrationsLoading] = useState(false);
-  const [regenerateIllustrationsResult, setRegenerateIllustrationsResult] = useState(null);
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -220,129 +213,6 @@ const SuperUserTasksPage = () => {
       await refreshAllTasks();
       // Töm resultatet efter 5 sekunder
       setTimeout(() => setDeleteResult(null), 5000);
-    }
-  };
-
-  const handleMigrateQuestions = async () => {
-    if (!window.confirm('⚠️ Vill du migrera alla frågor till nytt schema?\n\n' + 
-      'Detta kommer att köras som ett bakgrundsjobb med progress-rapportering.\n\n' + 
-      'Migrering uppdaterar:\n' + 
-      '• difficulty → ageGroups (array)\n' + 
-      '• category → categories (array)\n' + 
-      '• Lägger till targetAudience\n\n' + 
-      'Redan migrerade frågor hoppas över.')) {
-      return;
-    }
-
-    setMigrateLoading(true);
-    setMigrateResult(null);
-
-    try {
-      // Hämta auth token från Firebase
-      const { auth } = await import('../firebaseClient');
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('Du måste vara inloggad');
-      }
-      const idToken = await user.getIdToken();
-
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/queueMigration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({})
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMigrateResult({
-          success: true,
-          message: `✅ Migrering köad!\n\nJobb-ID: ${data.taskId}\n\nDu kan följa progress nedan i tabellen.`
-        });
-        // Uppdatera task-listan så att det nya jobbet visas
-        await refreshAllTasks();
-      } else {
-        setMigrateResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
-      }
-    } catch (error) {
-      setMigrateResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setMigrateLoading(false);
-      setTimeout(() => setMigrateResult(null), 10000);
-    }
-  };
-
-  const handleUpdateCreatedAt = async () => {
-    if (!window.confirm('Vill du uppdatera createdAt-fält på alla frågor som saknar det?\n\n' + 
-      'Detta lägger till createdAt-fält baserat på generatedAt (om det finns) eller nuvarande tidpunkt.\n\n' + 
-      'Frågor som redan har createdAt hoppas över.')) {
-      return;
-    }
-
-    setUpdateCreatedAtLoading(true);
-    setUpdateCreatedAtResult(null);
-
-    try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt');
-      const data = await response.json();
-
-      if (response.ok) {
-        setUpdateCreatedAtResult({
-          success: true,
-          message: `✅ Uppdatering klar!\n\n` + 
-                  `Uppdaterade: ${data.updated} frågor\n` + 
-                  `Hade redan fältet: ${data.alreadyHad}\n` + 
-                  `Totalt: ${data.total} frågor`
-        });
-      } else {
-        setUpdateCreatedAtResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
-      }
-    } catch (error) {
-      setUpdateCreatedAtResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setUpdateCreatedAtLoading(false);
-      setTimeout(() => setUpdateCreatedAtResult(null), 10000);
-    }
-  };
-
-  const handleRegenerateIllustrations = async () => {
-    if (!window.confirm('Vill du regenerera alla illustrationer? Detta kommer att köa ett bakgrundsjobb.')) {
-      return;
-    }
-
-    setRegenerateIllustrationsLoading(true);
-    setRegenerateIllustrationsResult(null);
-
-    try {
-      const data = await aiService.regenerateAllIllustrations();
-      setRegenerateIllustrationsResult({
-        success: true,
-        message: `✅ Regenerering av illustrationer köad!\n\nJobb-ID: ${data.taskId}`
-      });
-      await refreshAllTasks();
-    } catch (error) {
-      setRegenerateIllustrationsResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setRegenerateIllustrationsLoading(false);
-      setTimeout(() => setRegenerateIllustrationsResult(null), 10000);
     }
   };
 
@@ -514,7 +384,7 @@ const SuperUserTasksPage = () => {
             <div>
               <h3 className="text-lg font-semibold text-white">Developer Tools</h3>
               <p className="text-sm text-slate-400 mt-1">
-                Städa gamla jobb, migrera frågor eller konfigurera AI-providers
+                Städa gamla jobb eller konfigurera AI-providers
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -523,20 +393,6 @@ const SuperUserTasksPage = () => {
                 className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
               >
                 ⚙️ AI Providers
-              </button>
-              <button
-                onClick={handleMigrateQuestions}
-                disabled={migrateLoading}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {migrateLoading ? '🔄 Migrerar...' : '🔄 Migrera schema'}
-              </button>
-              <button
-                onClick={handleUpdateCreatedAt}
-                disabled={updateCreatedAtLoading}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {updateCreatedAtLoading ? '📅 Uppdaterar...' : '📅 Uppdatera createdAt'}
               </button>
               <button
                 onClick={handleCleanup}
@@ -552,25 +408,8 @@ const SuperUserTasksPage = () => {
               >
                 {deleteLoading ? '🗑️ Raderar...' : '🗑️ Radera gamla'}
               </button>
-              <button
-                onClick={handleRegenerateIllustrations}
-                disabled={regenerateIllustrationsLoading}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {regenerateIllustrationsLoading ? '🎨 Regenererar...' : '🎨 Regenerera illustrationer'}
-              </button>
             </div>
           </div>
-          {migrateResult && (
-            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${migrateResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {migrateResult.message}
-            </div>
-          )}
-          {updateCreatedAtResult && (
-            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${updateCreatedAtResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {updateCreatedAtResult.message}
-            </div>
-          )}
           {cleanupResult && (
             <div className={`mt-4 p-3 rounded-lg ${cleanupResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
               {cleanupResult.message}
@@ -579,11 +418,6 @@ const SuperUserTasksPage = () => {
           {deleteResult && (
             <div className={`mt-3 p-3 rounded-lg ${deleteResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
               {deleteResult.message}
-            </div>
-          )}
-          {regenerateIllustrationsResult && (
-            <div className={`mt-4 p-3 rounded-lg whitespace-pre-line ${regenerateIllustrationsResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {regenerateIllustrationsResult.message}
             </div>
           )}
         </section>
