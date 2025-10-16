@@ -1248,7 +1248,10 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
               reasoningSections.push(`**Anthropic:** ${result.reasoning}`);
             }
           } catch (error) {
-            logger.error(`Anthropic validation failed for question ${id}`, {error: error.message});
+            logger.error(
+                `Anthropic validation failed for question ${id}`,
+                {error: error.message},
+            );
             validationResults.anthropic = {
               valid: null,
               error: error.message,
@@ -1270,11 +1273,15 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             );
             validationResults.gemini = result;
             providerHealth.gemini = "healthy";
-            if (typeof result.reasoning === "string" && result.reasoning.trim()) {
+            if (typeof result.reasoning === "string" &&
+                result.reasoning.trim()) {
               reasoningSections.push(`**Gemini:** ${result.reasoning}`);
             }
           } catch (error) {
-            logger.error(`Gemini validation failed for question ${id}`, {error: error.message});
+            logger.error(
+                `Gemini validation failed for question ${id}`,
+                {error: error.message},
+            );
             validationResults.gemini = {
               valid: null,
               error: error.message,
@@ -1296,11 +1303,15 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             );
             validationResults.openai = result;
             providerHealth.openai = "healthy";
-            if (typeof result.reasoning === "string" && result.reasoning.trim()) {
+            if (typeof result.reasoning === "string" &&
+                result.reasoning.trim()) {
               reasoningSections.push(`**OpenAI:** ${result.reasoning}`);
             }
           } catch (error) {
-            logger.error(`OpenAI validation failed for question ${id}`, {error: error.message});
+            logger.error(
+                `OpenAI validation failed for question ${id}`,
+                {error: error.message},
+            );
             validationResults.openai = {
               valid: null,
               error: error.message,
