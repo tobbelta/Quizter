@@ -300,7 +300,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
     if (!canGenerateEmoji) {
       emojiSkippedCount = questionsToImport.length;
-      logger.warn("Skipping Emoji generation for AI questions - no illustration providers available");
+      logger.warn(
+          "Skipping Emoji generation for AI questions - " +
+        "no illustration providers available",
+      );
     } else {
       for (const question of questionsToImport) {
         const questionPayload = {
@@ -336,7 +339,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           phase: "Genererar illustrationer",
           completed: emojiGeneratedCount + emojiFailedCount,
           total: questionsToImport.length,
-          details: `${emojiGeneratedCount} illustrationer skapade, ${emojiFailedCount} misslyckades`,
+          details: `${emojiGeneratedCount} illustrationer skapade, ` +
+            `${emojiFailedCount} misslyckades`,
         });
       }
     }
@@ -482,11 +486,19 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
             const issues = invalidProviders.flatMap(
                 ([providerName, result]) => {
-                  const providerLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
-                  if (Array.isArray(result.issues) && result.issues.length > 0) {
-                    return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
+                  const providerLabel =
+                    providerName.charAt(0).toUpperCase() +
+                    providerName.slice(1);
+                  if (Array.isArray(result.issues) &&
+                      result.issues.length > 0) {
+                    return result.issues.map(
+                        (issue) => `[${providerLabel}] ${issue}`,
+                    );
                   }
-                  return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+                  return [
+                    `[${providerLabel}] AI-valideringen rapporterade ` +
+                    `ett problem utan detaljer`,
+                  ];
                 });
 
             const finalResult = {
@@ -590,7 +602,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     });
     logger.info(`Successfully completed AI generation task ${taskId}`);
   } catch (error) {
-    logger.error(`Failed AI generation task ${taskId}`, {error: error.message, stack: error.stack});
+    logger.error(
+        `Failed AI generation task ${taskId}`,
+        {error: error.message, stack: error.stack},
+    );
     await taskDocRef.update({
       status: "failed",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -704,9 +719,11 @@ exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (re
                 data.text ??
                 data.languages?.en?.text ??
                 "";
-      const questionText = typeof questionTextRaw === "string" && questionTextRaw.trim().length > 0 ?
-                questionTextRaw :
-                "Okänd fråga från tidigare import";
+      const questionText =
+        typeof questionTextRaw === "string" &&
+        questionTextRaw.trim().length > 0 ?
+          questionTextRaw :
+          "Okänd fråga från tidigare import";
 
       const rawOptions =
                 data.languages?.sv?.options ??
