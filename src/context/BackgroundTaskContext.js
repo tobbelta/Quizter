@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import MessageDialog from '../components/shared/MessageDialog';
 import { backgroundTaskService } from '../services/backgroundTaskService';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -33,6 +34,42 @@ const STATUS_VARIANT = {
   cancelled: 'warning',
 };
 
+const PROVIDER_LABELS = {
+  random: 'slumpad provider',
+  gemini: 'Gemini',
+  anthropic: 'Claude',
+  openai: 'OpenAI',
+};
+
+const INITIAL_COMPLETION_DIALOG = {
+  isOpen: false,
+  title: '',
+  message: '',
+  type: 'info',
+};
+
+const buildGenerationCompletionMessage = (task = {}) => {
+  const providerRaw =
+    (typeof task.result?.provider === 'string' && task.result.provider) ||
+    (typeof task.payload?.provider === 'string' && task.payload.provider) ||
+    'AI';
+  const providerKey = providerRaw.toLowerCase();
+  const providerLabel = PROVIDER_LABELS[providerKey] || providerRaw;
+
+  const lines = [];
+  lines.push(`AI-generering via ${providerLabel} klar!`);
+
+  if (typeof task.result?.count === 'number') {
+    lines.push(`${task.result.count} frågor genererades.`);
+  }
+
+  if (Array.isArray(task.result?.questionIds) && task.result.questionIds.length > 0) {
+    lines.push('Frågorna importeras och visas i listan när Firestore-synken är klar.');
+  }
+
+  return lines.join('\n\n');
+};
+
 const safeParseJSON = (value, fallback) => {
   if (!value) return fallback;
   try {
@@ -51,6 +88,7 @@ export const BackgroundTaskProvider = ({ children }) => {
   const [trackedEntries, setTrackedEntries] = useState([]);
   const unseenTaskIdsRef = useRef(new Set());
   const [unseenTaskIdsState, setUnseenTaskIdsState] = useState(new Set());
+  const [completionDialog, setCompletionDialog] = useState(() => ({ ...INITIAL_COMPLETION_DIALOG }));
   const statusHistoryRef = useRef({});
   const notifiedStatusesRef = useRef(new Set());
   const initializedRef = useRef(false);
@@ -181,6 +219,16 @@ const handleTaskSnapshot = useCallback((tasks) => {
             message: messageParts.join('\n'),
             variant,
           });
+
+          if (task.taskType === 'generation' && task.status === 'completed') {
+            const message = buildGenerationCompletionMessage(task);
+            setCompletionDialog({
+              isOpen: true,
+              title: 'AI-generering klar',
+              message,
+              type: 'success',
+            });
+          }
           notifiedStatusesRef.current.add(notificationKey);
         }
       }
@@ -423,7 +471,7 @@ const refreshAllTasks = useCallback(async () => {
   const unreadCount = unreadTaskIds.size;
   const hasActiveTrackedTasks = myTrackedTasks.some((task) => !FINAL_STATUSES.has(task.status));
 
-const contextValue = useMemo(() => ({
+  const contextValue = useMemo(() => ({
     myTasks: userTasksSnapshot,
     myTrackedTasks,
     unreadTaskIds,
@@ -452,6 +500,13 @@ const contextValue = useMemo(() => ({
   return (
     <BackgroundTaskContext.Provider value={contextValue}>
       {children}
+      <MessageDialog
+        isOpen={completionDialog.isOpen}
+        onClose={() => setCompletionDialog({ ...INITIAL_COMPLETION_DIALOG })}
+        title={completionDialog.title}
+        message={completionDialog.message}
+        type={completionDialog.type}
+      />
     </BackgroundTaskContext.Provider>
   );
 };

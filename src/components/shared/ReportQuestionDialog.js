@@ -3,16 +3,23 @@
  */
 import React, { useState } from 'react';
 import { questionService } from '../../services/questionService';
+import MessageDialog from './MessageDialog';
 
 const ReportQuestionDialog = ({ questionId, questionText, onClose, onReported }) => {
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!reason.trim()) {
-      alert('Ange en anledning till rapporten');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Anledning saknas',
+        message: 'Ange en anledning till rapporten',
+        type: 'warning'
+      });
       return;
     }
 
@@ -28,11 +35,21 @@ const ReportQuestionDialog = ({ questionId, questionText, onClose, onReported })
         onReported();
       }
 
-      alert('✅ Tack för din rapport! Frågan har skickats till granskning.');
-      onClose();
+      setDialogConfig({
+        isOpen: true,
+        title: 'Rapport skickad',
+        message: 'Tack för din rapport! Frågan har skickats till granskning.',
+        type: 'success'
+      });
+      setTimeout(() => onClose(), 2000);
     } catch (error) {
       console.error('Kunde inte rapportera fråga:', error);
-      alert('❌ Kunde inte skicka rapport: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte skicka rapport',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -85,6 +102,14 @@ const ReportQuestionDialog = ({ questionId, questionText, onClose, onReported })
             </button>
           </div>
         </form>
+
+        <MessageDialog
+          isOpen={dialogConfig.isOpen}
+          onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+          title={dialogConfig.title}
+          message={dialogConfig.message}
+          type={dialogConfig.type}
+        />
       </div>
     </div>
   );

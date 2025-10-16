@@ -7,6 +7,7 @@ import { questionService } from '../../services/questionService';
 import { aiService } from '../../services/aiService';
 import { taskService } from '../../services/taskService';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
+import MessageDialog from '../shared/MessageDialog';
 
 const AIValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
@@ -19,6 +20,7 @@ const AIValidationPanel = () => {
   const [limitQuestions, setLimitQuestions] = useState(true);
   const { registerTask } = useBackgroundTasks();
   const isMountedRef = useRef(true);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     return () => {
@@ -70,13 +72,14 @@ const AIValidationPanel = () => {
       }
 
       if (questionsToValidate.length === 0) {
-        alert('✅ Det finns inga frågor att validera just nu.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Inga frågor att validera',
+          message: '✅ Det finns inga frågor att validera just nu.',
+          type: 'info'
+        });
         return;
       }
-
-      console.log(
-        `[AIValidationPanel] Startar batch-validering av ${questionsToValidate.length} frågor (inkluderar tidigare validerade: ${includeAllQuestions}, begränsat till: ${limitQuestions ? maxQuestions : 'alla'})`
-      );
 
       // Bygg batch-payload
       const batchQuestions = questionsToValidate.map(question => {
@@ -97,8 +100,6 @@ const AIValidationPanel = () => {
 
       // Starta ETT batch-jobb
       const { taskId } = await aiService.startBatchAIValidation({ questions: batchQuestions });
-
-      console.log(`[AIValidationPanel] Batch-jobb startad med taskId ${taskId}`);
 
       // Registrera bakgrundsjobb
       if (taskId) {
@@ -123,14 +124,10 @@ const AIValidationPanel = () => {
       }
 
       // Vänta på att batch-jobbet blir klart
-      console.log(`[AIValidationPanel] Väntar på att batch-jobbet ${taskId} ska slutföras...`);
       const taskData = await taskService.waitForCompletion(taskId);
-      console.log(`[AIValidationPanel] Batch-jobb klart:`, taskData);
 
       const batchResult = taskData?.result || {};
       const validationResults = batchResult.results || [];
-
-      console.log(`[AIValidationPanel] Fick ${validationResults.length} valideringsresultat från backend`);
 
       // Bygg validationUpdates och results från batch-resultatet
       const results = [];
@@ -173,26 +170,14 @@ const AIValidationPanel = () => {
         }
       }
 
-      console.log(`[AIValidationPanel] Bearbetning klar, totalt ${validationUpdates.length} valideringar gjorda`);
-
       // KRITISKT: Spara alla valideringsresultat till Firestore
       if (validationUpdates.length > 0) {
-        console.log(`[AIValidationPanel] Sparar ${validationUpdates.length} valideringsresultat till Firestore...`);
-        console.log('[AIValidationPanel] Valideringsuppdateringar:', JSON.stringify(validationUpdates.map(u => ({
-          id: u.questionId,
-          valid: u.valid,
-          issues: u.validationData.issues
-        })), null, 2));
-
         try {
           await questionService.markManyAsValidated(validationUpdates);
-          console.log('[AIValidationPanel] ✅ Alla valideringsresultat sparade till Firestore!');
         } catch (error) {
           console.error('[AIValidationPanel] ❌ Fel vid sparande till Firestore:', error);
           throw error;
         }
-      } else {
-        console.warn('[AIValidationPanel] ⚠️ Inga valideringsuppdateringar att spara!');
       }
 
       if (isMountedRef.current) {
@@ -205,7 +190,12 @@ const AIValidationPanel = () => {
       }
     } catch (error) {
       console.error('Fel vid AI-validering:', error);
-      alert('Kunde inte köra AI-validering: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid AI-validering',
+        message: 'Kunde inte köra AI-validering: ' + error.message,
+        type: 'error'
+      });
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -442,6 +432,14 @@ const AIValidationPanel = () => {
           Klicka på "🤖 AI-Validera frågor" för att börja
         </div>
       )}
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

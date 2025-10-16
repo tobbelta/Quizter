@@ -208,12 +208,9 @@ export const firestoreRunGateway = {
 
   /** Söker upp runda via joinCode. */
   async getRunByCode(joinCode) {
-    console.log(`getRunByCode: searching for joinCode=${joinCode}`);
-
     try {
       const runQuery = query(hämtaRundsCollection(), where('joinCode', '==', joinCode.toUpperCase()));
       const snapshot = await getDocs(runQuery);
-      console.log(`getRunByCode: snapshot size=${snapshot.size}`);
       const [first] = snapshot.docs;
       return first ? mapperaRundeDokument(first) : null;
     } catch (error) {
@@ -280,9 +277,6 @@ export const firestoreRunGateway = {
 
   /** Registrerar en ny deltagare i Firestore. */
   async registerParticipant(runId, { userId, alias, contact, isAnonymous }) {
-    console.log('🔧 registerParticipant v2.0 - UPDATED VERSION');
-    console.log('registerParticipant called with:', { runId, userId, alias, contact, isAnonymous });
-
     const participant = {
       id: uuidv4(),
       runId,
@@ -298,15 +292,8 @@ export const firestoreRunGateway = {
       lastSeen: serverTimestamp()   // Använd Firestore serverTimestamp
     };
 
-    console.log('Participant object to write:', {
-      ...participant,
-      joinedAt: 'serverTimestamp()',
-      lastSeen: 'serverTimestamp()'
-    });
-
     try {
       await setDoc(doc(hämtaDeltagarCollection(runId), participant.id), participant);
-      console.log('✅ Participant created successfully!');
     } catch (error) {
       console.error('❌ Failed to create participant:', error);
       console.error('Error code:', error.code);

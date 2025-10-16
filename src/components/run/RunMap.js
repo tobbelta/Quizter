@@ -269,7 +269,6 @@ const RunMap = ({
           if (isClickable && onCheckpointClick) {
             markerProps.eventHandlers = {
               click: () => {
-                console.log(`📍 Checkpoint ${checkpointNumber} klickad (order: ${index})`);
                 onCheckpointClick(index);
               }
             };

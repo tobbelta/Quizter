@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebaseClient';
 import { collection, query, orderBy, limit, getDocs, doc, writeBatch, onSnapshot } from 'firebase/firestore';
 import PageLayout from '../components/layout/PageLayout';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const SuperUserErrorLogsPage = () => {
   const [logs, setLogs] = useState([]);
@@ -18,6 +19,7 @@ const SuperUserErrorLogsPage = () => {
   const [selectedLogs, setSelectedLogs] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [isLive, setIsLive] = useState(true);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -153,10 +155,20 @@ const SuperUserErrorLogsPage = () => {
       setAllLogs(prev => prev.filter(log => !selectedLogs.has(log.id)));
       setSelectedLogs(new Set());
 
-      alert(`✅ ${logIds.length} logg${logIds.length !== 1 ? 'ar' : ''} togs bort`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Loggar borttagna',
+        message: `${logIds.length} logg${logIds.length !== 1 ? 'ar' : ''} togs bort`,
+        type: 'success'
+      });
     } catch (error) {
       console.error('Failed to delete logs:', error);
-      alert('❌ Kunde inte ta bort loggar: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte ta bort loggar',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setDeleting(false);
     }
@@ -186,8 +198,6 @@ const SuperUserErrorLogsPage = () => {
       const logIds = snapshot.docs.map(doc => doc.id);
       const batchSize = 500;
 
-      console.log(`Raderar ${logIds.length} loggar...`);
-
       for (let i = 0; i < logIds.length; i += batchSize) {
         const batch = writeBatch(db);
         const batchIds = logIds.slice(i, i + batchSize);
@@ -198,17 +208,26 @@ const SuperUserErrorLogsPage = () => {
         });
 
         await batch.commit();
-        console.log(`Raderat ${Math.min(i + batchSize, logIds.length)} / ${logIds.length} loggar`);
       }
 
       // Ladda om loggar
       await loadLogs();
       setSelectedLogs(new Set());
 
-      alert(`✅ Alla ${logIds.length} loggar har raderats`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Alla loggar raderade',
+        message: `Alla ${logIds.length} loggar har raderats`,
+        type: 'success'
+      });
     } catch (error) {
       console.error('Failed to delete all logs:', error);
-      alert('❌ Kunde inte ta bort loggar: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte ta bort loggar',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setDeleting(false);
     }
@@ -582,6 +601,14 @@ const SuperUserErrorLogsPage = () => {
           </div>
         )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </PageLayout>
   );
 };

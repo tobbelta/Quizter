@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { messageService } from '../services/messageService';
 import Header from '../components/layout/Header';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const SuperUserMessagesPage = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const SuperUserMessagesPage = () => {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   // Form state
   const [formData, setFormData] = useState({
@@ -63,10 +65,20 @@ const SuperUserMessagesPage = () => {
       // Ladda om meddelanden
       await loadMessages();
 
-      alert('Meddelande skickat!');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Meddelande skickat',
+        message: 'Meddelande skickat!',
+        type: 'success'
+      });
     } catch (error) {
       console.error('Kunde inte skicka meddelande:', error);
-      alert('Kunde inte skicka meddelande. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte skicka meddelande',
+        message: 'Kunde inte skicka meddelande. Se konsolen för detaljer.',
+        type: 'error'
+      });
     }
   };
 
@@ -80,7 +92,12 @@ const SuperUserMessagesPage = () => {
       await loadMessages();
     } catch (error) {
       console.error('Kunde inte radera meddelande:', error);
-      alert('Kunde inte radera meddelande.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte radera meddelande',
+        message: 'Kunde inte radera meddelande.',
+        type: 'error'
+      });
     }
   };
 
@@ -258,6 +275,14 @@ const SuperUserMessagesPage = () => {
           )}
         </div>
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

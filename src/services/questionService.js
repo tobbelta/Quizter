@@ -174,7 +174,6 @@ const addQuestions = async (questions) => {
 
   try {
     // STEG 1: STRUKTURVALIDERING
-    console.log('[questionService] Strukturvalidering av importerade frågor...');
     const validationResults = validateQuestions(incomingWithIds, 'sv');
 
     // Tagga strukturellt ogiltiga frågor (men importera dem ändå med feltagg)
@@ -186,7 +185,6 @@ const addQuestions = async (questions) => {
     });
 
     // STEG 2: DUBLETTKONTROLL
-    console.log('[questionService] Dublettkontroll...');
     const allQuestions = [...cachedQuestions, ...incomingWithIds];
     const duplicates = findDuplicates(allQuestions, 'sv', 0.85);
 
@@ -253,8 +251,6 @@ const addQuestions = async (questions) => {
 
     const validCount = questionsToImport.filter(q => !structurallyInvalidIds.has(q.id)).length;
     const invalidCount = structurallyInvalidIds.size;
-
-    console.log(`[questionService] Import klar: ${validCount} giltiga, ${invalidCount} ogiltiga, ${duplicateQuestionIds.size} dubletter blockerade`);
 
     return {
       added: validCount,
@@ -589,12 +585,6 @@ export const questionService = {
   markManyAsValidated: async (validationUpdates) => {
     await ensureCache();
     try {
-      console.log(`[questionService.markManyAsValidated] Tar emot ${validationUpdates.length} uppdateringar`);
-      console.log('[questionService.markManyAsValidated] Uppdateringar:', validationUpdates.map(u => ({
-        id: u.questionId,
-        valid: u.valid
-      })));
-
       // validationUpdates är en array av { questionId, validationData, valid: true/false }
       const firestoreUpdates = validationUpdates.map(update => ({
         questionId: update.questionId,
@@ -605,9 +595,7 @@ export const questionService = {
         }
       }));
 
-      console.log('[questionService.markManyAsValidated] Anropar questionRepository.updateManyQuestions...');
       await questionRepository.updateManyQuestions(firestoreUpdates);
-      console.log('[questionService.markManyAsValidated] ✅ Firestore-uppdatering klar!');
 
       firestoreUpdates.forEach(({ questionId, updateData }) => {
         updateCachedQuestion(questionId, (current) => ({

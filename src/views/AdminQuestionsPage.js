@@ -15,6 +15,7 @@ import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
 import ValidationPanel from '../components/admin/ValidationPanel';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const QuestionCard = ({
   question,
@@ -33,7 +34,8 @@ const QuestionCard = ({
   regeneratingEmojis,
   onValidationStart,
   onValidationEnd,
-  setIndividualValidationTasks
+  setIndividualValidationTasks,
+  setDialogConfig
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
   const [regeneratingEmoji, setRegeneratingEmoji] = useState(false);
@@ -87,7 +89,12 @@ const QuestionCard = ({
       // Success - visual feedback via updated emoji display
     } catch (error) {
       console.error('[AdminQuestionsPage] Kunde inte regenerera emojis:', error);
-      alert(`⚠️ Kunde inte generera emojis: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid emoji-generering',
+        message: `Kunde inte generera emojis: ${error.message}`,
+        type: 'error'
+      });
     } finally {
       setRegeneratingEmoji(false);
     }
@@ -132,7 +139,12 @@ const QuestionCard = ({
       // Visual feedback via UI indicators - no alert needed
     } catch (error) {
       console.error('[AdminQuestionsPage] Kunde inte starta AI-validering:', error);
-      alert(`Kunde inte starta AI-validering: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid AI-validering',
+        message: `Kunde inte starta AI-validering: ${error.message}`,
+        type: 'error'
+      });
     } finally {
       if (onValidationEnd) {
         onValidationEnd(question.id);
@@ -725,6 +737,7 @@ const AdminQuestionsPage = () => {
   const itemsPerPage = 10;
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'duplicates'
   const isMountedRef = useRef(true);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     const loadQuestions = () => {
@@ -1069,26 +1082,16 @@ const AdminQuestionsPage = () => {
       if (!taskId) {
         throw new Error('Bakgrundsjobbet saknar taskId.');
       }
+      await taskService.waitForCompletion(taskId);
 
-      const taskData = await taskService.waitForCompletion(taskId);
-      const result = taskData?.result || {};
-      const providerLabel = result.provider || aiProvider;
-
-      let message = `🤖 AI-generering via ${providerLabel || 'AI'} klar!\n\n`;
-      if (typeof result.count === 'number') {
-        message += `✓ ${result.count} frågor genererades.\n`;
-      } else {
-        message += '✓ Genereringen slutfördes.\n';
-      }
-
-      if (Array.isArray(result.questionIds) && result.questionIds.length > 0) {
-        message += `\nFrågorna har importerats och visas här så snart Firestore-synken är klar.`;
-      }
-
-      alert(message);
     } catch (error) {
       console.error('Kunde inte generera frågor:', error);
-      alert(`⚠️ Kunde inte generera frågor: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid AI-generering',
+        message: `Kunde inte generera frågor: ${error.message}`,
+        type: 'error'
+      });
     } finally {
       if (isMountedRef.current) {
         setIsGeneratingAI(false);
@@ -1103,10 +1106,20 @@ const AdminQuestionsPage = () => {
 
     try {
       await questionService.markAsManuallyApproved(questionId);
-      alert('✅ Frågan har markerats som manuellt godkänd!');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fråga godkänd',
+        message: 'Frågan har markerats som manuellt godkänd!',
+        type: 'success'
+      });
     } catch (error) {
       console.error('Kunde inte godkänna fråga:', error);
-      alert('❌ Kunde inte godkänna fråga: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid godkännande',
+        message: 'Kunde inte godkänna fråga: ' + error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -1120,10 +1133,20 @@ const AdminQuestionsPage = () => {
 
     try {
       await questionService.markAsManuallyRejected(questionId, reason);
-      alert('✅ Frågan har markerats som manuellt underkänd!');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fråga underkänd',
+        message: 'Frågan har markerats som manuellt underkänd!',
+        type: 'success'
+      });
     } catch (error) {
       console.error('Kunde inte underkänna fråga:', error);
-      alert('❌ Kunde inte underkänna fråga: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid underkännande',
+        message: 'Kunde inte underkänna fråga: ' + error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -1134,10 +1157,20 @@ const AdminQuestionsPage = () => {
 
     try {
       await questionService.approveReportedQuestion(questionId);
-      alert('✅ Frågan har godkänts och tagits bort från karantän!');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Rapporterad fråga godkänd',
+        message: 'Frågan har godkänts och tagits bort från karantän!',
+        type: 'success'
+      });
     } catch (error) {
       console.error('Kunde inte godkänna rapporterad fråga:', error);
-      alert('❌ Kunde inte godkänna fråga: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid godkännande',
+        message: 'Kunde inte godkänna fråga: ' + error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -1148,10 +1181,20 @@ const AdminQuestionsPage = () => {
 
     try {
       await questionService.rejectReportedQuestion(questionId);
-      alert('✅ Frågan har underkänts baserat på användarrapporter!');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Rapporterad fråga underkänd',
+        message: 'Frågan har underkänts baserat på användarrapporter!',
+        type: 'success'
+      });
     } catch (error) {
       console.error('Kunde inte underkänna rapporterad fråga:', error);
-      alert('❌ Kunde inte underkänna fråga: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid underkännande',
+        message: 'Kunde inte underkänna fråga: ' + error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -1165,7 +1208,12 @@ const AdminQuestionsPage = () => {
       setQuestions(prev => prev.filter(q => q.id !== questionId));
     } catch (error) {
       console.error('Kunde inte ta bort fråga:', error);
-      alert(error.message || 'Kunde inte ta bort frågan. Försök igen.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid radering',
+        message: error.message || 'Kunde inte ta bort frågan. Försök igen.',
+        type: 'error'
+      });
     }
   };
 
@@ -1204,7 +1252,12 @@ const AdminQuestionsPage = () => {
       setSelectedQuestions(new Set());
     } catch (error) {
       console.error('Kunde inte radera markerade frågor:', error);
-      alert('Ett fel uppstod vid radering. Vissa frågor kan vara kvar.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid radering',
+        message: 'Ett fel uppstod vid radering. Vissa frågor kan vara kvar.',
+        type: 'error'
+      });
     }
   };
 
@@ -1232,7 +1285,12 @@ const AdminQuestionsPage = () => {
       setSelectedQuestions(new Set()); // Avmarkera efter start
     } catch (error) {
       console.error('Kunde inte starta mass-regenerering av emojis:', error);
-      alert('Ett fel uppstod vid start av mass-regenerering: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid mass-regenerering',
+        message: 'Ett fel uppstod vid start av mass-regenerering: ' + error.message,
+        type: 'error'
+      });
     } finally {
       setIsBatchRegeneratingEmojis(false);
     }
@@ -1265,7 +1323,12 @@ const AdminQuestionsPage = () => {
       setSelectedQuestions(new Set()); // Deselect after starting
     } catch (error) {
       console.error('Kunde inte starta batch AI-validering:', error);
-      alert('Ett fel uppstod vid start av AI-validering: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid AI-validering',
+        message: 'Ett fel uppstod vid start av AI-validering: ' + error.message,
+        type: 'error'
+      });
     } finally {
       setIsBatchValidatingAI(false);
     }
@@ -1542,6 +1605,7 @@ const AdminQuestionsPage = () => {
                       onValidationStart={handleValidationStart}
                       onValidationEnd={handleValidationEnd}
                       setIndividualValidationTasks={setIndividualValidationTasks}
+                      setDialogConfig={setDialogConfig}
                     />
                   );
                 })}
@@ -1762,8 +1826,17 @@ const AdminQuestionsPage = () => {
         </>
       )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };
 
 export default AdminQuestionsPage;
+

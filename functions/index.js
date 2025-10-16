@@ -1261,6 +1261,9 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         });
         logger.info(`Processing AI generation task ${taskId}`, { amount, category, ageGroup, provider });
 
+        // Default targetAudience to 'swedish' - AI will decide if youth questions should be international
+        const targetAudience = 'swedish';
+
         let questions = null;
         let usedProvider = null;
         const anthropicKey = anthropicApiKey.value();
@@ -1277,7 +1280,7 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 total: amount,
                 details: `Använder ${randomProvider.name}...`
             });
-            questions = await randomProvider.generator({ amount, category, ageGroup }, randomProvider.key);
+            questions = await randomProvider.generator({ amount, category, ageGroup, targetAudience }, randomProvider.key);
             usedProvider = randomProvider.name;
         } else if (provider === 'gemini') {
             const geminiKey = geminiApiKey.value();
@@ -1289,7 +1292,7 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                     details: 'Använder Gemini...'
                 });
                 const { generateQuestions: generateWithGemini } = require('./services/geminiQuestionGenerator');
-                questions = await generateWithGemini({ amount, category, ageGroup }, geminiKey);
+                questions = await generateWithGemini({ amount, category, ageGroup, targetAudience }, geminiKey);
                 usedProvider = 'gemini';
             }
         } else if (provider === 'openai') {
@@ -1302,7 +1305,7 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                     details: 'Använder OpenAI...'
                 });
                 const { generateQuestions: generateWithOpenAI } = require('./services/openaiQuestionGenerator');
-                questions = await generateWithOpenAI({ amount, category, ageGroup }, openaiKey);
+                questions = await generateWithOpenAI({ amount, category, ageGroup, targetAudience }, openaiKey);
                 usedProvider = 'openai';
             }
         } else if (anthropicKey) {
@@ -1313,7 +1316,7 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 details: 'Använder Anthropic...'
             });
             const { generateQuestions: generateWithAnthropic } = require('./services/aiQuestionGenerator');
-            questions = await generateWithAnthropic({ amount, category, ageGroup }, anthropicKey);
+            questions = await generateWithAnthropic({ amount, category, ageGroup, targetAudience }, anthropicKey);
             usedProvider = 'anthropic';
         }
 
@@ -1421,6 +1424,134 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             emojiSkipped: emojiSkippedCount,
         });
 
+        // Kör automatisk AI-validering på alla genererade frågor
+        const validationProviders = await getProvidersForPurpose('validation');
+        const canValidate = validationProviders.length > 0;
+
+        await safeUpdateProgress({
+            phase: 'AI-validering',
+            completed: canValidate ? 0 : questionsToImport.length,
+            total: questionsToImport.length,
+            details: canValidate
+                ? 'Kör AI-validering med alla providers...'
+                : 'Inga validation-providers aktiverade - hoppar över AI-validering'
+        });
+
+        let validationSuccessCount = 0;
+        let validationFailedCount = 0;
+        let validationSkippedCount = 0;
+
+        if (!canValidate) {
+            validationSkippedCount = questionsToImport.length;
+            logger.warn('Skipping AI validation for generated questions - no validation providers available');
+        } else {
+            for (const question of questionsToImport) {
+                try {
+                    // Hämta frågedata från databasen
+                    const questionDoc = await db.collection('questions').doc(question.id).get();
+                    if (!questionDoc.exists) {
+                        logger.warn(`Question ${question.id} not found for validation`);
+                        validationFailedCount++;
+                        continue;
+                    }
+
+                    const questionData = questionDoc.data();
+                    const { languages, correctOption } = questionData;
+                    const questionText = languages?.sv?.text || '';
+                    const options = languages?.sv?.options || [];
+                    const explanation = languages?.sv?.explanation || '';
+
+                    // Kör validering med alla providers
+                    const validationResults = {};
+                    const reasoningSections = [];
+
+                    for (const { name, key } of validationProviders) {
+                        try {
+                            let result;
+                            if (name === 'anthropic') {
+                                const { validateQuestion } = require('./services/aiQuestionValidator');
+                                result = await validateQuestion({ question: questionText, options, correctOption, explanation }, key);
+                            } else if (name === 'gemini') {
+                                const { validateQuestion } = require('./services/geminiQuestionValidator');
+                                result = await validateQuestion({ question: questionText, options, correctOption, explanation }, key);
+                            } else if (name === 'openai') {
+                                const { validateQuestion } = require('./services/openaiQuestionValidator');
+                                result = await validateQuestion({ question: questionText, options, correctOption, explanation }, key);
+                            }
+
+                            if (result) {
+                                validationResults[name] = result;
+                                if (typeof result.reasoning === 'string' && result.reasoning.trim()) {
+                                    const providerLabel = name.charAt(0).toUpperCase() + name.slice(1);
+                                    reasoningSections.push(`**${providerLabel}:** ${result.reasoning}`);
+                                }
+                            }
+                        } catch (error) {
+                            logger.warn(`${name} validation failed for question ${question.id}`, { error: error.message });
+                            validationResults[name] = {
+                                valid: null,
+                                error: error.message,
+                                unavailable: true
+                            };
+                        }
+                    }
+
+                    // Beräkna konsensus
+                    const successfulProviders = Object.entries(validationResults)
+                        .filter(([, result]) => typeof result?.valid === 'boolean');
+
+                    if (successfulProviders.length > 0) {
+                        const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
+                        const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
+                        const majorityValid = validProviders.length > invalidProviders.length;
+
+                        const issues = invalidProviders.flatMap(([providerName, result]) => {
+                            const providerLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+                            if (Array.isArray(result.issues) && result.issues.length > 0) {
+                                return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
+                            }
+                            return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+                        });
+
+                        const finalResult = {
+                            valid: majorityValid,
+                            consensus: {
+                                valid: validProviders.length,
+                                invalid: invalidProviders.length,
+                                total: successfulProviders.length,
+                                method: 'majority'
+                            },
+                            issues,
+                            reasoning: reasoningSections.join('\n\n').trim(),
+                            providerResults: validationResults,
+                            providersChecked: successfulProviders.length
+                        };
+
+                        // Uppdatera frågan med validering
+                        await db.collection('questions').doc(question.id).update({
+                            aiValidated: true,
+                            aiValidatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                            aiValidationResult: finalResult
+                        });
+
+                        validationSuccessCount++;
+                    } else {
+                        validationFailedCount++;
+                    }
+                } catch (error) {
+                    logger.error(`Failed to validate question ${question.id}`, { error: error.message });
+                    validationFailedCount++;
+                }
+
+                await safeUpdateProgress({
+                    phase: 'AI-validering',
+                    completed: validationSuccessCount + validationFailedCount,
+                    total: questionsToImport.length,
+                    details: `${validationSuccessCount} validerade, ${validationFailedCount} misslyckades`
+                });
+            }
+        }
+
         const result = {
             count: questionsToImport.length,
             provider: usedProvider,
@@ -1430,6 +1561,11 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 generated: emojiGeneratedCount,
                 failed: emojiFailedCount,
                 skipped: emojiSkippedCount
+            },
+            aiValidation: {
+                validated: validationSuccessCount,
+                failed: validationFailedCount,
+                skipped: validationSkippedCount
             },
             details: {
                 requested: amount,
@@ -1441,11 +1577,14 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 ageGroup: ageGroup || 'Blandad',
                 emojiGenerated: emojiGeneratedCount,
                 emojiFailed: emojiFailedCount,
-                emojiSkipped: emojiSkippedCount
+                emojiSkipped: emojiSkippedCount,
+                aiValidated: validationSuccessCount,
+                aiValidationFailed: validationFailedCount,
+                aiValidationSkipped: validationSkippedCount
             }
         };
 
-        // Bygg slutmeddel ande med eventuell dublett-information
+        // Bygg slutmeddelande med eventuell dublett-information och validering
         let finalDetails = stats.duplicatesBlocked > 0
             ? `${questionsToImport.length} frågor importerade (${stats.duplicatesBlocked} dubletter blockerade)`
             : `${questionsToImport.length} frågor importerade`;
@@ -1453,6 +1592,11 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             finalDetails += ' (Emoji-generering hoppades över)';
         } else if (emojiFailedCount > 0) {
             finalDetails += ` (${emojiFailedCount} illustrationer misslyckades)`;
+        }
+        if (validationSkippedCount > 0) {
+            finalDetails += ' (AI-validering hoppades över)';
+        } else if (validationSuccessCount > 0) {
+            finalDetails += ` (${validationSuccessCount} AI-validerade)`;
         }
 
         await taskDocRef.update({

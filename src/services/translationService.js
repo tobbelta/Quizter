@@ -216,7 +216,6 @@ export const translateText = async (text, sourceLang, targetLang) => {
         // Acceptera översättningen även om den är samma som originalet (kan vara korrekt för vissa ord)
         translationCache[cacheKey] = translated;
         saveCache();
-        console.log(`[Translation] Success with ${service.name}`);
         return translated;
       }
     } catch (error) {

@@ -7,7 +7,7 @@
 import React from 'react';
 import useRunLocation from '../../hooks/useRunLocation';
 
-const GPSStatus = ({ className = '', showWhenDisabled = true }) => {
+const GPSStatus = ({ className = '' }) => {
   const { status, coords, trackingEnabled } = useRunLocation();
 
   const getStatusInfo = () => {

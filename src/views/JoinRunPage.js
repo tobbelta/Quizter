@@ -125,16 +125,11 @@ const JoinRunPage = () => {
 
       // Om användaren är riktigt inloggad (inte anonym), anslut direkt
       if (currentUser && !currentUser.isAnonymous) {
-        console.log('[JoinRunPage] Inloggad användare, ansluter direkt med kod:', upperCode);
         handleJoin(upperCode);
       }
       // Om användaren är anonym men har sparat alias, anslut direkt
       else if (currentUser?.isAnonymous && aliasCommitted) {
-        console.log('[JoinRunPage] Anonym användare med sparat alias, ansluter direkt med kod:', upperCode);
         handleJoin(upperCode);
-      }
-      else {
-        console.log('[JoinRunPage] Kod förifylld från URL:', upperCode);
       }
     }
   }, [location.search, currentUser, isAuthInitialized, aliasCommitted, handleJoin]);

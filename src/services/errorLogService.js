@@ -32,8 +32,6 @@ class ErrorLogService {
     if (this.breadcrumbs.length > this.maxBreadcrumbs) {
       this.breadcrumbs.shift();
     }
-
-    console.log('🍞 Breadcrumb:', breadcrumb);
   }
 
   /**
@@ -170,8 +168,6 @@ class ErrorLogService {
         timestamp: serverTimestamp(),
         level: 'debug',
       });
-
-      console.log('📍 GPS debug logged:', debugData);
     } catch (err) {
       console.error('Failed to log GPS debug to Firestore:', err);
     }
@@ -192,8 +188,6 @@ class ErrorLogService {
         timestamp: serverTimestamp(),
         level: 'info',
       });
-
-      console.log('🗺️ Route generation logged:', routeData);
     } catch (err) {
       console.error('Failed to log route generation to Firestore:', err);
     }
@@ -216,8 +210,6 @@ class ErrorLogService {
         timestamp: serverTimestamp(),
         level: 'info',
       });
-
-      console.log('ℹ️ Info logged:', message, data);
     } catch (err) {
       console.error('Failed to log info to Firestore:', err);
     }

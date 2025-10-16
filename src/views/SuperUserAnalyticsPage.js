@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { analyticsService } from '../services/analyticsService';
 import { messageService } from '../services/messageService';
 import Header from '../components/layout/Header';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const SuperUserAnalyticsPage = () => {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ const SuperUserAnalyticsPage = () => {
   const [messageTitle, setMessageTitle] = useState('');
   const [messageBody, setMessageBody] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     if (!isSuperUser) {
@@ -158,12 +160,22 @@ const SuperUserAnalyticsPage = () => {
   // Skicka meddelande till valda enheter
   const handleSendMessage = async () => {
     if (!messageTitle.trim() || !messageBody.trim()) {
-      alert('Titel och meddelande får inte vara tomma');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ogiltigt meddelande',
+        message: 'Titel och meddelande får inte vara tomma',
+        type: 'warning'
+      });
       return;
     }
 
     if (selectedDevices.size === 0) {
-      alert('Välj minst en enhet att skicka till');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ingen markering',
+        message: 'Välj minst en enhet att skicka till',
+        type: 'warning'
+      });
       return;
     }
 
@@ -187,14 +199,24 @@ const SuperUserAnalyticsPage = () => {
       });
 
       await Promise.all(promises);
-      alert(`Meddelande skickat till ${selectedDevices.size} enheter`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Meddelande skickat',
+        message: `Meddelande skickat till ${selectedDevices.size} enheter`,
+        type: 'success'
+      });
       setShowMessageDialog(false);
       setMessageTitle('');
       setMessageBody('');
       setSelectedDevices(new Set());
     } catch (error) {
       console.error('Kunde inte skicka meddelande:', error);
-      alert('Kunde inte skicka meddelande. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte skicka meddelande',
+        message: 'Kunde inte skicka meddelande. Se konsolen för detaljer.',
+        type: 'error'
+      });
     } finally {
       setIsSendingMessage(false);
     }
@@ -643,6 +665,14 @@ const SuperUserAnalyticsPage = () => {
           </>
         )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

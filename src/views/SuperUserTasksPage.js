@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -67,6 +68,7 @@ const SuperUserTasksPage = () => {
   const [deleteResult, setDeleteResult] = useState(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -250,12 +252,27 @@ const SuperUserTasksPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`✅ Jobb stoppat: ${data.message}`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Jobb stoppat',
+          message: `Jobb stoppat: ${data.message}`,
+          type: 'success'
+        });
       } else {
-        alert(`❌ Kunde inte stoppa jobb: ${data.error || 'Okänt fel'}`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Kunde inte stoppa jobb',
+          message: data.error || 'Okänt fel',
+          type: 'error'
+        });
       }
     } catch (error) {
-      alert(`❌ Fel vid stopp: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid stopp',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       await refreshAllTasks();
     }
@@ -275,12 +292,27 @@ const SuperUserTasksPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`✅ Jobb raderat!`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Jobb raderat',
+          message: 'Jobb raderat!',
+          type: 'success'
+        });
       } else {
-        alert(`❌ Kunde inte radera jobb: ${data.error || 'Okänt fel'}`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Kunde inte radera jobb',
+          message: data.error || 'Okänt fel',
+          type: 'error'
+        });
       }
     } catch (error) {
-      alert(`❌ Fel vid radering: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid radering',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setBulkActionLoading(false);
       await refreshAllTasks();
@@ -289,7 +321,12 @@ const SuperUserTasksPage = () => {
 
   const handleBulkStop = async () => {
     if (selectedTasks.size === 0) {
-      alert('Välj minst ett jobb att stoppa');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ingen markering',
+        message: 'Välj minst ett jobb att stoppa',
+        type: 'warning'
+      });
       return;
     }
 
@@ -308,13 +345,28 @@ const SuperUserTasksPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`✅ Stoppat ${data.stopped} jobb`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Jobb stoppade',
+          message: `Stoppat ${data.stopped} jobb`,
+          type: 'success'
+        });
         setSelectedTasks(new Set());
       } else {
-        alert(`❌ Kunde inte stoppa jobb: ${data.error || 'Okänt fel'}`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Kunde inte stoppa jobb',
+          message: data.error || 'Okänt fel',
+          type: 'error'
+        });
       }
     } catch (error) {
-      alert(`❌ Fel vid stopp: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid stopp',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setBulkActionLoading(false);
       await refreshAllTasks();
@@ -323,7 +375,12 @@ const SuperUserTasksPage = () => {
 
   const handleBulkDelete = async () => {
     if (selectedTasks.size === 0) {
-      alert('Välj minst ett jobb att radera');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ingen markering',
+        message: 'Välj minst ett jobb att radera',
+        type: 'warning'
+      });
       return;
     }
 
@@ -342,13 +399,28 @@ const SuperUserTasksPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        alert(`✅ Raderat ${data.deleted} jobb`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Jobb raderade',
+          message: `Raderat ${data.deleted} jobb`,
+          type: 'success'
+        });
         setSelectedTasks(new Set());
       } else {
-        alert(`❌ Kunde inte radera jobb: ${data.error || 'Okänt fel'}`);
+        setDialogConfig({
+          isOpen: true,
+          title: 'Kunde inte radera jobb',
+          message: data.error || 'Okänt fel',
+          type: 'error'
+        });
       }
     } catch (error) {
-      alert(`❌ Fel vid radering: ${error.message}`);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid radering',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setBulkActionLoading(false);
       await refreshAllTasks();
@@ -687,6 +759,14 @@ const SuperUserTasksPage = () => {
           </div>
         </section>
       </main>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };
