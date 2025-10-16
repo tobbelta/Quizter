@@ -74,10 +74,6 @@ const AIValidationPanel = () => {
         return;
       }
 
-      console.log(
-        `[AIValidationPanel] Startar batch-validering av ${questionsToValidate.length} frågor (inkluderar tidigare validerade: ${includeAllQuestions}, begränsat till: ${limitQuestions ? maxQuestions : 'alla'})`
-      );
-
       // Bygg batch-payload
       const batchQuestions = questionsToValidate.map(question => {
         const langData = question.languages?.sv || {
@@ -97,8 +93,6 @@ const AIValidationPanel = () => {
 
       // Starta ETT batch-jobb
       const { taskId } = await aiService.startBatchAIValidation({ questions: batchQuestions });
-
-      console.log(`[AIValidationPanel] Batch-jobb startad med taskId ${taskId}`);
 
       // Registrera bakgrundsjobb
       if (taskId) {
@@ -123,14 +117,10 @@ const AIValidationPanel = () => {
       }
 
       // Vänta på att batch-jobbet blir klart
-      console.log(`[AIValidationPanel] Väntar på att batch-jobbet ${taskId} ska slutföras...`);
       const taskData = await taskService.waitForCompletion(taskId);
-      console.log(`[AIValidationPanel] Batch-jobb klart:`, taskData);
 
       const batchResult = taskData?.result || {};
       const validationResults = batchResult.results || [];
-
-      console.log(`[AIValidationPanel] Fick ${validationResults.length} valideringsresultat från backend`);
 
       // Bygg validationUpdates och results från batch-resultatet
       const results = [];
@@ -173,26 +163,14 @@ const AIValidationPanel = () => {
         }
       }
 
-      console.log(`[AIValidationPanel] Bearbetning klar, totalt ${validationUpdates.length} valideringar gjorda`);
-
       // KRITISKT: Spara alla valideringsresultat till Firestore
       if (validationUpdates.length > 0) {
-        console.log(`[AIValidationPanel] Sparar ${validationUpdates.length} valideringsresultat till Firestore...`);
-        console.log('[AIValidationPanel] Valideringsuppdateringar:', JSON.stringify(validationUpdates.map(u => ({
-          id: u.questionId,
-          valid: u.valid,
-          issues: u.validationData.issues
-        })), null, 2));
-
         try {
           await questionService.markManyAsValidated(validationUpdates);
-          console.log('[AIValidationPanel] ✅ Alla valideringsresultat sparade till Firestore!');
         } catch (error) {
           console.error('[AIValidationPanel] ❌ Fel vid sparande till Firestore:', error);
           throw error;
         }
-      } else {
-        console.warn('[AIValidationPanel] ⚠️ Inga valideringsuppdateringar att spara!');
       }
 
       if (isMountedRef.current) {

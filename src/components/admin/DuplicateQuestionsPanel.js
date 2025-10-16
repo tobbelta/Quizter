@@ -15,13 +15,6 @@ const DuplicateQuestionsPanel = () => {
     try {
       const found = questionService.findDuplicates('sv', threshold / 100);
 
-      console.log('[DuplicateQuestionsPanel] Råa dubletter:', found.map(d => ({
-        pairId: d.pairId,
-        q1: d.question1.id,
-        q2: d.question2.id,
-        text: d.text1.substring(0, 30)
-      })));
-
       // Filtrera bort dubbletter av dubletter (samma pairId)
       const uniqueDuplicates = [];
       const seenPairs = new Set();
@@ -38,7 +31,6 @@ const DuplicateQuestionsPanel = () => {
         uniqueDuplicates.push(dup);
       }
 
-      console.log(`[DuplicateQuestionsPanel] Hittade ${found.length} dubletter, ${uniqueDuplicates.length} unika par`);
       setDuplicates(uniqueDuplicates);
     } catch (error) {
       console.error('Fel vid dublettsökning:', error);
@@ -80,7 +72,6 @@ const DuplicateQuestionsPanel = () => {
       // För varje dublett-par, ta bort question2 (behåll question1)
       for (const dup of visibleDuplicates) {
         try {
-          console.log(`[AutoClean] Tar bort ${dup.question2.id} (behåller ${dup.question1.id})`);
           await questionService.delete(dup.question2.id);
           deletedCount++;
           setDeletedQuestions(prev => new Set([...prev, dup.question2.id]));
