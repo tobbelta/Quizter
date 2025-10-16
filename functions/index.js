@@ -873,7 +873,10 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     if (anthropicKey) {
       try {
         const {validateQuestion} = require("./services/aiQuestionValidator");
-        const result = await validateQuestion({question, options, correctOption, explanation}, anthropicKey);
+        const result = await validateQuestion(
+            {question, options, correctOption, explanation},
+            anthropicKey,
+        );
         validationResults.anthropic = result;
         providerHealth.anthropic = "healthy";
         if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -894,8 +897,12 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
     if (geminiKey) {
       try {
-        const {validateQuestion} = require("./services/geminiQuestionValidator");
-        const result = await validateQuestion({question, options, correctOption, explanation}, geminiKey);
+        const {validateQuestion} =
+          require("./services/geminiQuestionValidator");
+        const result = await validateQuestion(
+            {question, options, correctOption, explanation},
+            geminiKey,
+        );
         validationResults.gemini = result;
         providerHealth.gemini = "healthy";
         if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -916,8 +923,12 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
     if (openaiKey) {
       try {
-        const {validateQuestion} = require("./services/openaiQuestionValidator");
-        const result = await validateQuestion({question, options, correctOption, explanation}, openaiKey);
+        const {validateQuestion} =
+          require("./services/openaiQuestionValidator");
+        const result = await validateQuestion(
+            {question, options, correctOption, explanation},
+            openaiKey,
+        );
         validationResults.openai = result;
         providerHealth.openai = "healthy";
         if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -1379,12 +1390,20 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           const questionRef = db.collection("questions").doc(id);
           await questionRef.update({
             aiValidated: questionValid,
-            ...(questionValid ? {aiValidatedAt: admin.firestore.FieldValue.serverTimestamp()} : {}),
+            ...(questionValid ? {
+              aiValidatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            } : {}),
             aiValidationResult: questionResult,
           });
-          logger.info(`Updated question ${id} with validation result: ${questionValid ? "valid" : "invalid"}`);
+          logger.info(
+              `Updated question ${id} with validation result: ` +
+            `${questionValid ? "valid" : "invalid"}`,
+          );
         } catch (updateError) {
-          logger.error(`Failed to update question ${id} with validation result`, {error: updateError.message});
+          logger.error(
+              `Failed to update question ${id} with validation result`,
+              {error: updateError.message},
+          );
           // Continue processing even if update fails
         }
 
@@ -1499,11 +1518,18 @@ exports.batchRegenerateEmojis = createHttpsHandler(async (req, res) => {
         questionCount: questionIds.length,
       });
     } catch (error) {
-      logger.error("Error queueing batch emoji regeneration", {error: error.message, stack: error.stack});
-      if (error.code === "auth/id-token-expired" || error.code === "auth/argument-error") {
+      logger.error(
+          "Error queueing batch emoji regeneration",
+          {error: error.message, stack: error.stack},
+      );
+      if (error.code === "auth/id-token-expired" ||
+          error.code === "auth/argument-error") {
         return res.status(401).json({error: "Unauthorized: Invalid token"});
       }
-      res.status(500).json({error: "Failed to queue batch emoji regeneration task.", message: error.message});
+      res.status(500).json({
+        error: "Failed to queue batch emoji regeneration task.",
+        message: error.message,
+      });
     }
   });
 });
