@@ -1406,7 +1406,11 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           validated: validatedCount,
           failed: failedCount,
         });
-        logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+        logger.info(
+            `Batch validation progress ${taskId}: ` +
+          `${completedCount}/${questions.length} ` +
+          `(${validatedCount} godkända, ${failedCount} underkända)`,
+        );
       }
     }
 
@@ -1445,9 +1449,15 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
       transaction.update(taskDocRef, updates);
     });
 
-    logger.info(`Successfully completed batch AI validation task ${taskId}`, {validated: validatedCount, failed: failedCount});
+    logger.info(
+        `Successfully completed batch AI validation task ${taskId}`,
+        {validated: validatedCount, failed: failedCount},
+    );
   } catch (error) {
-    logger.error(`Failed batch AI validation task ${taskId}`, {error: error.message, stack: error.stack});
+    logger.error(
+        `Failed batch AI validation task ${taskId}`,
+        {error: error.message, stack: error.stack},
+    );
     await taskDocRef.update({
       status: "failed",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1517,11 +1527,20 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
         if (["cancelled", "failed", "completed"].includes(data.status)) {
           return;
         }
-        const nextProgress = {phase, completed, total, details, updatedAt: admin.firestore.FieldValue.serverTimestamp()};
+        const nextProgress = {
+          phase,
+          completed,
+          total,
+          details,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
         transaction.update(taskDocRef, {progress: nextProgress});
       });
     } catch (progressError) {
-      logger.warn(`Failed to update progress for batch emoji task ${taskId}`, {error: progressError.message});
+      logger.warn(
+          `Failed to update progress for batch emoji task ${taskId}`,
+          {error: progressError.message},
+      );
     }
   };
 
@@ -1529,10 +1548,17 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
     await taskDocRef.update({
       status: "processing",
       startedAt: admin.firestore.FieldValue.serverTimestamp(),
-      progress: {phase: "Initierar", completed: 0, total: questionIds.length, details: "Förbereder regenerering av emojis..."},
+      progress: {
+        phase: "Initierar",
+        completed: 0,
+        total: questionIds.length,
+        details: "Förbereder regenerering av emojis...",
+      },
     });
 
-    const illustrationProviders = await getProvidersForPurpose("illustration");
+    const illustrationProviders = await getProvidersForPurpose(
+        "illustration",
+    );
     if (illustrationProviders.length === 0) {
       throw new Error("No illustration providers are enabled and configured");
     }
@@ -1541,10 +1567,17 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
     let failedCount = 0;
     const updates = [];
 
-    const questionRefs = questionIds.map((id) => db.collection("questions").doc(id));
+    const questionRefs = questionIds.map(
+        (id) => db.collection("questions").doc(id),
+    );
     const questionSnapshots = await db.getAll(...questionRefs);
 
-    await safeUpdateProgress({phase: "Hämtar frågor", completed: 0, total: questionIds.length, details: `Hittade ${questionSnapshots.length} frågor att uppdatera`});
+    await safeUpdateProgress({
+      phase: "Hämtar frågor",
+      completed: 0,
+      total: questionIds.length,
+      details: `Hittade ${questionSnapshots.length} frågor att uppdatera`,
+    });
 
     const toArray = (value) => {
       if (Array.isArray(value)) return value;
@@ -1561,12 +1594,22 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
       }
       const data = doc.data();
       const questionPayload = {
-        question: data.languages?.sv?.text || data.question?.sv || data.question || data.text || "",
-        options: toArray(data.languages?.sv?.options || data.options?.sv || data.options || []),
-        explanation: data.languages?.sv?.explanation || data.explanation?.sv || data.explanation || "",
+        question: data.languages?.sv?.text || data.question?.sv ||
+          data.question || data.text || "",
+        options: toArray(
+            data.languages?.sv?.options || data.options?.sv ||
+          data.options || [],
+        ),
+        explanation: data.languages?.sv?.explanation ||
+          data.explanation?.sv || data.explanation || "",
       };
 
-      const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+      const emojiOutcome = await runEmojiGenerationWithProviders(
+          questionPayload,
+          illustrationProviders,
+          doc.id,
+          null,
+      );
 
       if (emojiOutcome) {
         updates.push({
@@ -1580,12 +1623,26 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
         generatedCount++;
       } else {
         failedCount++;
-        logger.warn("All illustration providers failed to generate emoji for question " + doc.id);
+        logger.warn(
+            "All illustration providers failed to generate emoji " +
+          "for question " + doc.id,
+        );
       }
-      await safeUpdateProgress({phase: "Regenererar emojis", completed: generatedCount + failedCount, total: questionIds.length, details: `${generatedCount} emojis uppdaterade, ${failedCount} misslyckades`});
+      await safeUpdateProgress({
+        phase: "Regenererar emojis",
+        completed: generatedCount + failedCount,
+        total: questionIds.length,
+        details: `${generatedCount} emojis uppdaterade, ` +
+          `${failedCount} misslyckades`,
+      });
     }
 
-    await safeUpdateProgress({phase: "Sparar ändringar", completed: questionIds.length, total: questionIds.length, details: `Sparar ${updates.length} uppdateringar...`});
+    await safeUpdateProgress({
+      phase: "Sparar ändringar",
+      completed: questionIds.length,
+      total: questionIds.length,
+      details: `Sparar ${updates.length} uppdateringar...`,
+    });
 
     let currentBatch = db.batch();
     let batchCount = 0;
@@ -1604,16 +1661,31 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
     }
     await Promise.all(batchOps);
 
-    const result = {generated: generatedCount, failed: failedCount, total: questionIds.length};
+    const result = {
+      generated: generatedCount,
+      failed: failedCount,
+      total: questionIds.length,
+    };
     await taskDocRef.update({
       status: "completed",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
       result,
-      progress: {phase: "Klar", completed: questionIds.length, total: questionIds.length, details: `${generatedCount} emojis uppdaterade, ${failedCount} misslyckades`},
+      progress: {
+        phase: "Klar",
+        completed: questionIds.length,
+        total: questionIds.length,
+        details: `${generatedCount} emojis uppdaterade, ` +
+          `${failedCount} misslyckades`,
+      },
     });
-    logger.info(`Successfully completed batch emoji regeneration task ${taskId}`);
+    logger.info(
+        `Successfully completed batch emoji regeneration task ${taskId}`,
+    );
   } catch (error) {
-    logger.error(`Failed batch emoji regeneration task ${taskId}`, {error: error.message, stack: error.stack});
+    logger.error(
+        `Failed batch emoji regeneration task ${taskId}`,
+        {error: error.message, stack: error.stack},
+    );
     await taskDocRef.update({
       status: "failed",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
