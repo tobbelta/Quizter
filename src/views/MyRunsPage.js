@@ -18,8 +18,6 @@ const MyRunsPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
 
-  console.log('[MyRunsPage] Component loaded. isAuthenticated:', isAuthenticated);
-
   useEffect(() => {
     const loadMyRuns = async () => {
       setLoading(true);
@@ -38,12 +36,8 @@ const MyRunsPage = () => {
           const localRunsMeta = localStorageService.getCreatedRuns();
           const localRunIds = localRunsMeta.map(r => r.runId);
 
-          console.log('[MyRunsPage] Lokala rundor i localStorage:', localRunsMeta.length);
-          console.log('[MyRunsPage] Run IDs att hämta:', localRunIds);
-
           if (localRunIds.length > 0) {
             runs = await runRepository.listRunsByIds(localRunIds);
-            console.log('[MyRunsPage] Hämtade rundor från Firestore:', runs.length);
 
             // Om färre rundor hittades än förväntat, rensa localStorage
             if (runs.length < localRunIds.length) {
@@ -53,10 +47,8 @@ const MyRunsPage = () => {
 
               // Rensa bort ogiltiga rundor från localStorage
               if (missingIds.length > 0) {
-                console.log('[MyRunsPage] Rensar', missingIds.length, 'ogiltiga rundor från localStorage...');
                 const validRuns = localRunsMeta.filter(r => !missingIds.includes(r.runId));
                 localStorage.setItem('geoquest:local:createdRuns', JSON.stringify(validRuns));
-                console.log('[MyRunsPage] Kvar i localStorage:', validRuns.length, 'rundor');
               }
             }
           }

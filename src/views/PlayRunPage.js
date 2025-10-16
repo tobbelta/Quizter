@@ -49,7 +49,6 @@ const PlayRunPage = () => {
   useEffect(() => {
     const handleStorageChange = () => {
       const newLanguage = localStorage.getItem('routequest:language') || 'sv';
-      console.log('[PlayRunPage] Språk ändrat till:', newLanguage);
       setSelectedLanguage(newLanguage);
     };
 
@@ -90,7 +89,6 @@ const PlayRunPage = () => {
 
   const orderedQuestions = useMemo(() => {
     if (!currentRun) return [];
-    console.log('[PlayRunPage] Hämtar frågor med språk:', selectedLanguage);
     return currentRun.questionIds.map((id) => {
       const question = questionService.getByIdForLanguage(id, selectedLanguage);
       if (!question) {
@@ -225,8 +223,7 @@ const PlayRunPage = () => {
           route={currentRun.route}
           startPoint={currentRun.startPoint}
           manualMode={!trackingEnabled}
-          onCheckpointClick={(order) => {
-            console.log(`🗺️ Användare klickade på checkpoint ${order + 1}`);
+          onCheckpointClick={() => {
             setQuestionVisible(true);
           }}
         />
@@ -354,7 +351,8 @@ const PlayRunPage = () => {
             setQuestionToReport(null);
           }}
           onReported={() => {
-            console.log('Fråga rapporterad:', questionToReport.id);
+            setReportDialogOpen(false);
+            setQuestionToReport(null);
           }}
         />
       )}

@@ -179,13 +179,6 @@ const GenerateRunPage = () => {
     const trackingChanged = prevTrackingEnabledRef.current !== trackingEnabled;
 
     if (statusChanged || trackingChanged) {
-      console.log('🔍 GPS STATUS CHANGE:', {
-        coords,
-        gpsStatus,
-        trackingEnabled,
-        userPosition,
-      });
-
       errorLogService.logGPSDebug({
         message: 'GenerateRunPage GPS status change',
         coords: coords ? {
@@ -215,12 +208,6 @@ const GenerateRunPage = () => {
       const originPosition = userPosition
         ? { lat: userPosition.lat, lng: userPosition.lng }
         : FALLBACK_POSITION;
-
-      console.log('🔄 REGENERERAR RUNDA - DETALJERAD INFO:');
-      console.log('  📱 coords raw:', coords);
-      console.log('  📍 userPosition:', userPosition);
-      console.log('  🎯 originPosition (används):', originPosition);
-      console.log('  🔄 GPS aktiv:', !!userPosition);
 
       await errorLogService.logRouteGeneration({
         message: 'Route REGENERATION - DETAILED',
@@ -363,15 +350,6 @@ const GenerateRunPage = () => {
       const originPosition = userPosition
         ? { lat: userPosition.lat, lng: userPosition.lng }
         : FALLBACK_POSITION;
-
-      console.log('🗺️ GENERERAR RUNDA - DETALJERAD INFO:');
-      console.log('  📱 coords raw:', coords);
-      console.log('  📍 userPosition:', userPosition);
-      console.log('  🎯 originPosition (används):', originPosition);
-      console.log('  🔄 GPS aktiv:', !!userPosition);
-      console.log('  📊 gpsStatus:', gpsStatus);
-      console.log('  🔘 trackingEnabled:', trackingEnabled);
-      console.log('  🌍 FALLBACK_POSITION:', FALLBACK_POSITION);
 
       // Logga ruttgenerering med all GPS-info
       await errorLogService.logRouteGeneration({
