@@ -1519,7 +1519,9 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
       };
 
       const updates = {progress: nextProgress};
-      if (data.status !== "completed" && data.status !== "failed" && data.status !== "cancelled") {
+      if (data.status !== "completed" &&
+          data.status !== "failed" &&
+          data.status !== "cancelled") {
         updates.status = "completed";
         updates.finishedAt = admin.firestore.FieldValue.serverTimestamp();
         updates.result = finalResult;
