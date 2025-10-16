@@ -48,6 +48,7 @@ const formatTaskLabel = (task) => {
   if (task.label) return task.label;
   if (task.taskType === 'generation') return 'AI-generering';
   if (task.taskType === 'validation') return 'AI-validering';
+  if (task.taskType === 'regenerateemoji') return 'Emoji-regenerering';
   if (task.taskType === 'batchregenerateemojis') return 'Mass-regenerering Emojis';
   return 'Bakgrundsjobb';
 };

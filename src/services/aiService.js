@@ -46,8 +46,8 @@ export const aiService = {
    * @param {{ amount: number, category: string, difficulty: string, provider: string }} params
    * @returns {Promise<{success: boolean, taskId: string}>}
    */
-  startAIGeneration: async ({ amount, category, difficulty, provider }) => {
-    return await queueTask('generateAIQuestions', { amount, category, difficulty, provider });
+  startAIGeneration: async ({ amount, category, ageGroup, difficulty, provider }) => {
+    return await queueTask('generateAIQuestions', { amount, category, ageGroup, difficulty, provider });
   },
 
   /**

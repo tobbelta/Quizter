@@ -193,6 +193,10 @@ Genererade frågor följer detta schema:
 Validerar en enskild fråga med alla tillgängliga AI-providers:
 
 ```javascript
+// Via questionService (rekommenderat för AdminQuestionsPage)
+await questionService.validateSingleQuestion(questionId);
+
+// Direkt via aiService
 POST https://europe-west1-geoquest2-7e45c.cloudfunctions.net/validateQuestionWithAI
 
 Body:
@@ -209,6 +213,10 @@ Body:
 Validerar flera frågor parallellt:
 
 ```javascript
+// Via questionService (rekommenderat för AdminQuestionsPage)
+await questionService.batchValidateQuestions(questionIds);
+
+// Direkt via aiService
 POST https://europe-west1-geoquest2-7e45c.cloudfunctions.net/batchValidateQuestions
 
 Body:
@@ -281,6 +289,44 @@ Exempel:
 - **Frågebank → AI-Validering:** skapar ett batchjobb via Cloud Tasks. En ny växlare låter superuser välja om även redan AI-validerade frågor ska skickas om ("Validera om alla"). Jobbet följer samma bakgrundsflöde som tidigare och resultaten sparas tillbaka på frågorna.
 - **Frågebankens frågekort:** har återigen en knapp för enskild AI-validering (`AI-validera`). Den köar `validateQuestionWithAI`, registrerar bakgrundsjobbet och skriver resultatet via `questionService.markAsValidated/markAsInvalid`.
 - Frågelistans filter stödjer nu de migrerade fälten (`categories`, `ageGroups`, `targetAudience`) och sökningen matchar även ID, kategorier och målgrupper.
+
+### Visuell validering-status
+
+**Implementerat 2025-10-16:**
+- ✅ **Enskild validering tracking** - Varje frågekort visar "⏳ AI-validering pågår..." när enskild validering körs
+- ✅ **Batch validering status** - Batch-validering markerar alla berörda frågor som "under validering" med gul ram och pulse-animation
+- ✅ **Realtime progress** - Lyssnar på Firestore background tasks för att visa aktuell status
+- ✅ **Loading states** - Knappar inaktiveras och visar loading-text under validering
+- ✅ **Visuell feedback** - Frågekortet får gul ram, pulse-animation och status-indikator
+
+**Funktionalitet:**
+```javascript
+// State för att spåra validering
+const [validatingQuestions, setValidatingQuestions] = useState(new Set());
+const [batchValidatingAll, setBatchValidatingAll] = useState(false);
+
+// Enskild validering
+const handleValidationStart = (questionId) => {
+  setValidatingQuestions(prev => new Set([...prev, questionId]));
+};
+
+// Batch validering med Firestore listener
+useEffect(() => {
+  const unsubscribe = onSnapshot(
+    query(collection(db, 'backgroundTasks'), where('type', '==', 'batchvalidation')),
+    (snapshot) => {
+      // Uppdatera validating questions baserat på task progress
+    }
+  );
+  return unsubscribe;
+}, []);
+```
+
+**UI-förbättringar:**
+- 🔄 Frågekortet visar "AI-validering pågår..." med spinner
+- 🔄 Gul ram och pulse-animation under validering
+- 🔄 Batch-status panel visar "X frågor kvar att validera"
+- 🔄 Knappar inaktiveras automatiskt under validering
 
 ### Statusuppdatering
 
@@ -641,11 +687,11 @@ functions/
 
 src/
 ├── views/
-│   ├── AdminQuestionsPage.js         # Frågehantering UI
+│   ├── AdminQuestionsPage.js         # Frågehantering UI (uppdaterad med validering-tracking)
 │   ├── SuperUserTasksPage.js         # Bakgrundsjobb UI
 │   └── CreateRunPage.js              # Skapa tipspromenad
 ├── services/
-│   ├── questionService.js            # Frontend question service
+│   ├── questionService.js            # Frontend question service (utökad med validateSingleQuestion)
 │   ├── questionValidationService.js  # Validering & dublettkontroll
 │   └── aiService.js                  # AI-kommunikation
 ├── components/

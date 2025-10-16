@@ -59,7 +59,7 @@ async function generateQuestions({ amount = 10, category = null, ageGroup = null
   // Översätt åldersgrupp till läsbart format
   const ageGroupMapping = {
     'children': 'barn (6-12 år, enkla och roliga frågor anpassade för barn, svensk kontext med svenska förhållanden och kultur)',
-    'youth': 'ungdomar (13-25 år, moderna frågor om sociala medier, populärkultur, idrott och aktuella trender, globalt perspektiv)',
+    'youth': 'ungdomar (13-25 år, moderna frågor om sociala medier, populärkultur och aktuella trender. Frågorna ska ha ett globalt perspektiv och inte vara specifika för svenska förhållanden, såvida inte kategorin i sig är svensk (t.ex. svensk \'Idrott\').)',
     'adults': 'vuxna (25+ år, utmanande frågor om samhälle, historia, kultur och vetenskap, svensk kontext med svenska förhållanden)'
   };
 

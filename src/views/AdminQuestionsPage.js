@@ -3,6 +3,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getFirebaseDb } from '../firebaseClient';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import { aiService } from '../services/aiService';
@@ -13,7 +15,6 @@ import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
 import ValidationPanel from '../components/admin/ValidationPanel';
-import AIValidationPanel from '../components/admin/AIValidationPanel';
 
 const QuestionCard = ({
   question,
@@ -27,11 +28,15 @@ const QuestionCard = ({
   handleRejectReported,
   isSelected,
   onSelect,
-  registerTask
+  registerTask,
+  validatingQuestions,
+  regeneratingEmojis,
+  onValidationStart,
+  onValidationEnd,
+  setIndividualValidationTasks
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
   const [regeneratingEmoji, setRegeneratingEmoji] = useState(false);
-  const [validatingAI, setValidatingAI] = useState(false);
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
@@ -68,8 +73,18 @@ const QuestionCard = ({
     setRegeneratingEmoji(true);
     try {
       const response = await questionService.regenerateEmoji(question.id);
-      const providerName = response?.provider ? response.provider.toUpperCase() : 'AI';
-      alert(`🎨 Nya emojis genererades (${providerName})!\n\n${response.svg || ''}`);
+      
+      // Register task for background monitoring if taskId is returned
+      if (response?.taskId && typeof registerTask === 'function') {
+        registerTask(response.taskId, {
+          taskType: 'regenerateemoji',
+          label: 'Emoji-regenerering',
+          description: `Genererar nya emojis för fråga ${question.id}`,
+          createdAt: new Date()
+        });
+        // Visual feedback via UI indicators - no alert needed
+      }
+      // Success - visual feedback via updated emoji display
     } catch (error) {
       console.error('[AdminQuestionsPage] Kunde inte regenerera emojis:', error);
       alert(`⚠️ Kunde inte generera emojis: ${error.message}`);
@@ -78,45 +93,27 @@ const QuestionCard = ({
     }
   };
   const handleValidateWithAI = async () => {
-    if (validatingAI) {
-      return;
+    if (!question.id) return;
+
+    if (validatingQuestions && validatingQuestions.has(question.id)) {
+      return; // Already validating
     }
 
-    const langData = question.languages?.sv || {
-      text: question.text,
-      options: question.options,
-      explanation: question.explanation
-    };
-
-    if (!langData?.text || !Array.isArray(langData.options) || langData.options.length !== 4) {
-      alert('Frågan saknar komplett svensk text eller fyra svarsalternativ. Uppdatera frågan och försök igen.');
-      return;
+    if (onValidationStart) {
+      onValidationStart(question.id);
     }
 
-    const numericCorrectOption = typeof question.correctOption === 'number'
-      ? question.correctOption
-      : parseInt(question.correctOption, 10);
-
-    if (!Number.isInteger(numericCorrectOption) || numericCorrectOption < 0 || numericCorrectOption > 3) {
-      alert('Frågan saknar ett giltigt index för rätt svar. Korrigera frågan och försök igen.');
-      return;
-    }
-
-    setValidatingAI(true);
     try {
-      const response = await aiService.startAIValidation({
-        question: langData.text,
-        options: langData.options,
-        correctOption: numericCorrectOption,
-        explanation: langData.explanation || ''
-      });
-
+      const response = await questionService.validateSingleQuestion(question.id);
       const taskId = response?.taskId;
-      if (!taskId) {
-        throw new Error('Bakgrundsjobbet saknar taskId.');
-      }
 
-      if (typeof registerTask === 'function') {
+      if (taskId && typeof registerTask === 'function') {
+        // Register the task for the background task UI
+        const langData = question.languages?.sv || {
+          text: question.text,
+          options: question.options,
+          explanation: question.explanation
+        };
         const descriptionParts = [
           `Fråga ${question.id}`,
           langData.text.length > 80 ? `${langData.text.slice(0, 80)}…` : langData.text
@@ -127,34 +124,19 @@ const QuestionCard = ({
           description: descriptionParts.join(' – '),
           createdAt: new Date()
         });
+        
+        // Store the mapping so we can track this specific question
+        setIndividualValidationTasks(prev => new Map(prev).set(taskId, question.id));
       }
 
-      const taskData = await taskService.waitForCompletion(taskId);
-      const result = taskData?.result;
-      if (!result) {
-        throw new Error('Inget valideringsresultat mottogs från AI-tjänsten.');
-      }
-
-      const validationData = {
-        ...result,
-        validationType: result.validationType || 'ai'
-      };
-
-      if (validationData.valid) {
-        await questionService.markAsValidated(question.id, validationData);
-        alert('AI-valideringen godkände frågan utan anmärkning.');
-      } else {
-        await questionService.markAsInvalid(question.id, validationData);
-        const issues = Array.isArray(validationData.issues) && validationData.issues.length > 0
-          ? `\n- ${validationData.issues.join('\n- ')}`
-          : '';
-        alert(`AI-valideringen hittade problem:${issues}`);
-      }
+      // Visual feedback via UI indicators - no alert needed
     } catch (error) {
-      console.error('[AdminQuestionsPage] Kunde inte AI-validera frågan:', error);
-      alert(`Kunde inte AI-validera frågan: ${error.message}`);
+      console.error('[AdminQuestionsPage] Kunde inte starta AI-validering:', error);
+      alert(`Kunde inte starta AI-validering: ${error.message}`);
     } finally {
-      setValidatingAI(false);
+      if (onValidationEnd) {
+        onValidationEnd(question.id);
+      }
     }
   };
   const rawAiResult = question.aiValidationResult;
@@ -176,7 +158,15 @@ const QuestionCard = ({
     (aiResult && aiResult.valid === false);
 
   return (
-    <div className={`rounded-lg border bg-slate-900/60 p-4 transition-colors ${isSelected ? 'border-cyan-500' : 'border-slate-700'}`}>
+    <div className={`rounded-lg border transition-all duration-300 p-4 ${
+      validatingQuestions && validatingQuestions.has(question.id)
+        ? 'border-yellow-400 bg-yellow-50/5 animate-pulse' 
+        : regeneratingEmojis && regeneratingEmojis.has(question.id)
+          ? 'border-blue-400 bg-blue-50/5 animate-pulse'
+          : isSelected 
+            ? 'border-cyan-500 bg-slate-900/60' 
+            : 'border-slate-700 bg-slate-900/60'
+    }`}>
       <div className="flex items-start gap-4">
         <input
           type="checkbox"
@@ -185,6 +175,22 @@ const QuestionCard = ({
           className="mt-1 h-5 w-5 rounded border-gray-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500"
         />
         <div className="flex-1">
+          {/* Validation status indicator */}
+          {validatingQuestions && validatingQuestions.has(question.id) && (
+            <div className="mb-2 flex items-center text-yellow-400">
+              <div className="animate-spin mr-2">⏳</div>
+              <span className="text-sm font-medium">AI-validering pågår...</span>
+            </div>
+          )}
+
+          {/* Emoji regeneration status indicator */}
+          {regeneratingEmojis && regeneratingEmojis.has(question.id) && (
+            <div className="mb-2 flex items-center text-blue-400">
+              <div className="animate-spin mr-2">🎨</div>
+              <span className="text-sm font-medium">Emoji-regenerering pågår...</span>
+            </div>
+          )}
+
           <div className="flex items-start justify-between mb-2">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
@@ -225,11 +231,7 @@ const QuestionCard = ({
                     ✗ AI-fel
                   </span>
                 )}
-                {question.migrated === true && (
-                  <span className="inline-flex items-center rounded-full bg-indigo-500/20 px-2.5 py-0.5 text-xs font-medium text-indigo-300" title={`Migrerad fråga - AI-kategoriserad${question.migratedAt ? ' ' + new Date(question.migratedAt.toMillis ? question.migratedAt.toMillis() : question.migratedAt).toLocaleDateString('sv-SE') : ''}`}>
-                    🔄 Migrerad
-                  </span>
-                )}
+
                 {question.createdAt && (
                   <span className="text-xs text-gray-500">
                     {question.createdAt.toDate ?
@@ -317,22 +319,7 @@ const QuestionCard = ({
                 </>
               ) : (
                 <>
-                  <button
-                    onClick={handleValidateWithAI}
-                    disabled={validatingAI}
-                    className="rounded bg-purple-600 px-3 py-1 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-600 disabled:text-gray-400"
-                    title="Kör AI-validering på denna fråga"
-                  >
-                    {validatingAI ? 'Validerar...' : 'AI-validera'}
-                  </button>
-                  <button
-                    onClick={handleRegenerateEmoji}
-                    disabled={regeneratingEmoji}
-                    className="rounded bg-teal-600 px-3 py-1 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-600 disabled:text-gray-400"
-                    title="Generera nya emojis för frågan"
-                  >
-                    {regeneratingEmoji ? '🎨 Genererar...' : '🎨 Nya emojis'}
-                  </button>
+
                   {!question.manuallyApproved && (
                     <button
                       onClick={() => handleManualApprove(question.id)}
@@ -650,6 +637,57 @@ const QuestionCard = ({
             {question.source && <p>Källa: {question.source}</p>}
             {question.createdBy && <p>Skapad av: {question.createdBy}</p>}
           </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-700">
+            <button
+              onClick={handleValidateWithAI}
+              disabled={validatingQuestions && validatingQuestions.has(question.id)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                validatingQuestions && validatingQuestions.has(question.id)
+                  ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
+            >
+              {validatingQuestions && validatingQuestions.has(question.id) ? '⏳ Validerar...' : '✅ AI-validera'}
+            </button>
+
+            <button
+              onClick={handleRegenerateEmoji}
+              disabled={regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))
+                  ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
+            >
+              {regeneratingEmoji || (regeneratingEmojis && regeneratingEmojis.has(question.id)) ? '⏳ Genererar...' : '🎨 Nya emojis'}
+            </button>
+
+            {question.reported === true && (
+              <>
+                <button
+                  onClick={() => handleApproveReported(question.id)}
+                  className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded-md"
+                >
+                  ✅ Godkänn rapport
+                </button>
+                <button
+                  onClick={() => handleRejectReported(question.id)}
+                  className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-md"
+                >
+                  ❌ Underkänn rapport
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => handleDeleteQuestion(question.id)}
+              className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-md"
+            >
+              🗑️ Radera
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -664,6 +702,11 @@ const AdminQuestionsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [isBatchRegeneratingEmojis, setIsBatchRegeneratingEmojis] = useState(false);
+  const [isBatchValidatingAI, setIsBatchValidatingAI] = useState(false);
+  const [validatingQuestions, setValidatingQuestions] = useState(new Set());
+  const [regeneratingEmojis, setRegeneratingEmojis] = useState(new Set());
+  const [batchValidatingAll, setBatchValidatingAll] = useState(false);
+  const [individualValidationTasks, setIndividualValidationTasks] = useState(new Map()); // Map: taskId -> questionId
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
@@ -719,6 +762,82 @@ const AdminQuestionsPage = () => {
       isMountedRef.current = false;
     };
   }, []);
+
+  // Listen for background task updates to update validation status
+  useEffect(() => {
+    if (!isSuperUser) return;
+
+    const db = getFirebaseDb();
+    
+    const unsubscribe = onSnapshot(
+      query(
+        collection(db, 'backgroundTasks'),
+        where('taskType', 'in', ['validation', 'batchvalidation', 'regenerateemoji', 'batchregenerateemojis']),
+        where('status', 'in', ['processing', 'queued', 'pending'])
+      ),
+      (snapshot) => {
+        const activeTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Collect all question IDs being validated
+        const allValidatingQuestions = new Set();
+        const allRegeneratingEmojis = new Set();
+        let hasBatchValidation = false;
+        
+        activeTasks.forEach(task => {
+          if (task.taskType === 'batchvalidation') {
+            hasBatchValidation = true;
+            // For batch validation, add all questions in the batch
+            if (task.payload?.questions) {
+              task.payload.questions.forEach(q => {
+                if (q.id) allValidatingQuestions.add(q.id);
+              });
+            }
+            // Also check progress for question IDs
+            if (task.progress?.questionIds) {
+              task.progress.questionIds.forEach(id => allValidatingQuestions.add(id));
+            }
+          } else if (task.taskType === 'validation') {
+            // For individual validation, check if we have the mapping
+            const questionId = individualValidationTasks.get(task.id);
+            if (questionId) {
+              allValidatingQuestions.add(questionId);
+            }
+          } else if (task.taskType === 'batchregenerateemojis') {
+            // For batch emoji regeneration, add all questions in the batch
+            if (task.payload?.questionIds) {
+              task.payload.questionIds.forEach(id => allRegeneratingEmojis.add(id));
+            }
+          } else if (task.taskType === 'regenerateemoji') {
+            // For individual emoji regeneration
+            if (task.payload?.questionId) {
+              allRegeneratingEmojis.add(task.payload.questionId);
+            }
+          }
+        });
+        
+        setValidatingQuestions(allValidatingQuestions);
+        setRegeneratingEmojis(allRegeneratingEmojis);
+        setBatchValidatingAll(hasBatchValidation);
+        
+        // Clean up completed individual validation tasks
+        const activeTaskIds = new Set(activeTasks.map(t => t.id));
+        setIndividualValidationTasks(prevMap => {
+          const newMap = new Map();
+          for (const [taskId, questionId] of prevMap.entries()) {
+            if (activeTaskIds.has(taskId)) {
+              newMap.set(taskId, questionId);
+            }
+          }
+          return newMap;
+        });
+      },
+      (error) => {
+        console.error('Error listening to background tasks:', error);
+      }
+    );
+
+    return unsubscribe;
+  }, [isSuperUser, individualValidationTasks]);
 
   // Hämta AI-status när AI-dialogen öppnas
   useEffect(() => {
@@ -879,6 +998,14 @@ const AdminQuestionsPage = () => {
         !question.reported;
     } else if (validationStatusFilter === 'reported') {
       matchesValidationStatus = question.reported === true;
+    } else if (validationStatusFilter === 'manual-approved') {
+      matchesValidationStatus = question.manuallyApproved === true;
+    } else if (validationStatusFilter === 'manual-rejected') {
+      matchesValidationStatus = question.manuallyRejected === true;
+    } else if (validationStatusFilter === 'structure-approved') {
+      matchesValidationStatus = structureValid;
+    } else if (validationStatusFilter === 'structure-rejected') {
+      matchesValidationStatus = structureInvalid;
     }
 
     return (
@@ -1100,7 +1227,7 @@ const AdminQuestionsPage = () => {
           description: `Genererar om emojis för ${questionIds.length} frågor.`,
           createdAt: new Date(),
         });
-        alert(`Påbörjade mass-generering av emojis för ${questionIds.length} frågor. Du kan följa förloppet under "Bakgrundsjobb".`);
+        // Visual feedback via batch status panel - no alert needed
       }
       setSelectedQuestions(new Set()); // Avmarkera efter start
     } catch (error) {
@@ -1109,6 +1236,52 @@ const AdminQuestionsPage = () => {
     } finally {
       setIsBatchRegeneratingEmojis(false);
     }
+  };
+
+  const handleBatchAIValidation = async () => {
+    if (selectedQuestions.size === 0) return;
+
+    if (!window.confirm(`Är du säker på att du vill köra AI-validering på ${selectedQuestions.size} fråga(r)? Detta kan medföra kostnader.`)) {
+      return;
+    }
+
+    setIsBatchValidatingAI(true);
+    setBatchValidatingAll(true);
+    const questionIds = Array.from(selectedQuestions);
+    setValidatingQuestions(new Set(questionIds));
+
+    try {
+      const { taskId } = await questionService.batchValidateQuestions(questionIds);
+
+      if (taskId) {
+        registerTask(taskId, {
+          taskType: 'batchvalidation',
+          label: 'AI-validering (batch)',
+          description: `Validerar ${questionIds.length} frågor med AI.`,
+          createdAt: new Date(),
+        });
+        // Visual feedback via batch status panel - no alert needed
+      }
+      setSelectedQuestions(new Set()); // Deselect after starting
+    } catch (error) {
+      console.error('Kunde inte starta batch AI-validering:', error);
+      alert('Ett fel uppstod vid start av AI-validering: ' + error.message);
+    } finally {
+      setIsBatchValidatingAI(false);
+    }
+  };
+
+  // Handler for individual question validation
+  const handleValidationStart = (questionId) => {
+    setValidatingQuestions(prev => new Set([...prev, questionId]));
+  };
+
+  const handleValidationEnd = (questionId) => {
+    setValidatingQuestions(prev => {
+      const next = new Set(prev);
+      next.delete(questionId);
+      return next;
+    });
   };
 
   // Alla frågor kan raderas nu (inga inbyggda frågor)
@@ -1156,22 +1329,10 @@ const AdminQuestionsPage = () => {
           >
             ✓ Validering
           </button>
-          <button
-            onClick={() => setActiveTab('ai-validation')}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === 'ai-validation'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            🤖 AI-Validering
-          </button>
         </div>
 
         {/* Innehåll baserat på aktiv flik */}
-        {activeTab === 'ai-validation' ? (
-          <AIValidationPanel />
-        ) : activeTab === 'validation' ? (
+        {activeTab === 'validation' ? (
           <ValidationPanel />
         ) : activeTab === 'duplicates' ? (
           <DuplicateQuestionsPanel />
@@ -1212,8 +1373,12 @@ const AdminQuestionsPage = () => {
                     className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                   >
                     <option value="all">Alla</option>
-                    <option value="validated">Godkända</option>
-                    <option value="failed">Underkända</option>
+                    <option value="validated">Godkända (AI)</option>
+                    <option value="failed">Underkända (AI)</option>
+                    <option value="manual-approved">Manuellt godkända</option>
+                    <option value="manual-rejected">Manuellt underkända</option>
+                    <option value="structure-approved">Strukturellt godkända</option>
+                    <option value="structure-rejected">Strukturellt underkända</option>
                     <option value="unvalidated">Ej validerade</option>
                     <option value="reported">Rapporterade (karantän)</option>
                   </select>
@@ -1258,8 +1423,8 @@ const AdminQuestionsPage = () => {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-gray-400">
-                  Behöver du köra struktur- eller AI-validering på nytt? Använd flikarna{' '}
-                  <span className="text-cyan-300">Validering</span> och <span className="text-cyan-300">AI-Validering</span>.
+                  Behöver du köra struktur- eller AI-validering på nytt? Använd fliken{' '}
+                  <span className="text-cyan-300">Validering</span> för strukturvalidering. För AI-validering, använd knapparna på individuella frågor eller batch-funktionen ovan.
                 </p>
                 <button
                   onClick={() => setShowAIDialog(true)}
@@ -1287,6 +1452,13 @@ const AdminQuestionsPage = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleBatchAIValidation}
+              disabled={selectedQuestions.size === 0 || isBatchValidatingAI || batchValidatingAll}
+              className="rounded bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
+            >
+              {isBatchValidatingAI || batchValidatingAll ? '🤖 Validerar...' : '🤖 AI-validera'}
+            </button>
+            <button
               onClick={handleBatchRegenerateEmojis}
               disabled={selectedQuestions.size === 0 || isBatchRegeneratingEmojis}
               className="rounded bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
@@ -1298,6 +1470,32 @@ const AdminQuestionsPage = () => {
             </button>
           </div>
         </div>
+
+        {/* Batch validation status */}
+        {batchValidatingAll && (
+          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-yellow-300">
+              <div className="animate-spin">⏳</div>
+              <span className="font-medium">Batch-validering pågår...</span>
+            </div>
+            <div className="mt-1 text-sm text-yellow-200">
+              {validatingQuestions.size} frågor kvar att validera
+            </div>
+          </div>
+        )}
+
+        {/* Batch emoji regeneration status */}
+        {regeneratingEmojis.size > 0 && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-300">
+              <div className="animate-spin">🎨</div>
+              <span className="font-medium">Emoji-regenerering pågår...</span>
+            </div>
+            <div className="mt-1 text-sm text-blue-200">
+              {regeneratingEmojis.size} frågor kvar att bearbeta
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="text-center py-8">
@@ -1339,6 +1537,11 @@ const AdminQuestionsPage = () => {
                       registerTask={registerTask}
                       isSelected={selectedQuestions.has(question.id)}
                       onSelect={handleToggleSelect}
+                      validatingQuestions={validatingQuestions}
+                      regeneratingEmojis={regeneratingEmojis}
+                      onValidationStart={handleValidationStart}
+                      onValidationEnd={handleValidationEnd}
+                      setIndividualValidationTasks={setIndividualValidationTasks}
                     />
                   );
                 })}

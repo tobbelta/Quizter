@@ -367,21 +367,35 @@ const refreshAllTasks = useCallback(async () => {
       return [];
     }
 
+    // Create map of localStorage tasks
+    const trackedMap = new Map(trackedEntries);
+    
+    // Create map of Firestore tasks
     const snapshotMap = userTasksSnapshot.reduce((acc, task) => {
       acc.set(task.id, task);
       return acc;
     }, new Map());
 
-    const combined = trackedEntries.map(([taskId, meta]) => {
+    // Use Firestore as source of truth, fall back to localStorage for tasks not in Firestore
+    const allTaskIds = new Set([
+      ...Array.from(snapshotMap.keys()),
+      ...Array.from(trackedMap.keys())
+    ]);
+
+    const combined = Array.from(allTaskIds).map(taskId => {
       const firestoreTask = snapshotMap.get(taskId);
-      const createdAt = firestoreTask?.createdAt || meta.createdAt || null;
+      const meta = trackedMap.get(taskId);
+      
+      // Prefer Firestore data, fall back to localStorage
+      const createdAt = firestoreTask?.createdAt || meta?.createdAt || null;
       const status = firestoreTask?.status || 'queued';
+      
       return {
         id: taskId,
-        taskType: firestoreTask?.taskType || meta.taskType || 'task',
+        taskType: firestoreTask?.taskType || meta?.taskType || 'task',
         status,
-        label: meta.label,
-        description: meta.description || firestoreTask?.description || null,
+        label: firestoreTask?.label || meta?.label || 'Bakgrundsjobb',
+        description: firestoreTask?.description || meta?.description || null,
         createdAt,
         startedAt: firestoreTask?.startedAt || null,
         finishedAt: firestoreTask?.finishedAt || null,

@@ -463,6 +463,68 @@ export const questionService = {
   validateQuestions: (questions, language = 'sv') => validateQuestions(questions, language),
   findDuplicates: (language = 'sv', threshold = 0.85) => findDuplicates(cachedQuestions, language, threshold),
 
+  // AI-validera en enskild fråga
+  validateSingleQuestion: async (questionId) => {
+    await ensureCache();
+    try {
+      const question = cachedQuestionMap.get(questionId);
+      if (!question) {
+        throw new Error(`Question ${questionId} not found`);
+      }
+
+      const langData = question.languages?.sv || { 
+        text: question.text, 
+        options: question.options, 
+        explanation: question.explanation 
+      };
+
+      const response = await aiService.startAIValidation({
+        question: langData.text,
+        options: langData.options,
+        correctOption: question.correctOption,
+        explanation: langData.explanation || ''
+      });
+
+      return response;
+    } catch (error) {
+      console.error('Error validating single question:', error);
+      throw error;
+    }
+  },
+
+  // Batch-validera flera frågor
+  batchValidateQuestions: async (questionIds) => {
+    await ensureCache();
+    try {
+      const questionsToValidate = questionIds
+        .map(id => cachedQuestionMap.get(id))
+        .filter(Boolean)
+        .map(q => {
+          const langData = q.languages?.sv || { 
+            text: q.text, 
+            options: q.options, 
+            explanation: q.explanation 
+          };
+          return { 
+            id: q.id, 
+            question: langData.text, 
+            options: langData.options, 
+            correctOption: q.correctOption, 
+            explanation: langData.explanation 
+          };
+        });
+
+      const response = await aiService.startBatchAIValidation({ 
+        questions: questionsToValidate 
+      });
+      
+      return response;
+    } catch (error) {
+      console.error('Error batch validating questions:', error);
+      throw error;
+    }
+  },
+
   // Markera fråga som AI-validerad
   markAsValidated: async (questionId, validationData, skipNotify = false) => {
     await ensureCache();

@@ -15,6 +15,7 @@ const {categorizeQuestion: categorizeWithOpenAI} = require('./services/openaiQue
 const {generateEmoji: generateEmojiWithOpenAI} = require('./services/openaiEmojiGenerator.js');
 const {categorizeQuestion: categorizeWithGemini} = require('./services/geminiQuestionCategorizer');
 const {generateEmoji: generateEmojiWithGemini} = require('./services/geminiEmojiGenerator.js');
+const { validateQuestion: validateQuestionStructure } = require('./services/questionValidationService');
 
 // CORS-konfiguration f├╢r att till├Ñta routequest.se och andra dom├ñner
 const cors = require("cors")({
@@ -135,10 +136,55 @@ async function enqueueTask(taskType, payload, userId) {
 
   const sanitizedPayload = sanitizePayload(payload);
 
+  // Generate appropriate label and description based on taskType
+  const getTaskLabels = (type, payload) => {
+    switch(type) {
+      case 'generation':
+        return {
+          label: 'AI-generering',
+          description: `Genererar ${payload.numberOfQuestions || 0} frågor.`
+        };
+      case 'validation':
+        return {
+          label: 'AI-validering',
+          description: 'Validerar fråga.'
+        };
+      case 'batchvalidation':
+        return {
+          label: 'Mass-validering',
+          description: `Validerar ${payload.questionIds?.length || 0} frågor.`
+        };
+      case 'regenerateemoji':
+        return {
+          label: 'Emoji-regenerering',
+          description: 'Genererar om emoji för fråga.'
+        };
+      case 'batchregenerateemojis':
+        return {
+          label: 'Mass-regenerering Emojis',
+          description: `Genererar om emojis för ${payload.questionIds?.length || 0} frågor.`
+        };
+      case 'migration':
+        return {
+          label: 'Migration',
+          description: 'Migrerar frågor till nytt schema.'
+        };
+      default:
+        return {
+          label: 'Bakgrundsjobb',
+          description: 'Kör bakgrundsjobb.'
+        };
+    }
+  };
+
+  const { label, description } = getTaskLabels(taskType, sanitizedPayload);
+
   const taskInfo = {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     status: 'pending',
     taskType,
+    label,
+    description,
     userId,
     payload: sanitizedPayload,
   };
