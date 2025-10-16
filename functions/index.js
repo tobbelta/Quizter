@@ -183,9 +183,13 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
     });
-    logger.info(`Processing AI generation task ${taskId}`, {amount, category, ageGroup, provider});
+    logger.info(
+        `Processing AI generation task ${taskId}`,
+        {amount, category, ageGroup, provider},
+    );
 
-    // Default targetAudience to 'swedish' - AI will decide if youth questions should be international
+    // Default targetAudience to 'swedish' - AI will decide if youth
+    // questions should be international
     const targetAudience = "swedish";
 
     let questions = null;
@@ -300,9 +304,15 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     } else {
       for (const question of questionsToImport) {
         const questionPayload = {
-          question: question.languages?.sv?.text || question.question?.sv || question.question,
-          options: question.languages?.sv?.options || question.options?.sv || question.options || [],
-          explanation: question.languages?.sv?.explanation || question.explanation?.sv || question.explanation,
+          question: question.languages?.sv?.text ||
+            question.question?.sv ||
+            question.question,
+          options: question.languages?.sv?.options ||
+            question.options?.sv ||
+            question.options || [],
+          explanation: question.languages?.sv?.explanation ||
+            question.explanation?.sv ||
+            question.explanation,
         };
 
         const emojiOutcome = await runEmojiGenerationWithProviders(
@@ -540,7 +550,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
     // Bygg slutmeddelande med eventuell dublett-information och validering
     let finalDetails = stats.duplicatesBlocked > 0 ?
-            `${questionsToImport.length} frågor importerade (${stats.duplicatesBlocked} dubletter blockerade)` :
+            `${questionsToImport.length} frågor importerade ` +
+            `(${stats.duplicatesBlocked} dubletter blockerade)` :
             `${questionsToImport.length} frågor importerade`;
     if (emojiSkippedCount > 0) {
       finalDetails += " (Emoji-generering hoppades över)";
@@ -785,9 +796,14 @@ exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (re
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       },
     });
-    logger.info(`Successfully completed illustration regeneration task ${taskId}`);
+    logger.info(
+        `Successfully completed illustration regeneration task ${taskId}`,
+    );
   } catch (error) {
-    logger.error(`Failed illustration regeneration task ${taskId}`, {error: error.message, stack: error.stack});
+    logger.error(
+        `Failed illustration regeneration task ${taskId}`,
+        {error: error.message, stack: error.stack},
+    );
     await taskDocRef.update({
       status: "failed",
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -838,11 +854,17 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
   }
 
   try {
-    await taskDocRef.update({status: "processing", startedAt: admin.firestore.FieldValue.serverTimestamp()});
+    await taskDocRef.update({
+      status: "processing",
+      startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
     logger.info(`Processing AI validation task ${taskId}`);
 
-    const providerHealth = Object.fromEntries(enabledProviders.map((name) => [name, "unknown"]));
-    const formatProviderName = (provider) => provider.charAt(0).toUpperCase() + provider.slice(1);
+    const providerHealth = Object.fromEntries(
+        enabledProviders.map((name) => [name, "unknown"]),
+    );
+    const formatProviderName = (provider) =>
+      provider.charAt(0).toUpperCase() + provider.slice(1);
 
     const validationResults = {};
     const reasoningSections = [];
@@ -995,11 +1017,22 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           }));
     }
 
-    await taskDocRef.update({status: "completed", finishedAt: admin.firestore.FieldValue.serverTimestamp(), result: finalResult});
+    await taskDocRef.update({
+      status: "completed",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      result: finalResult,
+    });
     logger.info(`Successfully completed AI validation task ${taskId}`);
   } catch (error) {
-    logger.error(`Failed AI validation task ${taskId}`, {error: error.message, stack: error.stack});
-    await taskDocRef.update({status: "failed", finishedAt: admin.firestore.FieldValue.serverTimestamp(), error: error.message});
+    logger.error(
+        `Failed AI validation task ${taskId}`,
+        {error: error.message, stack: error.stack},
+    );
+    await taskDocRef.update({
+      status: "failed",
+      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      error: error.message,
+    });
   }
 });
 
