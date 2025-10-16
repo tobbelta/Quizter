@@ -986,7 +986,9 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
       const providerErrors = Object.entries(validationResults)
           .filter(([, result]) => result?.error)
-          .map(([providerName, result]) => `[${formatProviderName(providerName)}] ${result.error}`);
+          .map(([providerName, result]) => {
+            return `[${formatProviderName(providerName)}] ${result.error}`;
+          });
 
       const failureResult = {
         valid: false,
@@ -1103,7 +1105,10 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
 
       // Validate each question has required fields
       for (const q of questions) {
-        if (!q.id || !q.question || !q.options || q.correctOption === undefined || !q.explanation) {
+        const missingFields = !q.id || !q.question ||
+                             !q.options || q.correctOption === undefined ||
+                             !q.explanation;
+        if (missingFields) {
           return res.status(400).json({
             error: "Each question must have: id, question, options, correctOption, explanation",
           });
@@ -1215,7 +1220,9 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
       },
     });
 
-    logger.info(`Processing batch AI validation task ${taskId}`, {questionCount: questions.length});
+    logger.info(`Processing batch AI validation task ${taskId}`, {
+      questionCount: questions.length,
+    });
 
     const results = [];
     let completedCount = 0;
