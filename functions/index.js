@@ -204,7 +204,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         total: amount,
         details: `Använder ${randomProvider.name}...`,
       });
-      questions = await randomProvider.generator({amount, category, ageGroup, targetAudience}, randomProvider.key);
+      questions = await randomProvider.generator(
+          {amount, category, ageGroup, targetAudience},
+          randomProvider.key,
+      );
       usedProvider = randomProvider.name;
     } else if (provider === "gemini") {
       const geminiKey = geminiApiKey.value();
@@ -215,8 +218,12 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           total: amount,
           details: "Använder Gemini...",
         });
-        const {generateQuestions: generateWithGemini} = require("./services/geminiQuestionGenerator");
-        questions = await generateWithGemini({amount, category, ageGroup, targetAudience}, geminiKey);
+        const {generateQuestions: generateWithGemini} =
+          require("./services/geminiQuestionGenerator");
+        questions = await generateWithGemini(
+            {amount, category, ageGroup, targetAudience},
+            geminiKey,
+        );
         usedProvider = "gemini";
       }
     } else if (provider === "openai") {
@@ -228,8 +235,12 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           total: amount,
           details: "Använder OpenAI...",
         });
-        const {generateQuestions: generateWithOpenAI} = require("./services/openaiQuestionGenerator");
-        questions = await generateWithOpenAI({amount, category, ageGroup, targetAudience}, openaiKey);
+        const {generateQuestions: generateWithOpenAI} =
+          require("./services/openaiQuestionGenerator");
+        questions = await generateWithOpenAI(
+            {amount, category, ageGroup, targetAudience},
+            openaiKey,
+        );
         usedProvider = "openai";
       }
     } else if (anthropicKey) {
@@ -239,8 +250,12 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         total: amount,
         details: "Använder Anthropic...",
       });
-      const {generateQuestions: generateWithAnthropic} = require("./services/aiQuestionGenerator");
-      questions = await generateWithAnthropic({amount, category, ageGroup, targetAudience}, anthropicKey);
+      const {generateQuestions: generateWithAnthropic} =
+        require("./services/aiQuestionGenerator");
+      questions = await generateWithAnthropic(
+          {amount, category, ageGroup, targetAudience},
+          anthropicKey,
+      );
       usedProvider = "anthropic";
     }
 
@@ -393,14 +408,29 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             try {
               let result;
               if (name === "anthropic") {
-                const {validateQuestion} = require("./services/aiQuestionValidator");
-                result = await validateQuestion({question: questionText, options, correctOption, explanation}, key);
+                const {validateQuestion} =
+                  require("./services/aiQuestionValidator");
+                result = await validateQuestion(
+                    {question: questionText, options, correctOption,
+                      explanation},
+                    key,
+                );
               } else if (name === "gemini") {
-                const {validateQuestion} = require("./services/geminiQuestionValidator");
-                result = await validateQuestion({question: questionText, options, correctOption, explanation}, key);
+                const {validateQuestion} =
+                  require("./services/geminiQuestionValidator");
+                result = await validateQuestion(
+                    {question: questionText, options, correctOption,
+                      explanation},
+                    key,
+                );
               } else if (name === "openai") {
-                const {validateQuestion} = require("./services/openaiQuestionValidator");
-                result = await validateQuestion({question: questionText, options, correctOption, explanation}, key);
+                const {validateQuestion} =
+                  require("./services/openaiQuestionValidator");
+                result = await validateQuestion(
+                    {question: questionText, options, correctOption,
+                      explanation},
+                    key,
+                );
               }
 
               if (result) {
@@ -583,7 +613,10 @@ exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (re
         transaction.update(taskDocRef, {progress: nextProgress});
       });
     } catch (progressError) {
-      logger.warn(`Failed to update progress for emoji regeneration task ${taskId}`, {error: progressError.message});
+      logger.warn(
+          `Failed to update progress for emoji regeneration task ${taskId}`,
+          {error: progressError.message},
+      );
     }
   };
 
@@ -675,7 +708,12 @@ exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (re
         explanation: explanationText,
       };
 
-      const emojiOutcome = await runEmojiGenerationWithProviders(questionPayload, illustrationProviders, doc.id, null);
+      const emojiOutcome = await runEmojiGenerationWithProviders(
+          questionPayload,
+          illustrationProviders,
+          doc.id,
+          null,
+      );
 
       if (emojiOutcome) {
         updates.push({
