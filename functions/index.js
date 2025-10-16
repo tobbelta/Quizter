@@ -1090,11 +1090,18 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
         questionCount: questions.length,
       });
     } catch (error) {
-      logger.error("Error queueing batch question validation", {error: error.message, stack: error.stack});
-      if (error.code === "auth/id-token-expired" || error.code === "auth/argument-error") {
+      logger.error(
+          "Error queueing batch question validation",
+          {error: error.message, stack: error.stack},
+      );
+      if (error.code === "auth/id-token-expired" ||
+          error.code === "auth/argument-error") {
         return res.status(401).json({error: "Unauthorized: Invalid token"});
       }
-      res.status(500).json({error: "Failed to queue batch validation task.", message: error.message});
+      res.status(500).json({
+        error: "Failed to queue batch validation task.",
+        message: error.message,
+      });
     }
   });
 });
@@ -1133,7 +1140,10 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
         transaction.update(taskDocRef, {progress: nextProgress});
       });
     } catch (progressError) {
-      logger.warn(`Failed to update progress for batch task ${taskId}`, {error: progressError.message});
+      logger.warn(
+          `Failed to update progress for batch task ${taskId}`,
+          {error: progressError.message},
+      );
     }
   };
 
