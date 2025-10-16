@@ -613,7 +613,8 @@ const SuperUserTasksPage = () => {
                 <option value="validation">Validering</option>
                 <option value="batchvalidation">Batch-validering</option>
                 <option value="migration">Migrering</option>
-                <option value="emojiregeneration">Emoji Regenerering</option>
+                <option value="regenerateemoji">Emoji-regenerering</option>
+                <option value="batchregenerateemojis">Mass-regenerering Emojis</option>
               </select>
             </div>
             <input
@@ -743,8 +744,10 @@ const SuperUserTasksPage = () => {
                             <div className="text-white font-semibold">
                               {task.taskType === 'generation' ? 'AI-generering' :
                                task.taskType === 'batchvalidation' ? 'AI-validering (batch)' :
+                               task.taskType === 'validation' ? 'AI-validering' :
                                task.taskType === 'migration' ? 'AI-migrering' :
-                               task.taskType === 'emojiregeneration' ? 'Emoji Regenerering' : 'AI-validering'}
+                               task.taskType === 'regenerateemoji' ? 'Emoji-regenerering' :
+                               task.taskType === 'batchregenerateemojis' ? 'Mass-regenerering Emojis' : 'Bakgrundsjobb'}
                             </div>
                             {task.taskType === 'batchvalidation' && task.payload?.questions?.length && (
                               <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-200 rounded">

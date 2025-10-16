@@ -154,6 +154,7 @@ const handleTaskSnapshot = useCallback((tasks) => {
             if (meta.label) return meta.label;
             if (task.taskType === 'generation') return 'AI-generering';
             if (task.taskType === 'validation') return 'AI-validering';
+            if (task.taskType === 'regenerateemoji') return 'Emoji-regenerering';
             if (task.taskType === 'batchregenerateemojis') return 'Mass-regenerering Emojis';
             return 'Bakgrundsjobb';
           };
