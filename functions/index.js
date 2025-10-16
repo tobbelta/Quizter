@@ -392,7 +392,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
     if (!canValidate) {
       validationSkippedCount = questionsToImport.length;
-      logger.warn("Skipping AI validation for generated questions - no validation providers available");
+      logger.warn(
+          "Skipping AI validation for generated questions - " +
+        "no validation providers available",
+      );
     } else {
       for (const question of questionsToImport) {
         try {
@@ -451,7 +454,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
                 }
               }
             } catch (error) {
-              logger.warn(`${name} validation failed for question ${question.id}`, {error: error.message});
+              logger.warn(
+                  `${name} validation failed for question ${question.id}`,
+                  {error: error.message},
+              );
               validationResults[name] = {
                 valid: null,
                 error: error.message,
@@ -465,17 +471,23 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
               .filter(([, result]) => typeof result?.valid === "boolean");
 
           if (successfulProviders.length > 0) {
-            const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
-            const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
-            const majorityValid = validProviders.length > invalidProviders.length;
+            const validProviders = successfulProviders.filter(
+                ([, result]) => result.valid === true,
+            );
+            const invalidProviders = successfulProviders.filter(
+                ([, result]) => result.valid === false,
+            );
+            const majorityValid =
+              validProviders.length > invalidProviders.length;
 
-            const issues = invalidProviders.flatMap(([providerName, result]) => {
-              const providerLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
-              if (Array.isArray(result.issues) && result.issues.length > 0) {
-                return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
-              }
-              return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
-            });
+            const issues = invalidProviders.flatMap(
+                ([providerName, result]) => {
+                  const providerLabel = providerName.charAt(0).toUpperCase() + providerName.slice(1);
+                  if (Array.isArray(result.issues) && result.issues.length > 0) {
+                    return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
+                  }
+                  return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+                });
 
             const finalResult = {
               valid: majorityValid,
