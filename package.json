@@ -1,6 +1,6 @@
 {
   "name": "routequest",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "private": true,
   "dependencies": {
     "@stripe/react-stripe-js": "^4.0.2",
