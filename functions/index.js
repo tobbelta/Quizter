@@ -1186,8 +1186,12 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
 
         if (anthropicKey) {
           try {
-            const {validateQuestion} = require("./services/aiQuestionValidator");
-            const result = await validateQuestion({question, options, correctOption, explanation}, anthropicKey);
+            const {validateQuestion} =
+              require("./services/aiQuestionValidator");
+            const result = await validateQuestion(
+                {question, options, correctOption, explanation},
+                anthropicKey,
+            );
             validationResults.anthropic = result;
             providerHealth.anthropic = "healthy";
             if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -1208,8 +1212,12 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
 
         if (geminiKey) {
           try {
-            const {validateQuestion} = require("./services/geminiQuestionValidator");
-            const result = await validateQuestion({question, options, correctOption, explanation}, geminiKey);
+            const {validateQuestion} =
+              require("./services/geminiQuestionValidator");
+            const result = await validateQuestion(
+                {question, options, correctOption, explanation},
+                geminiKey,
+            );
             validationResults.gemini = result;
             providerHealth.gemini = "healthy";
             if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -1230,8 +1238,12 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
 
         if (openaiKey) {
           try {
-            const {validateQuestion} = require("./services/openaiQuestionValidator");
-            const result = await validateQuestion({question, options, correctOption, explanation}, openaiKey);
+            const {validateQuestion} =
+              require("./services/openaiQuestionValidator");
+            const result = await validateQuestion(
+                {question, options, correctOption, explanation},
+                openaiKey,
+            );
             validationResults.openai = result;
             providerHealth.openai = "healthy";
             if (typeof result.reasoning === "string" && result.reasoning.trim()) {
@@ -1270,7 +1282,11 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             validated: validatedCount,
             failed: failedCount,
           });
-          logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+          logger.info(
+              `Batch validation progress ${taskId}: ` +
+              `${completedCount}/${questions.length} ` +
+              `(${validatedCount} godkända, ${failedCount} underkända)`,
+          );
 
           results.push({
             questionId: id,
@@ -1324,7 +1340,11 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           validated: validatedCount,
           failed: failedCount,
         });
-        logger.info(`Batch validation progress ${taskId}: ${completedCount}/${questions.length} (${validatedCount} godkända, ${failedCount} underkända)`);
+        logger.info(
+            `Batch validation progress ${taskId}: ` +
+            `${completedCount}/${questions.length} ` +
+            `(${validatedCount} godkända, ${failedCount} underkända)`,
+        );
 
         const questionResult = {
           questionId: id,
