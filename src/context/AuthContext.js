@@ -55,7 +55,6 @@ const mapFirebaseUser = async (firebaseUser) => {
   const docRef = doc(firebaseDb, 'users', firebaseUser.uid);
   const docSnap = await getDoc(docRef);
   const data = docSnap.exists() ? docSnap.data() : {};
-  console.log('mapFirebaseUser: raw data from firestore:', data);
   const profile = data.profile || {};
   const isSuperUser = data.isSuperUser === true;
 
@@ -175,7 +174,6 @@ export const AuthProvider = ({ children }) => {
       // Om användaren inte är autentiserad, logga in som anonym automatiskt
       // Detta säkerställer att Firestore-queries alltid fungerar
       if (!user) {
-        console.log('[Auth] Ingen användare autentiserad, skapar anonym användare...');
         try {
           const credential = await signInAnonymously(firebaseAuth);
 
@@ -184,7 +182,6 @@ export const AuthProvider = ({ children }) => {
           const savedContact = userPreferencesService.getContact();
 
           if (savedAlias || savedContact) {
-            console.log('[Auth] Använder sparat alias:', savedAlias);
             await ensureUserDoc(credential.user, {
               profileOverride: {
                 displayName: savedAlias || 'Gäst',
@@ -302,7 +299,6 @@ export const AuthProvider = ({ children }) => {
       // Om användaren redan är anonym, uppdatera bara profilen
       const currentFirebaseUser = firebaseAuth.currentUser;
       if (currentFirebaseUser && currentFirebaseUser.isAnonymous) {
-        console.log('[Auth] Användaren är redan anonym, uppdaterar profil...');
         await ensureUserDoc(currentFirebaseUser, {
           profileOverride: { displayName: alias || currentFirebaseUser.displayName || 'Gäst', contact: contact || null }
         });

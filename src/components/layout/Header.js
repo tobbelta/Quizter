@@ -594,7 +594,3 @@ const Header = ({ title = 'RouteQuest' }) => {
 };
 
 export default Header;
-
-
-
-
