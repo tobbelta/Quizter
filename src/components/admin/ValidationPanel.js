@@ -7,33 +7,86 @@ import { questionService } from '../../services/questionService';
 const ValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
 
   const runValidation = async () => {
     setLoading(true);
+    setValidationResults(null);
     try {
-      const allQuestions = questionService.listAll();
-      const results = questionService.validateQuestions(allQuestions, 'sv');
+      const allQuestions = await questionService.loadAllQuestions();
+      const total = allQuestions.length;
 
-      console.log('[ValidationPanel] Valideringsresultat:', results);
-
-      // Spara valideringsresultat på varje fråga
-      for (const result of results.results) {
-        if (!result.valid) {
-          // Frågan är ogiltig - markera den
-          await questionService.markAsInvalid(result.questionId, {
-            valid: false,
-            issues: result.errors,
-            reasoning: 'Strukturvalidering: ' + result.errors.join(', '),
-            validationType: 'structure'
-          });
-        }
+      if (total === 0) {
+        setValidationResults({
+          total: 0,
+          valid: 0,
+          invalid: 0,
+          results: [],
+        });
+        return;
       }
 
-      setValidationResults(results);
+      setProgress({ current: 0, total });
+
+      const results = [];
+      let validCount = 0;
+      let invalidCount = 0;
+
+      for (let index = 0; index < total; index += 1) {
+        const question = allQuestions[index];
+        const validation = questionService.validateQuestion(question, 'sv');
+
+        const issues = validation.errors || [];
+        const structureResult = {
+          validationType: 'structure',
+          valid: validation.valid,
+          issues,
+          reasoning: validation.valid
+            ? 'Strukturvalidering: Godkänd'
+            : `Strukturvalidering: ${issues.join(', ')}`,
+          checkedAt: new Date().toISOString(),
+        };
+
+        if (validation.valid) {
+          validCount += 1;
+          try {
+            await questionService.updateStructureValidation(question.id, structureResult);
+          } catch (error) {
+            console.error('[ValidationPanel] Kunde inte uppdatera strukturvalidering:', error);
+          }
+        } else {
+          invalidCount += 1;
+          const questionText = question.languages?.sv?.text || question.text || '';
+
+          results.push({
+            index,
+            questionId: question.id,
+            questionText,
+            errors: issues,
+            valid: false,
+          });
+
+          try {
+            await questionService.markAsInvalid(question.id, structureResult);
+          } catch (error) {
+            console.error('[ValidationPanel] Kunde inte markera fråga som ogiltig:', error);
+          }
+        }
+
+        setProgress({ current: index + 1, total });
+      }
+
+      setValidationResults({
+        total,
+        valid: validCount,
+        invalid: invalidCount,
+        results,
+      });
     } catch (error) {
       console.error('Fel vid validering:', error);
       alert('Kunde inte validera frågor: ' + error.message);
     } finally {
+      setProgress(null);
       setLoading(false);
     }
   };
@@ -52,9 +105,26 @@ const ValidationPanel = () => {
           disabled={loading}
           className="px-4 py-2 bg-cyan-500 text-black rounded-lg font-semibold hover:bg-cyan-400 disabled:bg-slate-600 disabled:text-gray-400"
         >
-          {loading ? 'Validerar...' : '✓ Validera alla frågor'}
+          {loading ? 'Validerar...' : '✅ Validera alla frågor'}
         </button>
       </div>
+
+      {progress && (
+        <div className="mb-4 rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-4">
+          <div className="flex items-center justify-between text-sm text-cyan-200">
+            <span>Validerar frågor...</span>
+            <span>
+              {progress.current} / {progress.total}
+            </span>
+          </div>
+          <div className="mt-2 h-2 w-full rounded bg-slate-900">
+            <div
+              className="h-full rounded bg-cyan-400 transition-all"
+              style={{ width: `${progress.total > 0 ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Resultat */}
       {validationResults && (
@@ -130,7 +200,7 @@ const ValidationPanel = () => {
         </div>
       )}
 
-      {!validationResults && !loading && (
+      {!validationResults && !loading && !progress && (
         <div className="text-center py-8 text-gray-400">
           Klicka på "Validera alla frågor" för att börja
         </div>

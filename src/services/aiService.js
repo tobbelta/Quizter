@@ -46,8 +46,8 @@ export const aiService = {
    * @param {{ amount: number, category: string, difficulty: string, provider: string }} params
    * @returns {Promise<{success: boolean, taskId: string}>}
    */
-  startAIGeneration: async ({ amount, category, difficulty, provider }) => {
-    return await queueTask('generateAIQuestions', { amount, category, difficulty, provider });
+  startAIGeneration: async ({ amount, category, ageGroup, difficulty, provider }) => {
+    return await queueTask('generateAIQuestions', { amount, category, ageGroup, difficulty, provider });
   },
 
   /**
@@ -57,5 +57,26 @@ export const aiService = {
    */
   startAIValidation: async ({ question, options, correctOption, explanation }) => {
     return await queueTask('validateQuestionWithAI', { question, options, correctOption, explanation });
+  },
+
+  /**
+   * Queues a task to validate multiple questions in a single batch job.
+   * @param {{ questions: Array<{id: string, question: string, options: string[], correctOption: number, explanation: string}> }} params
+   * @returns {Promise<{success: boolean, taskId: string, questionCount: number}>}
+   */
+  startBatchAIValidation: async ({ questions }) => {
+    return await queueTask('batchValidateQuestions', { questions });
+  },
+
+  regenerateAllIllustrations: async () => {
+    return await queueTask('regenerateAllIllustrations', {});
+  },
+
+  regenerateQuestionEmoji: async ({ questionId, provider }) => {
+    return await queueTask('regenerateQuestionEmoji', { questionId, provider });
+  },
+
+  startBatchEmojiRegeneration: async ({ questionIds }) => {
+    return await queueTask('batchRegenerateEmojis', { questionIds });
   },
 };

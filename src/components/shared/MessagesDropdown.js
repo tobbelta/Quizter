@@ -6,34 +6,58 @@ import { messageService } from '../../services/messageService';
 import { analyticsService } from '../../services/analyticsService';
 import { useAuth } from '../../context/AuthContext';
 
-const MessagesDropdown = ({ isOpen, onClose }) => {
+const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
   const { currentUser } = useAuth();
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    let isMounted = true;
     const deviceId = analyticsService.getDeviceId();
     const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
 
-    // Sätt upp realtidslyssnare på meddelanden
-    const unsubscribe = messageService.subscribeToMessages(
-      userId,
-      deviceId,
-      (updatedMessages) => {
-        setMessages(updatedMessages);
-        setIsLoading(false);
+    const loadMessages = async () => {
+      setIsLoading(true);
+      try {
+        const fetchedMessages = await messageService.getMessages(userId, deviceId);
+        if (!isMounted) return;
+        setMessages(fetchedMessages);
+        const unread = fetchedMessages.filter(m => !m.read && !m.deleted).length;
+        onUnreadChange(unread);
+      } catch (error) {
+        console.error('Kunde inte hämta meddelanden:', error);
+        if (isMounted) {
+          setMessages([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
-    );
-
-    // Städa upp lyssnaren när komponenten unmountas
-    return () => {
-      unsubscribe();
     };
-  }, [currentUser]);
+
+    loadMessages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, isOpen, onUnreadChange]);
 
   const handleMarkAsRead = async (messageId) => {
     try {
       await messageService.markAsRead(messageId);
+      setMessages((prev) => {
+        const updated = prev.map((message) => (
+          message.id === messageId ? { ...message, read: true } : message
+        ));
+        const unread = updated.filter(m => !m.read && !m.deleted).length;
+        onUnreadChange(unread);
+        return updated;
+      });
     } catch (error) {
       console.error('Kunde inte markera meddelande som läst:', error);
     }
@@ -42,6 +66,12 @@ const MessagesDropdown = ({ isOpen, onClose }) => {
   const handleDelete = async (messageId) => {
     try {
       await messageService.deleteMessage(messageId);
+      setMessages((prev) => {
+        const updated = prev.filter((message) => message.id !== messageId);
+        const unread = updated.filter(m => !m.read && !m.deleted).length;
+        onUnreadChange(unread);
+        return updated;
+      });
     } catch (error) {
       console.error('Kunde inte radera meddelande:', error);
     }

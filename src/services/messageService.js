@@ -2,9 +2,11 @@
  * Message Service - Hanterar meddelanden från admin till användare
  */
 import { getFirebaseDb } from '../firebaseClient';
-import { collection, addDoc, getDocs, query, where, orderBy, updateDoc, doc, serverTimestamp, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, orderBy, limit, updateDoc, doc, serverTimestamp, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 const db = getFirebaseDb();
+
+const MESSAGE_LIMIT = 25;
 
 /**
  * Skicka meddelande från admin
@@ -53,7 +55,8 @@ export const getMessages = async (userId = null, deviceId = null) => {
           messagesRef,
           where('userId', '==', userId),
           where('deleted', '==', false),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
+          limit(MESSAGE_LIMIT)
         ))
       );
     }
@@ -65,7 +68,8 @@ export const getMessages = async (userId = null, deviceId = null) => {
           messagesRef,
           where('deviceId', '==', deviceId),
           where('deleted', '==', false),
-          orderBy('createdAt', 'desc')
+          orderBy('createdAt', 'desc'),
+          limit(MESSAGE_LIMIT)
         ))
       );
     }
@@ -128,7 +132,8 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
         messagesRef,
         where('userId', '==', userId),
         where('deleted', '==', false),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(MESSAGE_LIMIT)
       ),
       (snapshot) => {
         snapshot.docChanges().forEach((change) => {
@@ -155,7 +160,8 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
         messagesRef,
         where('deviceId', '==', deviceId),
         where('deleted', '==', false),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(MESSAGE_LIMIT)
       ),
       (snapshot) => {
         snapshot.docChanges().forEach((change) => {

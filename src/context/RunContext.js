@@ -142,6 +142,13 @@ export const RunProvider = ({ children }) => {
     // Uppdatera run och frågor synkront för snabb UI-uppdatering
     setCurrentRun(run);
     setQuestions(mapRunQuestions(run));
+    questionService.ensureQuestionsByIds(run.questionIds)
+      .then(() => {
+        setQuestions(mapRunQuestions(run));
+      })
+      .catch((error) => {
+        console.warn('[RunContext] Kunde inte ladda frågor för run:', error);
+      });
 
     // Ladda deltagare asynkront med error handling
     try {
@@ -270,6 +277,10 @@ export const RunProvider = ({ children }) => {
       const updatedParticipant = participantsList.find((entry) => entry.id === trackedId);
       if (updatedParticipant) {
         setCurrentParticipant(updatedParticipant);
+      } else {
+        participantIdRef.current = null;
+        setCurrentParticipant(null);
+        writeActiveParticipant(null);
       }
     }
 
@@ -457,6 +468,10 @@ export const RunProvider = ({ children }) => {
         const updatedParticipant = participantSnapshot.find((entry) => entry.id === trackedId);
         if (updatedParticipant) {
           setCurrentParticipant(updatedParticipant);
+        } else {
+          participantIdRef.current = null;
+          setCurrentParticipant(null);
+          writeActiveParticipant(null);
         }
       }
     });
@@ -472,11 +487,23 @@ export const RunProvider = ({ children }) => {
     if (!runId || !participantId) return undefined;
     if (typeof window === 'undefined') return undefined;
 
+    // Hjälpare för att städa bort en deltagarsession som inte längre finns i databasen
+    const clearStaleParticipant = () => {
+      participantIdRef.current = null;
+      setCurrentParticipant(null);
+      writeActiveParticipant(null);
+    };
+
     // Heartbeat-funktion med error handling
     const sendHeartbeat = () => {
       runRepository.heartbeatParticipant(runId, participantId)
         .catch((error) => {
           console.warn('[RunContext] Heartbeat misslyckades:', error);
+
+          // Om dokumentet saknas betyder det att deltagaren har tagits bort server-side.
+          if (error?.code === 'not-found' || error?.message?.includes('No document to update')) {
+            clearStaleParticipant();
+          }
         });
     };
 

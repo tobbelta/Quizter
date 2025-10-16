@@ -105,7 +105,7 @@ const resolveCategories = (question) => {
  * @param {string} language - Språk att validera (sv eller en)
  * @returns {Object} { valid: boolean, errors: string[] }
  */
-export const validateQuestion = (question, language = 'sv') => {
+const validateQuestion = (question, language = 'sv') => {
   const errors = [];
 
   const langData = resolveLanguageBlock(question, language);
@@ -254,7 +254,7 @@ const levenshteinDistance = (str1, str2) => {
  * @param {number} threshold - Likhetströsk (0-1, default 0.85)
  * @returns {Array} Lista med dubbletter: [{ question1, question2, similarity }]
  */
-export const findDuplicates = (questions, language = 'sv', threshold = 0.85) => {
+const findDuplicates = (questions, language = 'sv', threshold = 0.85) => {
   const duplicates = [];
   const seenPairs = new Set(); // Håll koll på par vi redan jämfört
 
@@ -300,7 +300,7 @@ export const findDuplicates = (questions, language = 'sv', threshold = 0.85) => 
  * @param {string} language - Språk att validera
  * @returns {Object} { valid: number, invalid: number, errors: Array }
  */
-export const validateQuestions = (questions, language = 'sv') => {
+const validateQuestions = (questions, language = 'sv') => {
   const results = questions.map((question, index) => {
     const validation = validateQuestion(question, language);
     return {
@@ -322,10 +322,8 @@ export const validateQuestions = (questions, language = 'sv') => {
   };
 };
 
-const questionValidationService = {
+module.exports = {
   validateQuestion,
   validateQuestions,
   findDuplicates
 };
-
-export default questionValidationService;

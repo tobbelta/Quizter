@@ -28,6 +28,7 @@ import SuperUserMessagesPage from './views/SuperUserMessagesPage';
 import SuperUserNotificationsPage from './views/SuperUserNotificationsPage';
 import SuperUserErrorLogsPage from './views/SuperUserErrorLogsPage';
 import SuperUserTasksPage from './views/SuperUserTasksPage';
+import AIProviderSettingsPage from './views/AIProviderSettingsPage';
 import MigrationHandler from './components/migration/MigrationHandler';
 import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
@@ -135,6 +136,14 @@ const AppRoutes = () => (
       element={(
         <RequireSuperUser>
           <SuperUserErrorLogsPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/superuser/ai-providers"
+      element={(
+        <RequireSuperUser>
+          <AIProviderSettingsPage />
         </RequireSuperUser>
       )}
     />

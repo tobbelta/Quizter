@@ -3,6 +3,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getFirebaseDb } from '../firebaseClient';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import { aiService } from '../services/aiService';
@@ -13,10 +15,28 @@ import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
 import ValidationPanel from '../components/admin/ValidationPanel';
-import AIValidationPanel from '../components/admin/AIValidationPanel';
 
-const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, handleDeleteQuestion, handleValidateQuestion, handleManualApprove, handleManualReject, handleApproveReported, handleRejectReported, validatingQuestion, isSelected, onSelect }) => {
+const QuestionCard = ({
+  question,
+  index,
+  expandedQuestion,
+  setExpandedQuestion,
+  handleDeleteQuestion,
+  handleManualApprove,
+  handleManualReject,
+  handleApproveReported,
+  handleRejectReported,
+  isSelected,
+  onSelect,
+  registerTask,
+  validatingQuestions,
+  regeneratingEmojis,
+  onValidationStart,
+  onValidationEnd,
+  setIndividualValidationTasks
+}) => {
   const [currentLang, setCurrentLang] = useState('sv');
+  const [regeneratingEmoji, setRegeneratingEmoji] = useState(false);
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
@@ -26,9 +46,127 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
 
   const displayLang = currentLang === 'sv' ? svLang : enLang;
   const hasBothLanguages = svLang && enLang;
+  const categories = Array.isArray(question.categories)
+    ? question.categories
+    : question.category
+      ? [question.category]
+      : [];
+  const ageGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
+  const formattedAgeGroups = ageGroups.map((group) => {
+    switch (group) {
+      case 'children':
+        return 'Barn';
+      case 'youth':
+        return 'Ungdom';
+      case 'adults':
+        return 'Vuxna';
+      default:
+        return group;
+    }
+  });
+  const targetAudience = question.targetAudience;
+  const handleRegenerateEmoji = async () => {
+    if (regeneratingEmoji) {
+      return;
+    }
+
+    setRegeneratingEmoji(true);
+    try {
+      const response = await questionService.regenerateEmoji(question.id);
+      
+      // Register task for background monitoring if taskId is returned
+      if (response?.taskId && typeof registerTask === 'function') {
+        registerTask(response.taskId, {
+          taskType: 'regenerateemoji',
+          label: 'Emoji-regenerering',
+          description: `Genererar nya emojis för fråga ${question.id}`,
+          createdAt: new Date()
+        });
+        // Visual feedback via UI indicators - no alert needed
+      }
+      // Success - visual feedback via updated emoji display
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte regenerera emojis:', error);
+      alert(`⚠️ Kunde inte generera emojis: ${error.message}`);
+    } finally {
+      setRegeneratingEmoji(false);
+    }
+  };
+  const handleValidateWithAI = async () => {
+    if (!question.id) return;
+
+    if (validatingQuestions && validatingQuestions.has(question.id)) {
+      return; // Already validating
+    }
+
+    if (onValidationStart) {
+      onValidationStart(question.id);
+    }
+
+    try {
+      const response = await questionService.validateSingleQuestion(question.id);
+      const taskId = response?.taskId;
+
+      if (taskId && typeof registerTask === 'function') {
+        // Register the task for the background task UI
+        const langData = question.languages?.sv || {
+          text: question.text,
+          options: question.options,
+          explanation: question.explanation
+        };
+        const descriptionParts = [
+          `Fråga ${question.id}`,
+          langData.text.length > 80 ? `${langData.text.slice(0, 80)}…` : langData.text
+        ];
+        registerTask(taskId, {
+          taskType: 'validation',
+          label: 'AI-validering',
+          description: descriptionParts.join(' – '),
+          createdAt: new Date()
+        });
+        
+        // Store the mapping so we can track this specific question
+        setIndividualValidationTasks(prev => new Map(prev).set(taskId, question.id));
+      }
+
+      // Visual feedback via UI indicators - no alert needed
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte starta AI-validering:', error);
+      alert(`Kunde inte starta AI-validering: ${error.message}`);
+    } finally {
+      if (onValidationEnd) {
+        onValidationEnd(question.id);
+      }
+    }
+  };
+  const rawAiResult = question.aiValidationResult;
+  const structureResult =
+    question.structureValidationResult ||
+    (rawAiResult?.validationType === 'structure' ? rawAiResult : null);
+  const aiResult =
+    rawAiResult && rawAiResult.validationType !== 'structure' ? rawAiResult : null;
+
+  const hasStructurePass = structureResult?.valid === true;
+  const hasStructureIssue = structureResult?.valid === false;
+
+  const aiPassed =
+    question.manuallyApproved === true ||
+    question.aiValidated === true ||
+    (aiResult?.valid === true);
+  const hasAiIssue =
+    question.manuallyRejected === true ||
+    (aiResult && aiResult.valid === false);
 
   return (
-    <div className={`rounded-lg border bg-slate-900/60 p-4 transition-colors ${isSelected ? 'border-cyan-500' : 'border-slate-700'}`}>
+    <div className={`rounded-lg border transition-all duration-300 p-4 ${
+      validatingQuestions && validatingQuestions.has(question.id)
+        ? 'border-yellow-400 bg-yellow-50/5 animate-pulse' 
+        : regeneratingEmojis && regeneratingEmojis.has(question.id)
+          ? 'border-blue-400 bg-blue-50/5 animate-pulse'
+          : isSelected 
+            ? 'border-cyan-500 bg-slate-900/60' 
+            : 'border-slate-700 bg-slate-900/60'
+    }`}>
       <div className="flex items-start gap-4">
         <input
           type="checkbox"
@@ -37,6 +175,22 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
           className="mt-1 h-5 w-5 rounded border-gray-600 bg-slate-800 text-cyan-500 focus:ring-cyan-500"
         />
         <div className="flex-1">
+          {/* Validation status indicator */}
+          {validatingQuestions && validatingQuestions.has(question.id) && (
+            <div className="mb-2 flex items-center text-yellow-400">
+              <div className="animate-spin mr-2">⏳</div>
+              <span className="text-sm font-medium">AI-validering pågår...</span>
+            </div>
+          )}
+
+          {/* Emoji regeneration status indicator */}
+          {regeneratingEmojis && regeneratingEmojis.has(question.id) && (
+            <div className="mb-2 flex items-center text-blue-400">
+              <div className="animate-spin mr-2">🎨</div>
+              <span className="text-sm font-medium">Emoji-regenerering pågår...</span>
+            </div>
+          )}
+
           <div className="flex items-start justify-between mb-2">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
@@ -57,20 +211,27 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                     ✗ Manuellt underkänd
                   </span>
                 )}
-                {question.aiValidated === true && question.manuallyApproved !== true && !question.manuallyRejected && (
+                {hasStructureIssue && (
+                  <span className="inline-flex items-center rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-medium text-red-300" title="Strukturvalidering - problem hittades">
+                    ✗ Struktur-fel
+                  </span>
+                )}
+                {hasStructurePass && !hasStructureIssue && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-medium text-emerald-200" title="Strukturvalidering - godkänd">
+                    ✓ Struktur-OK
+                  </span>
+                )}
+                {aiPassed && question.manuallyRejected !== true && (
                   <span className="inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-300" title="AI-validerad - Alla providers godkände">
                     ✓ AI-OK
                   </span>
                 )}
-                {question.aiValidated === false && question.aiValidationResult && !question.manuallyRejected && (
-                  <span className="inline-flex items-center rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-medium text-red-300" title={
-                    question.aiValidationResult.validationType === 'structure'
-                      ? 'Strukturvalidering - Problem hittades'
-                      : 'AI-validering - Problem hittades'
-                  }>
-                    ✗ {question.aiValidationResult.validationType === 'structure' ? 'Struktur-fel' : 'AI-Fel'}
+                {hasAiIssue && (
+                  <span className="inline-flex items-center rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-medium text-red-300" title="AI-validering - problem hittades">
+                    ✗ AI-fel
                   </span>
                 )}
+
                 {question.createdAt && (
                   <span className="text-xs text-gray-500">
                     {question.createdAt.toDate ?
@@ -91,14 +252,30 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                     }
                   </span>
                 )}
-                {question.category && (
-                  <span className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
-                    {question.category}
+                {formattedAgeGroups.map((label, idx) => (
+                  <span key={`age-${question.id}-${label}-${idx}`} className="inline-flex items-center rounded-full bg-cyan-500/15 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
+                    {label}
+                  </span>
+                ))}
+                {categories.map((categoryName, idx) => (
+                  <span key={`cat-${question.id}-${categoryName}-${idx}`} className="inline-flex items-center rounded-full bg-purple-500/20 px-2.5 py-0.5 text-xs font-medium text-purple-200">
+                    {categoryName}
+                  </span>
+                ))}
+                {targetAudience && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-200">
+                    {targetAudience === 'swedish' ? 'Svensk målgrupp' : targetAudience}
                   </span>
                 )}
                 {question.difficulty && (
-                  <span className="inline-flex items-center rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-xs font-medium text-cyan-200">
-                    {question.difficulty === 'kid' ? 'Barn' : question.difficulty === 'family' ? 'Familj' : question.difficulty === 'adult' ? 'Vuxen' : question.difficulty}
+                  <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2.5 py-0.5 text-xs font-medium text-gray-200">
+                    {question.difficulty === 'kid'
+                      ? 'Legacy: Barn'
+                      : question.difficulty === 'family'
+                      ? 'Legacy: Familj'
+                      : question.difficulty === 'adult'
+                      ? 'Legacy: Vuxen'
+                      : `Legacy: ${question.difficulty}`}
                   </span>
                 )}
                 {hasBothLanguages && (
@@ -108,12 +285,19 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
-                className="text-lg font-semibold text-left hover:text-cyan-300 transition-colors"
-              >
-                {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
-              </button>
+              <div className="flex items-center gap-4">
+                {question.illustration && (
+                  <span className="text-2xl" title={question.illustration.includes('<svg') ? 'SVG Illustration' : 'Emoji'}>
+                    {question.illustration.includes('<svg') ? '🖼️' : question.illustration}
+                  </span>
+                )}
+                <button
+                  onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
+                  className="text-lg font-semibold text-left hover:text-cyan-300 transition-colors flex-1"
+                >
+                  {displayLang?.text || (currentLang === 'en' ? '(No English text)' : '(Ingen svensk text)')}
+                </button>
+              </div>
             </div>
             <div className="flex gap-2">
               {question.reported === true ? (
@@ -135,17 +319,8 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                 </>
               ) : (
                 <>
-                  {!question.manuallyApproved && !question.manuallyRejected && (
-                    <button
-                      onClick={() => handleValidateQuestion(question)}
-                      disabled={validatingQuestion === question.id}
-                      className="rounded bg-purple-600 px-3 py-1 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-600 disabled:text-gray-400"
-                      title="AI-validera fråga"
-                    >
-                      {validatingQuestion === question.id ? '🤖 Validerar...' : '🤖 Validera'}
-                    </button>
-                  )}
-                  {question.aiValidated === false && question.aiValidationResult && !question.manuallyApproved && (
+
+                  {!question.manuallyApproved && (
                     <button
                       onClick={() => handleManualApprove(question.id)}
                       className="rounded bg-blue-600 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-500"
@@ -178,6 +353,63 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-slate-700 space-y-4">
+          {/* Illustration (Emoji eller SVG) */}
+          {question.illustration && (() => {
+            // Stöd både nya och gamla fältnamn
+            const illustrationDate = question.illustrationGeneratedAt || question.migrationSvgUpdatedAt;
+            const illustrationProvider = question.illustrationProvider || question.migrationSvgProvider;
+
+            // Kolla om det är emoji eller SVG
+            const isSvg = question.illustration.includes('<svg');
+            const isEmoji = !isSvg;
+
+            return (
+              <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-300">Illustration:</p>
+                  {(illustrationDate || illustrationProvider) && (
+                    <p className="text-xs text-gray-400">
+                      {illustrationDate && (
+                        <>
+                          {illustrationDate.toDate ?
+                            illustrationDate.toDate().toLocaleString('sv-SE', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }) :
+                            new Date(illustrationDate).toLocaleString('sv-SE', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                        </>
+                      )}
+                      {illustrationProvider && ` · ${illustrationProvider.charAt(0).toUpperCase() + illustrationProvider.slice(1)}`}
+                    </p>
+                  )}
+                </div>
+                <div className="mx-auto w-full max-w-xs">
+                  {isEmoji ? (
+                    <div className="flex items-center justify-center py-8">
+                      <span className="text-8xl" role="img" aria-label="Question illustration">
+                        {question.illustration}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      className="rounded bg-white/5 p-3 shadow-inner [&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:max-h-60 [&_svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: question.illustration }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="space-y-2">
             <p className="text-sm font-semibold text-gray-300 mb-2">Svarsalternativ ({currentLang.toUpperCase()}):</p>
             {(displayLang?.options || []).map((option, optionIndex) => (
@@ -209,15 +441,68 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
             </div>
           )}
 
+          {/* Strukturvalidering */}
+          {structureResult && (
+            <div
+              className={`p-4 rounded border ${
+                structureResult.valid
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-red-500/10 border-red-500/30'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className={`text-sm font-bold ${
+                    structureResult.valid ? 'text-emerald-300' : 'text-red-300'
+                  }`}
+                >
+                  {structureResult.valid
+                    ? '✓ Strukturvalidering: GODKÄND'
+                    : '✗ Strukturvalidering: UNDERKÄND'}
+                </span>
+              </div>
+
+              {structureResult.issues && structureResult.issues.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-red-300 mb-1">Problem:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {structureResult.issues.map((issue, idx) => (
+                      <li key={`structure-issue-${idx}`} className="text-xs text-red-200">
+                        {issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {structureResult.reasoning && (
+                <div className="mb-2">
+                  <p className="text-xs font-semibold text-gray-300 mb-1">Motivering:</p>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap">{structureResult.reasoning}</p>
+                </div>
+              )}
+
+              {structureResult.checkedAt && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Kontrollerad: {new Date(structureResult.checkedAt).toLocaleString('sv-SE')}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* AI-Valideringsresultat */}
-          {question.aiValidationResult && (
-            <div className={`p-4 rounded border ${
-              question.manuallyRejected
-                ? 'bg-orange-500/10 border-orange-500/30'
-                : question.aiValidated
-                ? (question.manuallyApproved ? 'bg-blue-500/10 border-blue-500/30' : 'bg-green-500/10 border-green-500/30')
-                : 'bg-red-500/10 border-red-500/30'
-            }`}>
+          {aiResult && (
+            <div
+              className={`p-4 rounded border ${
+                question.manuallyRejected
+                  ? 'bg-orange-500/10 border-orange-500/30'
+                  : question.aiValidated
+                  ? question.manuallyApproved
+                    ? 'bg-blue-500/10 border-blue-500/30'
+                    : 'bg-green-500/10 border-green-500/30'
+                  : 'bg-red-500/10 border-red-500/30'
+              }`}
+            >
               <div className="flex items-center gap-2 mb-2">
                 <span className={`text-sm font-bold ${
                   question.manuallyRejected ? 'text-orange-300' :
@@ -225,69 +510,92 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
                 }`}>
                   {question.manuallyRejected
                     ? '✗ Manuellt underkänd'
-                    : question.aiValidationResult.validationType === 'manual'
+                    : aiResult.validationType === 'manual'
                     ? '✓ Manuellt godkänd'
-                    : question.aiValidationResult.validationType === 'structure'
-                    ? (question.aiValidated ? '✓ Strukturvalidering: GODKÄND' : '✗ Strukturvalidering: UNDERKÄND')
-                    : (question.aiValidated ? '✓ AI-Validering: GODKÄND' : '✗ AI-Validering: UNDERKÄND')
+                    : (question.aiValidated ? '✓ AI-validering: GODKÄND' : '✗ AI-validering: UNDERKÄND')
                   }
                 </span>
-                {question.aiValidationResult.providersChecked && (
+                {aiResult.providersChecked && (
                   <span className="text-xs text-gray-400">
-                    ({question.aiValidationResult.providersChecked} providers)
+                    ({aiResult.providersChecked} providers)
                   </span>
                 )}
               </div>
 
-              {question.aiValidationResult.issues && question.aiValidationResult.issues.length > 0 && (
+              {aiResult.issues && aiResult.issues.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-red-300 mb-1">Problem:</p>
                   <ul className="list-disc list-inside space-y-1">
-                    {question.aiValidationResult.issues.map((issue, idx) => (
+                    {aiResult.issues.map((issue, idx) => (
                       <li key={idx} className="text-xs text-red-200">{issue}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {question.aiValidationResult.reasoning && (
+              {aiResult.reasoning && (
                 <div className="mb-2">
                   <p className="text-xs font-semibold text-gray-300 mb-1">Motivering:</p>
-                  <p className="text-xs text-gray-300 whitespace-pre-wrap">{question.aiValidationResult.reasoning}</p>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap">{aiResult.reasoning}</p>
                 </div>
               )}
 
-              {question.aiValidationResult.providerResults && (
+              {aiResult.providerResults && (
                 <div className="mt-3 pt-3 border-t border-slate-600">
                   <p className="text-xs font-semibold text-gray-300 mb-2">Provider-resultat:</p>
                   <div className="space-y-2">
-                    {Object.entries(question.aiValidationResult.providerResults).map(([provider, result]) => (
-                      <div key={provider} className="flex items-start gap-2">
-                        <span className={`text-xs font-bold ${result.valid ? 'text-green-300' : 'text-red-300'}`}>
-                          {result.valid ? '✓' : '✗'} {provider}:
-                        </span>
-                        <span className="text-xs text-gray-300 flex-1">
-                          {result.error || (result.valid ? 'Godkänd' : result.issues?.join(', ') || 'Underkänd')}
-                        </span>
-                      </div>
-                    ))}
+                    {Object.entries(aiResult.providerResults).map(([provider, result]) => {
+                      const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+                      let statusClass = 'text-amber-300';
+                      let statusIcon = '⚠';
+                      let statusText = result?.error || 'Otillgänglig';
+
+                      if (result?.valid === true) {
+                        statusClass = 'text-green-300';
+                        statusIcon = '✓';
+                        statusText = 'Godkänd';
+                      } else if (result?.valid === false) {
+                        statusClass = 'text-red-300';
+                        statusIcon = '✗';
+                        statusText = Array.isArray(result?.issues) && result.issues.length > 0
+                          ? result.issues.join(', ')
+                          : 'Underkänd';
+                      }
+
+                      return (
+                        <div key={provider} className="flex items-start gap-2">
+                          <span className={`text-xs font-bold ${statusClass}`}>
+                            {statusIcon} {providerLabel}:
+                          </span>
+                          <span className="text-xs text-gray-300 flex-1">
+                            {statusText}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               {question.manuallyApprovedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Manuellt godkänd: {new Date(question.manuallyApprovedAt).toLocaleString('sv-SE')}
+                  Manuellt godkänd: {question.manuallyApprovedAt.toDate ?
+                    question.manuallyApprovedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.manuallyApprovedAt).toLocaleString('sv-SE')}
                 </p>
               )}
               {question.manuallyRejectedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Manuellt underkänd: {new Date(question.manuallyRejectedAt).toLocaleString('sv-SE')}
+                  Manuellt underkänd: {question.manuallyRejectedAt.toDate ?
+                    question.manuallyRejectedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.manuallyRejectedAt).toLocaleString('sv-SE')}
                 </p>
               )}
               {question.aiValidatedAt && !question.manuallyApprovedAt && !question.manuallyRejectedAt && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Validerad: {new Date(question.aiValidatedAt).toLocaleString('sv-SE')}
+                  Validerad: {question.aiValidatedAt.toDate ?
+                    question.aiValidatedAt.toDate().toLocaleString('sv-SE') :
+                    new Date(question.aiValidatedAt).toLocaleString('sv-SE')}
                 </p>
               )}
             </div>
@@ -329,6 +637,57 @@ const QuestionCard = ({ question, index, expandedQuestion, setExpandedQuestion, 
             {question.source && <p>Källa: {question.source}</p>}
             {question.createdBy && <p>Skapad av: {question.createdBy}</p>}
           </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-700">
+            <button
+              onClick={handleValidateWithAI}
+              disabled={validatingQuestions && validatingQuestions.has(question.id)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                validatingQuestions && validatingQuestions.has(question.id)
+                  ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              }`}
+            >
+              {validatingQuestions && validatingQuestions.has(question.id) ? '⏳ Validerar...' : '✅ AI-validera'}
+            </button>
+
+            <button
+              onClick={handleRegenerateEmoji}
+              disabled={regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))
+                  ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
+            >
+              {regeneratingEmoji || (regeneratingEmojis && regeneratingEmojis.has(question.id)) ? '⏳ Genererar...' : '🎨 Nya emojis'}
+            </button>
+
+            {question.reported === true && (
+              <>
+                <button
+                  onClick={() => handleApproveReported(question.id)}
+                  className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded-md"
+                >
+                  ✅ Godkänn rapport
+                </button>
+                <button
+                  onClick={() => handleRejectReported(question.id)}
+                  className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-md"
+                >
+                  ❌ Underkänn rapport
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => handleDeleteQuestion(question.id)}
+              className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded-md"
+            >
+              🗑️ Radera
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -342,23 +701,29 @@ const AdminQuestionsPage = () => {
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [isBatchRegeneratingEmojis, setIsBatchRegeneratingEmojis] = useState(false);
+  const [isBatchValidatingAI, setIsBatchValidatingAI] = useState(false);
+  const [validatingQuestions, setValidatingQuestions] = useState(new Set());
+  const [regeneratingEmojis, setRegeneratingEmojis] = useState(new Set());
+  const [batchValidatingAll, setBatchValidatingAll] = useState(false);
+  const [individualValidationTasks, setIndividualValidationTasks] = useState(new Map()); // Map: taskId -> questionId
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
-  const [aiDifficulty, setAiDifficulty] = useState('');
-  const [aiProvider, setAiProvider] = useState('gemini'); // gemini, anthropic, openai
+  const [aiAgeGroup, setAiAgeGroup] = useState('');
+  const [aiProvider, setAiProvider] = useState('random'); // random, gemini, anthropic, openai
   const [aiStatus, setAiStatus] = useState(null); // Status för alla providers
   const [loadingAiStatus, setLoadingAiStatus] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [validationStatusFilter, setValidationStatusFilter] = useState('all'); // 'all' | 'validated' | 'failed' | 'unvalidated' | 'reported'
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState('all');
+  const [selectedAudience, setSelectedAudience] = useState('all');
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'duplicates'
-  const [validatingQuestion, setValidatingQuestion] = useState(null); // ID av fråga som valideras
-  const [validatingBatch, setValidatingBatch] = useState(false);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -398,6 +763,82 @@ const AdminQuestionsPage = () => {
     };
   }, []);
 
+  // Listen for background task updates to update validation status
+  useEffect(() => {
+    if (!isSuperUser) return;
+
+    const db = getFirebaseDb();
+    
+    const unsubscribe = onSnapshot(
+      query(
+        collection(db, 'backgroundTasks'),
+        where('taskType', 'in', ['validation', 'batchvalidation', 'regenerateemoji', 'batchregenerateemojis']),
+        where('status', 'in', ['processing', 'queued', 'pending'])
+      ),
+      (snapshot) => {
+        const activeTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Collect all question IDs being validated
+        const allValidatingQuestions = new Set();
+        const allRegeneratingEmojis = new Set();
+        let hasBatchValidation = false;
+        
+        activeTasks.forEach(task => {
+          if (task.taskType === 'batchvalidation') {
+            hasBatchValidation = true;
+            // For batch validation, add all questions in the batch
+            if (task.payload?.questions) {
+              task.payload.questions.forEach(q => {
+                if (q.id) allValidatingQuestions.add(q.id);
+              });
+            }
+            // Also check progress for question IDs
+            if (task.progress?.questionIds) {
+              task.progress.questionIds.forEach(id => allValidatingQuestions.add(id));
+            }
+          } else if (task.taskType === 'validation') {
+            // For individual validation, check if we have the mapping
+            const questionId = individualValidationTasks.get(task.id);
+            if (questionId) {
+              allValidatingQuestions.add(questionId);
+            }
+          } else if (task.taskType === 'batchregenerateemojis') {
+            // For batch emoji regeneration, add all questions in the batch
+            if (task.payload?.questionIds) {
+              task.payload.questionIds.forEach(id => allRegeneratingEmojis.add(id));
+            }
+          } else if (task.taskType === 'regenerateemoji') {
+            // For individual emoji regeneration
+            if (task.payload?.questionId) {
+              allRegeneratingEmojis.add(task.payload.questionId);
+            }
+          }
+        });
+        
+        setValidatingQuestions(allValidatingQuestions);
+        setRegeneratingEmojis(allRegeneratingEmojis);
+        setBatchValidatingAll(hasBatchValidation);
+        
+        // Clean up completed individual validation tasks
+        const activeTaskIds = new Set(activeTasks.map(t => t.id));
+        setIndividualValidationTasks(prevMap => {
+          const newMap = new Map();
+          for (const [taskId, questionId] of prevMap.entries()) {
+            if (activeTaskIds.has(taskId)) {
+              newMap.set(taskId, questionId);
+            }
+          }
+          return newMap;
+        });
+      },
+      (error) => {
+        console.error('Error listening to background tasks:', error);
+      }
+    );
+
+    return unsubscribe;
+  }, [isSuperUser, individualValidationTasks]);
+
   // Hämta AI-status när AI-dialogen öppnas
   useEffect(() => {
     if (showAIDialog && !aiStatus) {
@@ -415,14 +856,19 @@ const AdminQuestionsPage = () => {
       // Använd providers från response
       setAiStatus(data.providers);
 
-      // Välj första tillgängliga provider
-      if (data.providers.gemini?.available) {
-        setAiProvider('gemini');
-      } else if (data.providers.anthropic?.available) {
-        setAiProvider('anthropic');
-      } else if (data.providers.openai?.available) {
-        setAiProvider('openai');
+      // Om ingen provider är tillgänglig, välj första tillgängliga istället för random
+      const anyAvailable = Object.values(data.providers).some(p => p.available);
+      if (!anyAvailable) {
+        // Ingen provider tillgänglig, behåll random eller välj första
+        if (data.providers.gemini?.available) {
+          setAiProvider('gemini');
+        } else if (data.providers.anthropic?.available) {
+          setAiProvider('anthropic');
+        } else if (data.providers.openai?.available) {
+          setAiProvider('openai');
+        }
       }
+      // Annars behåll 'random' som är standard
     } catch (error) {
       console.error('Failed to fetch AI status:', error);
       setAiStatus({
@@ -435,42 +881,141 @@ const AdminQuestionsPage = () => {
     }
   };
 
+  // Samla kategorier, målgrupper m.m. för filter
+  const categorySet = new Set();
+  const ageGroupSet = new Set();
+  const audienceSet = new Set();
+
+  questions.forEach((question) => {
+    const categoryList = Array.isArray(question.categories)
+      ? question.categories
+      : question.category
+        ? [question.category]
+        : [];
+    categoryList.forEach((category) => {
+      if (category) {
+        categorySet.add(category);
+      }
+    });
+
+    const groups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
+    groups.forEach((group) => {
+      if (group) {
+        ageGroupSet.add(group);
+      }
+    });
+
+    const audience = question.targetAudience || question.audience;
+    if (audience) {
+      audienceSet.add(audience);
+    }
+  });
+
+  const categories = ['all', ...Array.from(categorySet).sort((a, b) => a.localeCompare(b, 'sv'))];
+  const ageGroupOrder = ['children', 'youth', 'adults'];
+  const ageGroupOptions = ['all', ...Array.from(ageGroupSet).sort((a, b) => {
+    const order = ageGroupOrder.indexOf(a);
+    const otherOrder = ageGroupOrder.indexOf(b);
+    if (order === -1 || otherOrder === -1) {
+      return a.localeCompare(b);
+    }
+    return order - otherOrder;
+  })];
+  const audienceOptions = ['all', ...Array.from(audienceSet).sort((a, b) => a.localeCompare(b, 'sv'))];
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const normalizedCategory = selectedCategory.toLowerCase();
+  const normalizedAudience = selectedAudience.toLowerCase();
+
   // Filtrera frågor baserat på sökning, kategori och valideringsstatus
-  const filteredQuestions = questions.filter(question => {
-    // Hämta text för valt språk
+  const filteredQuestions = questions.filter((question) => {
     const svText = question.languages?.sv?.text || question.text || '';
     const enText = question.languages?.en?.text || '';
     const svOptions = question.languages?.sv?.options || question.options || [];
     const enOptions = question.languages?.en?.options || [];
+    const categoryList = Array.isArray(question.categories)
+      ? question.categories
+      : question.category
+        ? [question.category]
+        : [];
+    const lowerCaseCategories = categoryList.map((category) => category.toLowerCase());
+    const ageGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
+    const lowerCaseAgeGroups = ageGroups.map((group) => group.toLowerCase());
+    const audienceValue = (question.targetAudience || question.audience || '').toLowerCase();
 
-    const matchesSearch = svText.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         enText.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         svOptions.some(o => o.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         enOptions.some(o => o.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = selectedCategory === 'all' ||
-                           (question.category && question.category.toLowerCase() === selectedCategory.toLowerCase());
+    const matchesSearch =
+      !normalizedSearch ||
+      [
+        svText,
+        enText,
+        ...svOptions,
+        ...enOptions,
+        question.id,
+        ...categoryList,
+        ...ageGroups,
+        question.targetAudience,
+      ]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(normalizedSearch));
 
-    // Valideringsstatus-filter
+    const matchesCategory =
+      selectedCategory === 'all' || lowerCaseCategories.includes(normalizedCategory);
+
+    const matchesAgeGroup =
+      selectedAgeGroup === 'all' || lowerCaseAgeGroups.includes(selectedAgeGroup.toLowerCase());
+
+    const matchesAudience =
+      selectedAudience === 'all' || audienceValue === normalizedAudience;
+
+    const rawAi = question.aiValidationResult;
+    const structureResult =
+      question.structureValidationResult ||
+      (rawAi?.validationType === 'structure' ? rawAi : null);
+    const aiResult =
+      rawAi && rawAi.validationType !== 'structure' ? rawAi : null;
+
+    const hasStructureResult = Boolean(structureResult);
+    const structureValid = structureResult?.valid === true;
+    const structureInvalid = structureResult?.valid === false;
+    const aiValid =
+      question.manuallyApproved === true ||
+      question.aiValidated === true ||
+      (aiResult?.valid === true);
+    const aiInvalid =
+      question.manuallyRejected === true ||
+      (aiResult && aiResult.valid === false);
+
     let matchesValidationStatus = true;
     if (validationStatusFilter === 'validated') {
-      // Godkända (AI eller manuellt)
-      matchesValidationStatus = question.aiValidated === true;
+      matchesValidationStatus = aiValid && (!hasStructureResult || structureValid);
     } else if (validationStatusFilter === 'failed') {
-      // Underkända (AI eller manuellt, men inte manuellt godkända)
-      matchesValidationStatus = question.aiValidated === false && !question.manuallyApproved;
+      matchesValidationStatus = aiInvalid || structureInvalid;
     } else if (validationStatusFilter === 'unvalidated') {
-      // Ej validerade (inte testade alls)
-      matchesValidationStatus = !question.aiValidationResult;
+      matchesValidationStatus =
+        !hasStructureResult &&
+        !aiValid &&
+        !aiInvalid &&
+        !question.reported;
     } else if (validationStatusFilter === 'reported') {
-      // Rapporterade (i karantän)
       matchesValidationStatus = question.reported === true;
+    } else if (validationStatusFilter === 'manual-approved') {
+      matchesValidationStatus = question.manuallyApproved === true;
+    } else if (validationStatusFilter === 'manual-rejected') {
+      matchesValidationStatus = question.manuallyRejected === true;
+    } else if (validationStatusFilter === 'structure-approved') {
+      matchesValidationStatus = structureValid;
+    } else if (validationStatusFilter === 'structure-rejected') {
+      matchesValidationStatus = structureInvalid;
     }
 
-    return matchesSearch && matchesCategory && matchesValidationStatus;
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesAgeGroup &&
+      matchesAudience &&
+      matchesValidationStatus
+    );
   });
-
-  // Få unika kategorier från frågor
-  const categories = ['all', ...new Set(questions.map(q => q.category).filter(Boolean))];
 
   // Paginering
   const paginatedQuestions = filteredQuestions.slice(
@@ -494,16 +1039,23 @@ const AdminQuestionsPage = () => {
       const { taskId } = await aiService.startAIGeneration({
         amount: requestAmount,
         category: aiCategory || undefined,
-        difficulty: aiDifficulty || undefined,
+        ageGroup: aiAgeGroup || undefined,
         provider: aiProvider,
       });
 
       if (taskId) {
-        const providerLabel = aiProvider ? aiProvider.toUpperCase() : 'AI';
+        const providerLabel = aiProvider === 'random' ? 'Blandade providers' : aiProvider.toUpperCase();
         const descriptorParts = [];
         descriptorParts.push(`${aiAmount} frågor`);
         if (aiCategory) descriptorParts.push(aiCategory);
-        if (aiDifficulty) descriptorParts.push(aiDifficulty);
+        if (aiAgeGroup) {
+          const ageGroupLabels = {
+            'children': 'Barn',
+            'youth': 'Ungdomar',
+            'adults': 'Vuxna'
+          };
+          descriptorParts.push(ageGroupLabels[aiAgeGroup] || aiAgeGroup);
+        }
         descriptorParts.push(providerLabel);
 
         registerTask(taskId, {
@@ -544,100 +1096,7 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  const handleValidateQuestion = async (question, silent = false) => {
-    setValidatingQuestion(question.id);
-
-    try {
-      const langData = question.languages?.sv || {
-        text: question.text,
-        options: question.options,
-        explanation: question.explanation,
-      };
-
-      const { taskId } = await aiService.startAIValidation({
-        question: langData.text,
-        options: langData.options,
-        correctOption: question.correctOption,
-        explanation: langData.explanation,
-      });
-
-      if (taskId) {
-        const preview = (langData.text || '').trim().slice(0, 60);
-        registerTask(taskId, {
-          taskType: 'validation',
-          label: 'AI-validering',
-          description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
-          createdAt: new Date(),
-        });
-      }
-
-      if (!taskId) {
-        throw new Error('Bakgrundsjobbet saknar taskId.');
-      }
-
-      const taskData = await taskService.waitForCompletion(taskId);
-      const result = taskData?.result || {};
-
-      const validationResult = {
-        valid: result.valid !== false,
-        issues: Array.isArray(result.issues) ? result.issues : [],
-        suggestedCorrectOption: result.suggestedCorrectOption,
-        reasoning: result.reasoning || '',
-        providerResults: result.providerResults,
-        providersChecked: result.providersChecked,
-      };
-
-      if (validationResult.valid) {
-        await questionService.markAsValidated(question.id, validationResult);
-      } else {
-        await questionService.markAsInvalid(question.id, validationResult);
-      }
-
-      if (!silent) {
-        if (validationResult.valid) {
-          const providersInfo = validationResult.providersChecked
-            ? `\n\nValiderad av ${validationResult.providersChecked} AI-providers`
-            : '';
-          alert('✅ Frågan är validerad!' + providersInfo + '\n\nAI:n bekräftar att det markerade svaret är korrekt.');
-        } else {
-          let message = '⚠️ AI hittade problem:\n\n';
-          validationResult.issues.forEach((issue) => {
-            message += `• ${issue}\n`;
-          });
-          if (
-            validationResult.suggestedCorrectOption !== undefined &&
-            validationResult.suggestedCorrectOption !== question.correctOption
-          ) {
-            message += `\n🤖 AI föreslår: Alternativ ${validationResult.suggestedCorrectOption + 1}`;
-          }
-
-          if (validationResult.providerResults) {
-            message += `\n\n--- Provider-resultat ---\n`;
-            Object.entries(validationResult.providerResults).forEach(([provider, providerResult]) => {
-              const isValid = providerResult?.valid;
-              message += `${provider}: ${isValid ? '✓' : '✗'}\n`;
-            });
-          }
-
-          alert(message);
-        }
-      }
-
-      return validationResult;
-    } catch (error) {
-      console.error('Fel vid AI-validering:', error);
-      if (!silent) {
-        alert(`⚠️ Kunde inte validera fråga: ${error.message}`);
-      }
-      throw error;
-    } finally {
-      if (isMountedRef.current) {
-        setValidatingQuestion(null);
-      }
-    }
-  };
-
-const handleManualApprove = async (questionId) => {
+  const handleManualApprove = async (questionId) => {
     if (!window.confirm('Godkänn denna fråga manuellt?\n\nDetta markerar frågan som validerad oavsett AI-valideringens resultat.')) {
       return;
     }
@@ -696,125 +1155,6 @@ const handleManualApprove = async (questionId) => {
     }
   };
 
-  const handleValidateAllUnvalidated = async () => {
-    const unvalidatedQuestions = questions.filter(
-      (q) => !q.aiValidated && !q.manuallyApproved && !q.manuallyRejected
-    );
-
-    if (unvalidatedQuestions.length === 0) {
-      alert('✅ Alla frågor är redan validerade!');
-      return;
-    }
-
-    if (
-      !window.confirm(
-        `Detta kommer att AI-validera ${unvalidatedQuestions.length} ovaliderade frågor.
-
-Detta kostar API-anrop och kan ta några minuter.
-
-Vill du fortsätta?`
-      )
-    ) {
-      return;
-    }
-
-    setValidatingBatch(true);
-    let validated = 0;
-    let failed = 0;
-    const issues = [];
-    const validationUpdates = [];
-
-    try {
-      for (const question of unvalidatedQuestions) {
-        try {
-          const langData = question.languages?.sv || {
-            text: question.text,
-            options: question.options,
-            explanation: question.explanation,
-          };
-
-          const { taskId } = await aiService.startAIValidation({
-            question: langData.text,
-            options: langData.options,
-            correctOption: question.correctOption,
-            explanation: langData.explanation,
-          });
-
-          if (taskId) {
-            const preview = (langData.text || '').trim().slice(0, 60);
-            registerTask(taskId, {
-              taskType: 'validation',
-              label: 'AI-validering',
-              description: preview ? `${preview}${langData.text.length > 60 ? '…' : ''}` : undefined,
-              createdAt: new Date(),
-            });
-          }
-
-          if (!taskId) {
-            throw new Error('Bakgrundsjobbet saknar taskId.');
-          }
-
-          const taskData = await taskService.waitForCompletion(taskId);
-          const result = taskData?.result || {};
-
-          const validationResult = {
-            valid: result.valid !== false,
-            issues: Array.isArray(result.issues) ? result.issues : [],
-            suggestedCorrectOption: result.suggestedCorrectOption,
-            reasoning: result.reasoning || '',
-            providerResults: result.providerResults,
-            providersChecked: result.providersChecked,
-          };
-
-          validationUpdates.push({
-            questionId: question.id,
-            valid: validationResult.valid,
-            validationData: validationResult,
-          });
-
-          validated++;
-
-          if (!validationResult.valid) {
-            issues.push({
-              id: question.id,
-              text: question.languages?.sv?.text || question.text,
-              issues: validationResult.issues,
-            });
-          }
-        } catch (error) {
-          failed++;
-          console.error(`Fel vid validering av ${question.id}:`, error);
-        }
-      }
-
-      if (validationUpdates.length > 0) {
-        await questionService.markManyAsValidated(validationUpdates);
-      }
-
-      let message = '✅ Batch-validering klar!\n\n';
-      message += `Validerade: ${validated}\n`;
-      message += `Misslyckades: ${failed}\n`;
-      message += `Problem hittade: ${issues.length}\n`;
-
-      if (issues.length > 0) {
-        message += `\n⚠️ Frågor med problem:\n`;
-        issues.slice(0, 5).forEach((issue) => {
-          message += `\n• ${issue.text.substring(0, 50)}...\n`;
-          issue.issues.forEach((i) => (message += `  - ${i}\n`));
-        });
-        if (issues.length > 5) {
-          message += `\n...och ${issues.length - 5} fler.`;
-        }
-      }
-
-      alert(message);
-    } finally {
-      if (isMountedRef.current) {
-        setValidatingBatch(false);
-      }
-    }
-  };
-
   const handleDeleteQuestion = async (questionId) => {
     if (!window.confirm('Är du säker på att du vill ta bort denna fråga?')) {
       return;
@@ -868,6 +1208,82 @@ Vill du fortsätta?`
     }
   };
 
+  const handleBatchRegenerateEmojis = async () => {
+    if (selectedQuestions.size === 0) return;
+
+    if (!window.confirm(`Är du säker på att du vill regenerera emojis för ${selectedQuestions.size} fråga(r)?`)) {
+      return;
+    }
+
+    setIsBatchRegeneratingEmojis(true);
+    try {
+      const questionIds = Array.from(selectedQuestions);
+      const { taskId } = await aiService.startBatchEmojiRegeneration({ questionIds });
+
+      if (taskId) {
+        registerTask(taskId, {
+          taskType: 'batchregenerateemojis',
+          label: 'Mass-regenerering Emojis',
+          description: `Genererar om emojis för ${questionIds.length} frågor.`,
+          createdAt: new Date(),
+        });
+        // Visual feedback via batch status panel - no alert needed
+      }
+      setSelectedQuestions(new Set()); // Avmarkera efter start
+    } catch (error) {
+      console.error('Kunde inte starta mass-regenerering av emojis:', error);
+      alert('Ett fel uppstod vid start av mass-regenerering: ' + error.message);
+    } finally {
+      setIsBatchRegeneratingEmojis(false);
+    }
+  };
+
+  const handleBatchAIValidation = async () => {
+    if (selectedQuestions.size === 0) return;
+
+    if (!window.confirm(`Är du säker på att du vill köra AI-validering på ${selectedQuestions.size} fråga(r)? Detta kan medföra kostnader.`)) {
+      return;
+    }
+
+    setIsBatchValidatingAI(true);
+    setBatchValidatingAll(true);
+    const questionIds = Array.from(selectedQuestions);
+    setValidatingQuestions(new Set(questionIds));
+
+    try {
+      const { taskId } = await questionService.batchValidateQuestions(questionIds);
+
+      if (taskId) {
+        registerTask(taskId, {
+          taskType: 'batchvalidation',
+          label: 'AI-validering (batch)',
+          description: `Validerar ${questionIds.length} frågor med AI.`,
+          createdAt: new Date(),
+        });
+        // Visual feedback via batch status panel - no alert needed
+      }
+      setSelectedQuestions(new Set()); // Deselect after starting
+    } catch (error) {
+      console.error('Kunde inte starta batch AI-validering:', error);
+      alert('Ett fel uppstod vid start av AI-validering: ' + error.message);
+    } finally {
+      setIsBatchValidatingAI(false);
+    }
+  };
+
+  // Handler for individual question validation
+  const handleValidationStart = (questionId) => {
+    setValidatingQuestions(prev => new Set([...prev, questionId]));
+  };
+
+  const handleValidationEnd = (questionId) => {
+    setValidatingQuestions(prev => {
+      const next = new Set(prev);
+      next.delete(questionId);
+      return next;
+    });
+  };
+
   // Alla frågor kan raderas nu (inga inbyggda frågor)
   const deletableQuestions = filteredQuestions;
   const isAllSelected = selectedQuestions.size > 0 && selectedQuestions.size === deletableQuestions.length;
@@ -913,84 +1329,112 @@ Vill du fortsätta?`
           >
             ✓ Validering
           </button>
-          <button
-            onClick={() => setActiveTab('ai-validation')}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === 'ai-validation'
-                ? 'text-purple-400 border-b-2 border-purple-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            🤖 AI-Validering
-          </button>
         </div>
 
         {/* Innehåll baserat på aktiv flik */}
-        {activeTab === 'ai-validation' ? (
-          <AIValidationPanel />
-        ) : activeTab === 'validation' ? (
+        {activeTab === 'validation' ? (
           <ValidationPanel />
         ) : activeTab === 'duplicates' ? (
           <DuplicateQuestionsPanel />
         ) : (
           <>
             {/* Sök och filter */}
-            <div className="mb-6 flex flex-col md:flex-row gap-4 items-end justify-between">
-          <div>
-            <label className="block text-sm font-semibold text-cyan-200 mb-2">Sök frågor</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-              placeholder="Sök i frågetext och svarsalternativ..."
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-cyan-200 mb-2">Kategori</label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            >
-              {categories.map(category => (
-                <option key={category} value={category}>
-                  {category === 'all' ? 'Alla kategorier' : category}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-cyan-200 mb-2">Valideringsstatus</label>
-            <select
-              value={validationStatusFilter}
-              onChange={(e) => setValidationStatusFilter(e.target.value)}
-              className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-            >
-              <option value="all">Alla</option>
-              <option value="validated">Godkända</option>
-              <option value="failed">Underkända</option>
-              <option value="unvalidated">Ej validerade</option>
-              <option value="reported">Rapporterade (karantän)</option>
-            </select>
-          </div>
-          <div className="flex gap-2 items-center">
-            <button
-              onClick={handleValidateAllUnvalidated}
-              disabled={validatingBatch}
-              className="rounded bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-500 disabled:bg-slate-700 disabled:text-gray-400"
-            >
-              {validatingBatch ? '🤖 Validerar...' : `🤖 Validera ovaliderade (${questions.filter(q => !q.aiValidated).length})`}
-            </button>
-            <button
-              onClick={() => setShowAIDialog(true)}
-              disabled={isGeneratingAI}
-              className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
-            >
-              {isGeneratingAI ? '🤖 Genererar...' : '🤖 AI-Generera frågor'}
-            </button>
-          </div>
-        </div>
+            <div className="mb-6 flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-cyan-200 mb-2">Sök frågor</label>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                    placeholder="Sök i frågetext, svarsalternativ eller ID..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-cyan-200 mb-2">Kategori</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                  >
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category === 'all' ? 'Alla kategorier' : category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-cyan-200 mb-2">Valideringsstatus</label>
+                  <select
+                    value={validationStatusFilter}
+                    onChange={(e) => setValidationStatusFilter(e.target.value)}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                  >
+                    <option value="all">Alla</option>
+                    <option value="validated">Godkända (AI)</option>
+                    <option value="failed">Underkända (AI)</option>
+                    <option value="manual-approved">Manuellt godkända</option>
+                    <option value="manual-rejected">Manuellt underkända</option>
+                    <option value="structure-approved">Strukturellt godkända</option>
+                    <option value="structure-rejected">Strukturellt underkända</option>
+                    <option value="unvalidated">Ej validerade</option>
+                    <option value="reported">Rapporterade (karantän)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-cyan-200 mb-2">Åldersgrupp</label>
+                  <select
+                    value={selectedAgeGroup}
+                    onChange={(e) => setSelectedAgeGroup(e.target.value)}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                  >
+                    {ageGroupOptions.map((group) => (
+                      <option key={group} value={group}>
+                        {group === 'all'
+                          ? 'Alla åldersgrupper'
+                          : (group === 'children' && 'Barn') ||
+                            (group === 'youth' && 'Ungdom') ||
+                            (group === 'adults' && 'Vuxna') ||
+                            group}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-cyan-200 mb-2">Målgrupp</label>
+                  <select
+                    value={selectedAudience}
+                    onChange={(e) => setSelectedAudience(e.target.value)}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
+                  >
+                    {audienceOptions.map((audience) => (
+                      <option key={audience} value={audience}>
+                        {audience === 'all'
+                          ? 'Alla målgrupper'
+                          : audience === 'swedish'
+                            ? 'Svensk målgrupp'
+                            : audience.charAt(0).toUpperCase() + audience.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-gray-400">
+                  Behöver du köra struktur- eller AI-validering på nytt? Använd fliken{' '}
+                  <span className="text-cyan-300">Validering</span> för strukturvalidering. För AI-validering, använd knapparna på individuella frågor eller batch-funktionen ovan.
+                </p>
+                <button
+                  onClick={() => setShowAIDialog(true)}
+                  disabled={isGeneratingAI}
+                  className="rounded bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 font-semibold text-white hover:from-purple-700 hover:to-indigo-700 disabled:bg-slate-700 disabled:text-gray-400 flex items-center gap-2"
+                >
+                  {isGeneratingAI ? '🤖 Genererar...' : '🤖 AI-Generera frågor'}
+                </button>
+              </div>
+            </div>
 
         {/* Masshantering */}
         <div className="mb-4 flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-lg p-2">
@@ -1006,12 +1450,52 @@ Vill du fortsätta?`
               {selectedQuestions.size > 0 ? `${selectedQuestions.size} valda` : 'Markera alla'}
             </label>
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBatchAIValidation}
+              disabled={selectedQuestions.size === 0 || isBatchValidatingAI || batchValidatingAll}
+              className="rounded bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
+            >
+              {isBatchValidatingAI || batchValidatingAll ? '🤖 Validerar...' : '🤖 AI-validera'}
+            </button>
+            <button
+              onClick={handleBatchRegenerateEmojis}
+              disabled={selectedQuestions.size === 0 || isBatchRegeneratingEmojis}
+              className="rounded bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
+            >
+              {isBatchRegeneratingEmojis ? '🎨 Genererar...' : '🎨 Regenerera Emojis'}
+            </button>
             <button onClick={handleDeleteSelected} disabled={selectedQuestions.size === 0} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:bg-slate-700 disabled:cursor-not-allowed">
               Radera markerade
             </button>
           </div>
         </div>
+
+        {/* Batch validation status */}
+        {batchValidatingAll && (
+          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-yellow-300">
+              <div className="animate-spin">⏳</div>
+              <span className="font-medium">Batch-validering pågår...</span>
+            </div>
+            <div className="mt-1 text-sm text-yellow-200">
+              {validatingQuestions.size} frågor kvar att validera
+            </div>
+          </div>
+        )}
+
+        {/* Batch emoji regeneration status */}
+        {regeneratingEmojis.size > 0 && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-300">
+              <div className="animate-spin">🎨</div>
+              <span className="font-medium">Emoji-regenerering pågår...</span>
+            </div>
+            <div className="mt-1 text-sm text-blue-200">
+              {regeneratingEmojis.size} frågor kvar att bearbeta
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="text-center py-8">
@@ -1046,14 +1530,18 @@ Vill du fortsätta?`
                       expandedQuestion={expandedQuestion}
                       setExpandedQuestion={setExpandedQuestion}
                       handleDeleteQuestion={handleDeleteQuestion}
-                      handleValidateQuestion={handleValidateQuestion}
                       handleManualApprove={handleManualApprove}
                       handleManualReject={handleManualReject}
                       handleApproveReported={handleApproveReported}
                       handleRejectReported={handleRejectReported}
-                      validatingQuestion={validatingQuestion}
+                      registerTask={registerTask}
                       isSelected={selectedQuestions.has(question.id)}
                       onSelect={handleToggleSelect}
+                      validatingQuestions={validatingQuestions}
+                      regeneratingEmojis={regeneratingEmojis}
+                      onValidationStart={handleValidationStart}
+                      onValidationEnd={handleValidationEnd}
+                      setIndividualValidationTasks={setIndividualValidationTasks}
                     />
                   );
                 })}
@@ -1099,26 +1587,35 @@ Vill du fortsätta?`
               </div>
             ) : aiStatus && (
               <div className="space-y-2 mb-4">
-                {Object.entries(aiStatus).map(([provider, status]) => (
+                {Object.entries(aiStatus).map(([provider, status]) => {
+                  const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+                  return (
                   <div key={provider} className={`rounded-lg p-3 text-sm ${
                     status.available
                       ? 'bg-green-500/10 border border-green-500/30'
-                      : 'bg-red-500/10 border border-red-500/30 opacity-60'
+                      : 'bg-red-500/10 border border-red-500/30'
                   }`}>
                     <div className="flex items-center gap-2">
                       <span className="text-lg">
                         {status.available ? '✅' : '❌'}
                       </span>
-                      <span className="font-semibold capitalize">{provider}</span>
+                      <span className="font-semibold">{providerLabel}</span>
                       <span className={`ml-auto text-xs ${status.available ? 'text-green-400' : 'text-red-400'}`}>
-                        {status.available ? 'Tillgänglig' : 'Ej tillgänglig'}
+                        {status.available ? 'Tillgänglig' : (status.configured ? 'Ej tillgänglig' : 'Inte konfigurerad')}
                       </span>
                     </div>
                     {status.model && (
                       <p className="text-xs text-gray-400 mt-1">Model: {status.model}</p>
                     )}
+                    {!status.available && status.error && (
+                      <p className="text-xs text-red-200 mt-1">Fel: {status.error}</p>
+                    )}
+                    {!status.available && status.errorStatus && (
+                      <p className="text-[11px] text-red-200/80 mt-1">Statuskod: {status.errorStatus}</p>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1161,20 +1658,20 @@ Vill du fortsätta?`
                 </select>
               </div>
 
-              {/* Svårighetsgrad */}
+              {/* Åldersgrupp */}
               <div>
                 <label className="block text-sm font-semibold text-cyan-200 mb-2">
-                  Svårighetsgrad (valfri)
+                  Åldersgrupp (valfri)
                 </label>
                 <select
-                  value={aiDifficulty}
-                  onChange={(e) => setAiDifficulty(e.target.value)}
+                  value={aiAgeGroup}
+                  onChange={(e) => setAiAgeGroup(e.target.value)}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                 >
                   <option value="">Blandad</option>
-                  <option value="kid">Barn (6-12 år)</option>
-                  <option value="family">Familj (alla åldrar)</option>
-                  <option value="adult">Vuxen (utmanande)</option>
+                  <option value="children">Barn (6-12 år)</option>
+                  <option value="youth">Ungdomar (13-25 år)</option>
+                  <option value="adults">Vuxna (25+ år)</option>
                 </select>
               </div>
 
@@ -1189,6 +1686,10 @@ Vill du fortsätta?`
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                   disabled={!aiStatus || Object.values(aiStatus).every(s => !s.available)}
                 >
+                  {/* Slumpmässig option - alltid tillgänglig om någon provider finns */}
+                  {aiStatus && Object.values(aiStatus).some(s => s.available) && (
+                    <option value="random">🎲 Slumpmässig (rekommenderad)</option>
+                  )}
                   {aiStatus?.gemini?.available && (
                     <option value="gemini">Gemini (Google) - Snabb & Gratis</option>
                   )}
@@ -1205,6 +1706,13 @@ Vill du fortsätta?`
               </div>
 
               {/* Info box - Dynamisk text baserat på vald provider */}
+              {aiProvider === 'random' && aiStatus && Object.values(aiStatus).some(s => s.available) && (
+                <div className="bg-gradient-to-r from-purple-500/10 to-cyan-500/10 border border-purple-500/30 rounded-lg p-3">
+                  <p className="text-xs text-purple-200">
+                    🎲 Slumpmässig provider ger bäst variation och kvalitet. Systemet väljer automatiskt mellan tillgängliga AI-providers för varje fråga.
+                  </p>
+                </div>
+              )}
               {aiProvider === 'gemini' && aiStatus?.gemini?.available && (
                 <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
                   <p className="text-xs text-cyan-200">
@@ -1237,9 +1745,9 @@ Vill du fortsätta?`
                 </button>
                 <button
                   onClick={handleGenerateAIQuestions}
-                  disabled={!aiStatus || !aiStatus[aiProvider]?.available}
+                  disabled={!aiStatus || (aiProvider !== 'random' && !aiStatus[aiProvider]?.available) || (aiProvider === 'random' && !Object.values(aiStatus).some(s => s.available))}
                   className={`flex-1 rounded-lg px-4 py-2 font-semibold text-white transition-colors ${
-                    (aiStatus && aiStatus[aiProvider]?.available)
+                    (aiStatus && ((aiProvider === 'random' && Object.values(aiStatus).some(s => s.available)) || aiStatus[aiProvider]?.available))
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
                       : 'bg-gray-600 cursor-not-allowed opacity-50'
                   }`}
