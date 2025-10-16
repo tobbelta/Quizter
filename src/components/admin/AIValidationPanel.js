@@ -7,6 +7,7 @@ import { questionService } from '../../services/questionService';
 import { aiService } from '../../services/aiService';
 import { taskService } from '../../services/taskService';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
+import MessageDialog from '../shared/MessageDialog';
 
 const AIValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
@@ -19,6 +20,7 @@ const AIValidationPanel = () => {
   const [limitQuestions, setLimitQuestions] = useState(true);
   const { registerTask } = useBackgroundTasks();
   const isMountedRef = useRef(true);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     return () => {
@@ -70,7 +72,12 @@ const AIValidationPanel = () => {
       }
 
       if (questionsToValidate.length === 0) {
-        alert('✅ Det finns inga frågor att validera just nu.');
+        setDialogConfig({
+          isOpen: true,
+          title: 'Inga frågor att validera',
+          message: '✅ Det finns inga frågor att validera just nu.',
+          type: 'info'
+        });
         return;
       }
 
@@ -183,7 +190,12 @@ const AIValidationPanel = () => {
       }
     } catch (error) {
       console.error('Fel vid AI-validering:', error);
-      alert('Kunde inte köra AI-validering: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid AI-validering',
+        message: 'Kunde inte köra AI-validering: ' + error.message,
+        type: 'error'
+      });
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -420,6 +432,14 @@ const AIValidationPanel = () => {
           Klicka på "🤖 AI-Validera frågor" för att börja
         </div>
       )}
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

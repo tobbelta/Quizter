@@ -264,14 +264,11 @@ const LocalRunsImportHandler = () => {
       const alreadyHandled = localStorage.getItem(importHandledKey) === 'true';
 
       if (alreadyHandled) {
-        console.log('[LocalRunsImportHandler] Import redan hanterad för användare:', currentUser.id);
         return;
       }
 
       const localRuns = localStorageService.getCreatedRuns();
       const count = localRuns?.length || 0;
-
-      console.log('[LocalRunsImportHandler] Användare inloggad, kontrollerar lokala rundor:', count);
 
       if (count > 0) {
         setLocalRunCount(count);
@@ -292,8 +289,6 @@ const LocalRunsImportHandler = () => {
   }, [currentUser, isAuthInitialized]);
 
   const handleImportComplete = (success) => {
-    console.log('[LocalRunsImportHandler] Import slutförd:', success);
-
     // Markera att användaren har hanterat importen (även om de hoppade över)
     if (currentUser && !currentUser.isAnonymous) {
       const importHandledKey = `geoquest:import:handled:${currentUser.id}`;

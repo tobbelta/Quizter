@@ -3,12 +3,14 @@
  */
 import React, { useState } from 'react';
 import { questionService } from '../../services/questionService';
+import MessageDialog from '../shared/MessageDialog';
 
 const DuplicateQuestionsPanel = () => {
   const [duplicates, setDuplicates] = useState([]);
   const [loading, setLoading] = useState(false);
   const [threshold, setThreshold] = useState(85);
   const [deletedQuestions, setDeletedQuestions] = useState(new Set());
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const scanForDuplicates = () => {
     setLoading(true);
@@ -50,7 +52,12 @@ const DuplicateQuestionsPanel = () => {
       // Skanna om för att uppdatera listan
       setTimeout(scanForDuplicates, 500);
     } catch (error) {
-      alert('Kunde inte ta bort fråga: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte ta bort fråga',
+        message: error.message,
+        type: 'error'
+      });
     }
   };
 
@@ -83,16 +90,26 @@ const DuplicateQuestionsPanel = () => {
 
       // Visa resultat
       const resultMessage =
-        `✅ Automatisk dublettrensning klar!\n\n` +
+        `Automatisk dublettrensning klar!\n\n` +
         `Borttagna frågor: ${deletedCount}\n` +
         (errors.length > 0 ? `Fel: ${errors.length}\n\n${errors.join('\n')}` : '');
 
-      alert(resultMessage);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Dublettrensning klar',
+        message: resultMessage,
+        type: errors.length > 0 ? 'warning' : 'success'
+      });
 
       // Skanna om
       setTimeout(scanForDuplicates, 1000);
     } catch (error) {
-      alert('Fel vid automatisk rensning: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid rensning',
+        message: error.message,
+        type: 'error'
+      });
     } finally {
       setLoading(false);
     }
@@ -245,6 +262,14 @@ const DuplicateQuestionsPanel = () => {
           ))}
         </div>
       )}
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

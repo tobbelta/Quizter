@@ -8,12 +8,11 @@
  * Den här filen ansvarar för att:
  * - Läsa Firebase-inställningar från .env-filen
  * - Skapa en enda Firebase-instans som delas av hela appen
- * - Ansluta till utvecklings-emulatorer när det behövs
  * - Ge tydliga felmeddelanden om konfiguration saknas
  */
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 /**
  * Firebase-konfiguration från miljövariabler
@@ -83,13 +82,6 @@ const säkerställFirebaseApp = () => {
   // Initialisera ny Firebase app
   try {
     appInstans = initializeApp(firebaseConfig);
-
-    // Development-mode: Anslut till emulatorer om de körs
-    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true') {
-      console.log('🔧 Ansluter till Firebase emulatorer...');
-      // Emulator-anslutning kan läggas till här vid behov
-    }
-
     return appInstans;
   } catch (error) {
     throw new Error(`Kunde inte initialisera Firebase: ${error.message}`);
@@ -106,16 +98,6 @@ const hämtaFirebaseDb = () => {
   if (!firestoreInstans) {
     const app = säkerställFirebaseApp();
     firestoreInstans = getFirestore(app);
-
-    // Development-mode: Anslut till Firestore emulator om konfigurerat
-    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_FIRESTORE_EMULATOR === 'true') {
-      try {
-        connectFirestoreEmulator(firestoreInstans, 'localhost', 8080);
-        console.log('🔧 Ansluten till Firestore emulator');
-      } catch (error) {
-        console.warn('Kunde inte ansluta till Firestore emulator:', error.message);
-      }
-    }
   }
   return firestoreInstans;
 };
@@ -130,16 +112,6 @@ const hämtaFirebaseAuth = () => {
   if (!authInstans) {
     const app = säkerställFirebaseApp();
     authInstans = getAuth(app);
-
-    // Development-mode: Anslut till Auth emulator om konfigurerat
-    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_USE_AUTH_EMULATOR === 'true') {
-      try {
-        connectAuthEmulator(authInstans, 'http://localhost:9099');
-        console.log('🔧 Ansluten till Auth emulator');
-      } catch (error) {
-        console.warn('Kunde inte ansluta till Auth emulator:', error.message);
-      }
-    }
   }
   return authInstans;
 };

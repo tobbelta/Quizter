@@ -55,7 +55,7 @@ async function generateQuestions({ amount = 10, category = null, ageGroup = null
     : `Blanda olika åldersgrupper: barn (children), ungdomar (youth), vuxna (adults). Frågor kan passa flera åldersgrupper samtidigt.`;
 
   const targetAudienceContext = targetAudience === 'swedish'
-    ? 'Frågor för barn och vuxna ska ha svensk kontext (svenska förhållanden, svensk geografi, svensk kultur, svenska förebilder). Ungdomsfrågor kan vara globala (sociala medier, internationell populärkultur).'
+    ? 'Frågor för barn och vuxna ska ha svensk kontext (svenska förhållanden, svensk geografi, svensk kultur, svenska förebilder). Ungdomsfrågor KAN ha antingen svensk eller internationell kontext - om frågan är internationell (globala fenomen, internationell populärkultur, sociala medier), sätt targetAudience till "international".'
     : 'Frågor ska ha internationellt perspektiv.';
 
   const systemPrompt = `Du är en expert på att skapa quizfrågor. Generera ${amount} flervalsfrågor på både svenska och engelska.

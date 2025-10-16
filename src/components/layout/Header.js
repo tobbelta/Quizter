@@ -14,8 +14,9 @@ import { userPreferencesService } from '../../services/userPreferencesService';
 import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
+import MessageDialog from '../shared/MessageDialog';
 
-import { VERSION } from '../../version';
+import { VERSION, BUILD_DATE } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
 
@@ -44,6 +45,7 @@ const Header = ({ title = 'RouteQuest' }) => {
     if (typeof window === 'undefined') return 'sv';
     return localStorage.getItem('routequest:language') || 'sv';
   });
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const handleRemoveAlias = useCallback(() => {
     try {
@@ -492,11 +494,21 @@ const Header = ({ title = 'RouteQuest' }) => {
                                 try {
                                   const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateQuestionsCreatedAt');
                                   const data = await response.json();
-                                  alert(`✅ Klart!\n\nUppdaterade: ${data.updated}\nHade redan: ${data.alreadyHad}\nTotalt: ${data.total}`);
+                                  setDialogConfig({
+                                    isOpen: true,
+                                    title: 'Uppdatering klar',
+                                    message: `✅ Klart!\n\nUppdaterade: ${data.updated}\nHade redan: ${data.alreadyHad}\nTotalt: ${data.total}`,
+                                    type: 'success'
+                                  });
                                   // Ladda om sidan för att visa uppdaterade datum
-                                  window.location.reload();
+                                  setTimeout(() => window.location.reload(), 2000);
                                 } catch (error) {
-                                  alert(`❌ Fel: ${error.message}`);
+                                  setDialogConfig({
+                                    isOpen: true,
+                                    title: 'Fel vid uppdatering',
+                                    message: `❌ Fel: ${error.message}`,
+                                    type: 'error'
+                                  });
                                 }
                               }
                             }}
@@ -519,8 +531,19 @@ const Header = ({ title = 'RouteQuest' }) => {
                   </button>
 
                   {/* Version */}
-                  <div className="px-4 py-2 text-xs text-gray-500">
-                    Version {VERSION}
+                  <div className="px-4 py-3 text-xs text-gray-400">
+                    <div>Version {VERSION}</div>
+                    <div className="text-gray-500 mt-1">
+                      Build: {new Date(BUILD_DATE).toLocaleString('sv-SE', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                      }).replace(',', '')}
+                    </div>
                   </div>
 
                   {/* Login/Logout */}
@@ -589,6 +612,14 @@ const Header = ({ title = 'RouteQuest' }) => {
         </div>
       </>
     )}
+
+    <MessageDialog
+      isOpen={dialogConfig.isOpen}
+      onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+      title={dialogConfig.title}
+      message={dialogConfig.message}
+      type={dialogConfig.type}
+    />
     </>
   );
 };

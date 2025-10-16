@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
 import Header from '../components/layout/Header';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const SuperUserUsersPage = () => {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ const SuperUserUsersPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     if (!isSuperUser) {
@@ -92,7 +94,12 @@ const SuperUserUsersPage = () => {
       setSelectedUsers(new Set());
     } catch (error) {
       console.error('Kunde inte radera användare:', error);
-      alert('Kunde inte radera alla användare. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte radera användare',
+        message: 'Kunde inte radera alla användare. Se konsolen för detaljer.',
+        type: 'error'
+      });
     }
   };
 
@@ -213,6 +220,14 @@ const SuperUserUsersPage = () => {
           </div>
         )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

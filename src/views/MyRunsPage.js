@@ -8,6 +8,7 @@ import { runRepository } from '../repositories/runRepository';
 import { localStorageService } from '../services/localStorageService';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const MyRunsPage = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ const MyRunsPage = () => {
   const [selectedRuns, setSelectedRuns] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     const loadMyRuns = async () => {
@@ -115,7 +117,12 @@ const MyRunsPage = () => {
       setSelectedRuns(new Set());
     } catch (error) {
       console.error('Kunde inte radera rundor:', error);
-      alert('Kunde inte radera alla rundor. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte radera rundor',
+        message: 'Kunde inte radera alla rundor. Se konsolen för detaljer.',
+        type: 'error'
+      });
     }
   };
 
@@ -139,7 +146,12 @@ const MyRunsPage = () => {
       setMyRuns(prev => prev.filter(r => r.id !== runId));
     } catch (error) {
       console.error('Kunde inte radera runda:', error);
-      alert('Kunde inte radera rundan. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte radera runda',
+        message: 'Kunde inte radera rundan. Se konsolen för detaljer.',
+        type: 'error'
+      });
     }
   };
 
@@ -345,6 +357,14 @@ const MyRunsPage = () => {
           </>
         )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

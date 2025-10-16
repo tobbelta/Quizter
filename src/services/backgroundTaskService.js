@@ -56,7 +56,7 @@ const sortTasks = (tasks) => {
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
-const subscribeToQuery = (q, callback) => {
+const subscribeToQuery = (q, callback, { limit: limitCount } = {}) => {
   const progressCache = new Map();
 
   return onSnapshot(
@@ -114,7 +114,10 @@ const subscribeToQuery = (q, callback) => {
         };
       }));
 
-      callback(tasks);
+      const limitedTasks =
+        typeof limitCount === 'number' ? tasks.slice(0, limitCount) : tasks;
+
+      callback(limitedTasks);
     },
     (error) => {
       console.error('[backgroundTaskService] Realtime subscription failed:', error);
@@ -132,11 +135,9 @@ export const backgroundTaskService = {
     const q = query(
       backgroundTasksRef,
       where('userId', '==', userId),
-      orderBy('createdAt', 'desc'),
-      limit(taskLimit),
     );
     const snapshot = await getDocs(q);
-    return sortTasks(snapshot.docs.map(mapTask));
+    return sortTasks(snapshot.docs.map(mapTask)).slice(0, taskLimit);
   },
 
   /**
@@ -156,11 +157,9 @@ export const backgroundTaskService = {
     const q = query(
       backgroundTasksRef,
       where('userId', '==', userId),
-      orderBy('createdAt', 'desc'),
-      limit(taskLimit),
     );
 
-    return subscribeToQuery(q, callback);
+    return subscribeToQuery(q, callback, { limit: taskLimit });
   },
 
   async fetchAllTasks(options = {}) {

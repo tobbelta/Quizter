@@ -8,12 +8,14 @@
 import React, { useState } from 'react';
 import PaymentModal from '../payment/PaymentModal';
 import FeedbackDialog from './FeedbackDialog';
+import MessageDialog from './MessageDialog';
 
 const AboutDialog = ({ isOpen, onClose }) => {
   const [showDonation, setShowDonation] = useState(false);
   const [donationAmount, setDonationAmount] = useState(50);
   const [showInstructions, setShowInstructions] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   if (!isOpen) return null;
 
@@ -227,7 +229,12 @@ const AboutDialog = ({ isOpen, onClose }) => {
           onSuccess={(paymentResult) => {
             setShowDonation(false);
             if (!paymentResult.skipped) {
-              alert('Tack för din donation! 💚');
+              setDialogConfig({
+                isOpen: true,
+                title: 'Tack för din donation!',
+                message: 'Tack för din donation! 💚',
+                type: 'success'
+              });
             }
           }}
           onCancel={() => setShowDonation(false)}
@@ -238,6 +245,14 @@ const AboutDialog = ({ isOpen, onClose }) => {
       <FeedbackDialog
         isOpen={showFeedback}
         onClose={() => setShowFeedback(false)}
+      />
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
       />
     </>
   );

@@ -3,11 +3,13 @@
  */
 import React, { useState } from 'react';
 import { questionService } from '../../services/questionService';
+import MessageDialog from '../shared/MessageDialog';
 
 const ValidationPanel = () => {
   const [validationResults, setValidationResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   const runValidation = async () => {
     setLoading(true);
@@ -84,7 +86,12 @@ const ValidationPanel = () => {
       });
     } catch (error) {
       console.error('Fel vid validering:', error);
-      alert('Kunde inte validera frågor: ' + error.message);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid validering',
+        message: 'Kunde inte validera frågor: ' + error.message,
+        type: 'error'
+      });
     } finally {
       setProgress(null);
       setLoading(false);
@@ -205,6 +212,14 @@ const ValidationPanel = () => {
           Klicka på "Validera alla frågor" för att börja
         </div>
       )}
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };

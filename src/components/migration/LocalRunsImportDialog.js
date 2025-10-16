@@ -18,8 +18,6 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
       const localRunsMeta = localStorageService.getCreatedRuns();
       const localRunIds = localRunsMeta.map(r => r.runId);
 
-      console.log('[LocalRunsImport] Importerar', localRunIds.length, 'rundor för användare', currentUser.id);
-
       if (localRunIds.length === 0) {
         setStatus('Inga rundor att importera.');
         setTimeout(() => onComplete(true), 1500);
@@ -28,7 +26,6 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
 
       // Hämta faktiska rundor från Firestore
       const runs = await runRepository.listRunsByIds(localRunIds);
-      console.log('[LocalRunsImport] Hittade', runs.length, 'av', localRunIds.length, 'rundor i Firestore');
 
       if (runs.length === 0) {
         setStatus('Inga giltiga rundor hittades att importera.');
@@ -49,7 +46,6 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
             createdByName: currentUser.name || currentUser.email || 'Användare'
           });
           successCount++;
-          console.log('[LocalRunsImport] Uppdaterade runda:', run.id);
         } catch (error) {
           console.error('[LocalRunsImport] Kunde inte uppdatera runda:', run.id, error);
           failCount++;
@@ -59,7 +55,6 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
       // Rensa localStorage efter lyckad import
       if (successCount > 0) {
         localStorage.setItem('geoquest:local:createdRuns', JSON.stringify([]));
-        console.log('[LocalRunsImport] Rensade localStorage efter import av', successCount, 'rundor');
       }
 
       // Visa resultat
@@ -80,7 +75,6 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
   };
 
   const handleSkip = () => {
-    console.log('[LocalRunsImport] Användaren hoppade över import');
     onComplete(false);
   };
 

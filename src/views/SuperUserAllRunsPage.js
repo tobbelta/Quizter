@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { runRepository } from '../repositories/runRepository';
 import Header from '../components/layout/Header';
+import MessageDialog from '../components/shared/MessageDialog';
 
 const SuperUserAllRunsPage = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const SuperUserAllRunsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedRuns, setSelectedRuns] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
   useEffect(() => {
     if (!isSuperUser) {
@@ -74,7 +76,12 @@ const SuperUserAllRunsPage = () => {
       setSelectedRuns(new Set());
     } catch (error) {
       console.error('Kunde inte radera rundor:', error);
-      alert('Kunde inte radera alla rundor. Se konsolen för detaljer.');
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte radera rundor',
+        message: 'Kunde inte radera alla rundor. Se konsolen för detaljer.',
+        type: 'error'
+      });
     }
   };
 
@@ -181,6 +188,14 @@ const SuperUserAllRunsPage = () => {
           </div>
         )}
       </div>
+
+      <MessageDialog
+        isOpen={dialogConfig.isOpen}
+        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+        title={dialogConfig.title}
+        message={dialogConfig.message}
+        type={dialogConfig.type}
+      />
     </div>
   );
 };
