@@ -1327,13 +1327,20 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             .filter(([, result]) => typeof result?.valid === "boolean");
 
         if (successfulProviders.length === 0) {
-          if (enabledProviders.every((name) => providerHealth[name] === "unavailable")) {
-            throw new Error("AI-valideringen avbröts: inga AI-leverantörer är tillgängliga just nu.");
+          if (enabledProviders.every(
+              (name) => providerHealth[name] === "unavailable",
+          )) {
+            throw new Error(
+                "AI-valideringen avbröts: inga AI-leverantörer är " +
+              "tillgängliga just nu.",
+            );
           }
 
           const providerErrors = Object.entries(validationResults)
               .filter(([, result]) => result?.error)
-              .map(([providerName, result]) => `[${formatProviderName(providerName)}] ${result.error}`);
+              .map(([providerName, result]) =>
+                `[${formatProviderName(providerName)}] ${result.error}`,
+              );
 
           completedCount++;
           failedCount++;
@@ -1363,11 +1370,16 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           continue;
         }
 
-        const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
-        const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
+        const invalidProviders = successfulProviders.filter(
+            ([, result]) => result.valid === false,
+        );
+        const validProviders = successfulProviders.filter(
+            ([, result]) => result.valid === true,
+        );
 
         // Majoritetsbased konsensus: frågan är giltig om majoriteten säger ja
-        const majorityValid = validProviders.length > invalidProviders.length;
+        const majorityValid =
+          validProviders.length > invalidProviders.length;
 
         const issues = invalidProviders.flatMap(([providerName, result]) => {
           const providerLabel = formatProviderName(providerName);
