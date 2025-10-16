@@ -28,6 +28,10 @@ const batchRegenerateEmojis = require("./handlers/ai/batchRegenerateEmojis");
 const getProviderSettings = require("./handlers/providers/getProviderSettings");
 const updateProviderSettings = require("./handlers/providers/updateProviderSettings");
 
+// Payment Handlers
+const createPaymentIntent = require("./handlers/payments/createPaymentIntent");
+const getStripeStatus = require("./handlers/payments/getStripeStatus");
+
 // Scheduled Tasks
 const questionImport = require("./tasks/questionImport");
 
@@ -55,6 +59,10 @@ exports.batchRegenerateEmojis = batchRegenerateEmojis;
 // Provider Settings
 exports.getProviderSettings = getProviderSettings;
 exports.updateProviderSettings = updateProviderSettings;
+
+// Payments
+exports.createPaymentIntent = createPaymentIntent;
+exports.getStripeStatus = getStripeStatus;
 
 // Scheduled Tasks
 exports.questionImport = questionImport;
@@ -1628,228 +1636,9 @@ exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async
   }
 });
 
-
-/**
- * Stripe Payment Intent Creation
- */
-exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
-  return cors(req, res, async () => {
-    if (!ensurePost(req, res)) {
-      return;
-    }
-
-    try {
-      const {runId, participantId, amount, currency = "sek"} = req.body;
-
-      // Validera input
-      if (!runId || !participantId || !amount) {
-        res.status(400).json({
-          error: "Missing required fields: runId, participantId, amount",
-        });
-        return;
-      }
-
-      if (amount < 100 || amount > 100000) {
-        res.status(400).json({
-          error: "Amount must be between 100 and 100000 ├╢re (1-1000 kr)",
-        });
-        return;
-      }
-
-      // H├ñmta Stripe secret key fr├Ñn environment
-      const secretKey = stripeSecretKey.value();
-      if (!secretKey) {
-        logger.error("Stripe secret key not configured");
-        res.status(500).json({
-          error: "Payment system not configured",
-        });
-        return;
-      }
-
-      // Initiera Stripe
-      const stripe = require("stripe")(secretKey);
-
-      // Skapa PaymentIntent
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount,
-        currency,
-        metadata: {
-          runId,
-          participantId,
-        },
-        automatic_payment_methods: {
-          enabled: true,
-        },
-      });
-
-      logger.info("PaymentIntent created", {
-        paymentIntentId: paymentIntent.id,
-        runId,
-        participantId,
-        amount,
-      });
-
-      res.status(200).json({
-        client_secret: paymentIntent.client_secret,
-        payment_intent_id: paymentIntent.id,
-      });
-    } catch (error) {
-      const stripeMessage = error?.raw?.message || error?.message;
-
-      const errorInfo = {
-        message: stripeMessage,
-        code: error?.code,
-        type: error?.type,
-        statusCode: error?.statusCode,
-        requestId: error?.requestId,
-      };
-
-      logger.error("Error creating PaymentIntent", errorInfo);
-
-      const isAuthError = error?.code === "api_key_expired" ||
-        error?.code === "authentication_error" ||
-        error?.type === "StripeAuthenticationError" ||
-        error?.statusCode === 401;
-      const isConnectionError = error?.code === "api_connection_error" ||
-        error?.type === "StripeAPIError" ||
-        error?.type === "StripeConnectionError";
-      const isRateLimited = error?.code === "rate_limit_error" ||
-        error?.type === "StripeRateLimitError" ||
-        error?.statusCode === 429;
-
-      let status = 500;
-      let errorCode = "PAYMENT_INTENT_FAILED";
-      let clientMessage = "Failed to create payment";
-      let retryable = true;
-
-      if (isAuthError) {
-        errorCode = "STRIPE_AUTH_ERROR";
-        clientMessage = "Betalningssystemet behöver uppdateras. Kontakta administratören.";
-        retryable = false;
-      } else if (isConnectionError) {
-        errorCode = "STRIPE_UNAVAILABLE";
-        clientMessage = "Stripe svarar inte just nu. Försök igen om en liten stund.";
-        status = 503;
-      } else if (isRateLimited) {
-        errorCode = "STRIPE_RATE_LIMIT";
-        clientMessage = "För många betalningsförsök på kort tid. Vänta och prova igen.";
-        status = 429;
-      }
-
-      const responsePayload = {
-        error: clientMessage,
-        errorCode,
-        retryable,
-      };
-
-      if (process.env.NODE_ENV !== "production") {
-        responsePayload.debug = {
-          ...errorInfo,
-          rawMessage: stripeMessage,
-        };
-      }
-
-      res.status(status).json(responsePayload);
-    }
-  });
-});
-
-/**
- * Stripe status health-check.
- * Returnerar kontoinformation och om nyckeln är giltig utan att skapa en betalning.
- */
-exports.getStripeStatus = createHttpsHandler(async (req, res) => {
-  return cors(req, res, async () => {
-    if (req.method !== "GET") {
-      res.set("Allow", "GET");
-      res.status(405).json({error: "Method Not Allowed"});
-      return;
-    }
-
-    const secretKey = stripeSecretKey.value();
-    if (!secretKey) {
-      logger.error("Stripe secret key not configured for status check");
-      res.status(500).json({
-        success: false,
-        error: "Payment system not configured",
-        errorCode: "STRIPE_KEY_MISSING",
-      });
-      return;
-    }
-
-    try {
-      const stripe = require("stripe")(secretKey);
-      const account = await stripe.accounts.retrieve();
-
-      res.status(200).json({
-        success: true,
-        accountId: account.id,
-        livemode: account.livemode,
-        defaultCurrency: account.default_currency,
-        payoutsEnabled: account.payouts_enabled,
-      });
-    } catch (error) {
-      const stripeMessage = error?.raw?.message || error?.message;
-
-      const errorInfo = {
-        message: stripeMessage,
-        code: error?.code,
-        type: error?.type,
-        statusCode: error?.statusCode,
-        requestId: error?.requestId,
-      };
-
-      logger.error("Stripe status check failed", errorInfo);
-
-      const isAuthError = error?.code === "api_key_expired" ||
-        error?.code === "authentication_error" ||
-        error?.type === "StripeAuthenticationError" ||
-        error?.statusCode === 401;
-      const isConnectionError = error?.code === "api_connection_error" ||
-        error?.type === "StripeAPIError" ||
-        error?.type === "StripeConnectionError";
-      const isRateLimited = error?.code === "rate_limit_error" ||
-        error?.type === "StripeRateLimitError" ||
-        error?.statusCode === 429;
-
-      let status = 500;
-      let errorCode = "STRIPE_UNAVAILABLE";
-      let clientMessage = "Kunde inte nå Stripe just nu. Försök igen senare.";
-      let retryable = true;
-
-      if (isAuthError) {
-        status = 500;
-        errorCode = "STRIPE_AUTH_ERROR";
-        clientMessage = "Stripe-nyckeln är ogiltig eller har gått ut.";
-        retryable = false;
-      } else if (isConnectionError) {
-        status = 503;
-        errorCode = "STRIPE_UNAVAILABLE";
-        clientMessage = "Kunde inte nå Stripe just nu. Försök igen senare.";
-      } else if (isRateLimited) {
-        status = 429;
-        errorCode = "STRIPE_RATE_LIMIT";
-        clientMessage = "Stripe begränsar förfrågningarna just nu. Vänta och försök igen.";
-      }
-
-      const payload = {
-        success: false,
-        error: clientMessage,
-        errorCode,
-        retryable,
-      };
-
-      if (process.env.NODE_ENV !== "production") {
-        payload.debug = {
-          ...errorInfo,
-          rawMessage: stripeMessage,
-        };
-      }
-
-      res.status(status).json(payload);
-    }
-  });
-});
+// ============================================================================
+// ADMIN HANDLERS (Inline for now - to be refactored)
+// ============================================================================
 
 /**
  * One-time function to update all existing questions with createdAt field
