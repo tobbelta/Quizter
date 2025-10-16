@@ -1,6 +1,7 @@
 /**
  * Cloud Functions index - Main exports for all Firebase Functions
- * Refactored structure: handlers are in separate files for better maintainability
+ * Refactored structure: handlers are in separate files for better
+ * maintainability
  */
 
 // ============================================================================
@@ -16,26 +17,35 @@ const closeRun = require("./handlers/runs/closeRun");
 
 // AI Handlers
 const getAIStatus = require("./handlers/ai/getAIStatus");
-const generateAIQuestions = require("./handlers/ai/generateAIQuestions");
-const validateQuestionWithAI = require("./handlers/ai/validateQuestionWithAI");
-const regenerateQuestionEmoji = require("./handlers/ai/regenerateQuestionEmoji");
-const regenerateAllIllustrations = require("./handlers/ai/regenerateAllIllustrations");
+const generateAIQuestions =
+  require("./handlers/ai/generateAIQuestions");
+const validateQuestionWithAI =
+  require("./handlers/ai/validateQuestionWithAI");
+const regenerateQuestionEmoji =
+  require("./handlers/ai/regenerateQuestionEmoji");
+const regenerateAllIllustrations =
+  require("./handlers/ai/regenerateAllIllustrations");
 const queueMigration = require("./handlers/ai/queueMigration");
 const batchValidateQuestions = require("./handlers/ai/batchValidateQuestions");
 const batchRegenerateEmojis = require("./handlers/ai/batchRegenerateEmojis");
 
 // Provider Settings Handlers
-const getProviderSettings = require("./handlers/providers/getProviderSettings");
-const updateProviderSettings = require("./handlers/providers/updateProviderSettings");
+const getProviderSettings =
+  require("./handlers/providers/getProviderSettings");
+const updateProviderSettings =
+  require("./handlers/providers/updateProviderSettings");
 
 // Payment Handlers
 const createPaymentIntent = require("./handlers/payments/createPaymentIntent");
 const getStripeStatus = require("./handlers/payments/getStripeStatus");
 
 // Admin Handlers
-const updateQuestionsCreatedAt = require("./handlers/admin/updateQuestionsCreatedAt");
-const migrateQuestionsToNewSchema = require("./handlers/admin/migrateQuestionsToNewSchema");
-const cleanupStuckTasks = require("./handlers/admin/cleanupStuckTasks");
+const updateQuestionsCreatedAt =
+  require("./handlers/admin/updateQuestionsCreatedAt");
+const migrateQuestionsToNewSchema =
+  require("./handlers/admin/migrateQuestionsToNewSchema");
+const cleanupStuckTasks =
+  require("./handlers/admin/cleanupStuckTasks");
 const deleteOldTasks = require("./handlers/admin/deleteOldTasks");
 const stopTask = require("./handlers/admin/stopTask");
 const deleteTask = require("./handlers/admin/deleteTask");
@@ -124,7 +134,12 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
   const db = admin.firestore();
   const taskDocRef = db.collection("backgroundTasks").doc(taskId);
 
-  const safeUpdateProgress = async ({phase = "", completed = 0, total = 0, details = ""}) => {
+  const safeUpdateProgress = async ({
+    phase = "",
+    completed = 0,
+    total = 0,
+    details = "",
+  }) => {
     try {
       await db.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(taskDocRef);
@@ -149,7 +164,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         transaction.update(taskDocRef, {progress: nextProgress});
       });
     } catch (progressError) {
-      logger.warn(`Failed to update progress for generation task ${taskId}`, {error: progressError.message});
+      logger.warn(
+          `Failed to update progress for generation task ${taskId}`,
+          {error: progressError.message},
+      );
     }
   };
 
