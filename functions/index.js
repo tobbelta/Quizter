@@ -767,7 +767,10 @@ exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (re
         generatedCount++;
       } else {
         failedCount++;
-        logger.warn("All illustration providers failed to generate emoji for question " + doc.id);
+        logger.warn(
+            "All illustration providers failed to generate emoji for question " +
+            doc.id,
+        );
       }
 
       processedCount++;
@@ -858,13 +861,19 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
   // Hämta provider settings
   const settings = await getProviderSettings();
-  const validationSettings = settings.validation || {anthropic: true, openai: true, gemini: true};
+  const validationSettings = settings.validation || {
+    anthropic: true,
+    openai: true,
+    gemini: true,
+  };
 
   const anthropicKey = anthropicApiKey.value();
   const geminiKey = geminiApiKey.value();
   const openaiKey = openaiApiKey.value();
   const providerKeys = {
-    anthropic: anthropicKey && validationSettings.anthropic !== false ? anthropicKey : null,
+    anthropic: anthropicKey && validationSettings.anthropic !== false ?
+               anthropicKey :
+               null,
     gemini: geminiKey && validationSettings.gemini !== false ? geminiKey : null,
     openai: openaiKey && validationSettings.openai !== false ? openaiKey : null,
   };
@@ -1009,8 +1018,12 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       return;
     }
 
-    const invalidProviders = successfulProviders.filter(([, result]) => result.valid === false);
-    const validProviders = successfulProviders.filter(([, result]) => result.valid === true);
+    const invalidProviders = successfulProviders.filter(
+        ([, result]) => result.valid === false,
+    );
+    const validProviders = successfulProviders.filter(
+        ([, result]) => result.valid === true,
+    );
 
     // Majoritetsbased konsensus: frågan är giltig om majoriteten säger ja
     const majorityValid = validProviders.length > invalidProviders.length;
@@ -1110,7 +1123,8 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
                              !q.explanation;
         if (missingFields) {
           return res.status(400).json({
-            error: "Each question must have: id, question, options, correctOption, explanation",
+            error: "Each question must have: id, question, " +
+                   "options, correctOption, explanation",
           });
         }
       }
@@ -1183,13 +1197,19 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
 
   // Hämta provider settings
   const settings = await getProviderSettings();
-  const validationSettings = settings.validation || {anthropic: true, openai: true, gemini: true};
+  const validationSettings = settings.validation || {
+    anthropic: true,
+    openai: true,
+    gemini: true,
+  };
 
   const anthropicKey = anthropicApiKey.value();
   const geminiKey = geminiApiKey.value();
   const openaiKey = openaiApiKey.value();
   const providerKeys = {
-    anthropic: anthropicKey && validationSettings.anthropic !== false ? anthropicKey : null,
+    anthropic: anthropicKey && validationSettings.anthropic !== false ?
+               anthropicKey :
+               null,
     gemini: geminiKey && validationSettings.gemini !== false ? geminiKey : null,
     openai: openaiKey && validationSettings.openai !== false ? openaiKey : null,
   };
