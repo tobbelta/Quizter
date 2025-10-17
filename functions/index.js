@@ -1754,7 +1754,9 @@ exports.runaibatchregenerateemojis = onTaskDispatched(
             "illustration",
         );
         if (illustrationProviders.length === 0) {
-          throw new Error("No illustration providers are enabled and configured");
+          throw new Error(
+              "No illustration providers are enabled and configured",
+          );
         }
 
         let generatedCount = 0;
