@@ -1488,7 +1488,10 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
                   `problem utan detaljer`];
         });
 
-        if (invalidProviders.length > 0 && suggestedCorrectOption === undefined) {
+        if (
+          invalidProviders.length > 0 &&
+          suggestedCorrectOption === undefined
+        ) {
           const suggested = invalidProviders
               .map(([, result]) => result.suggestedCorrectOption)
               .find((value) => value !== undefined);
