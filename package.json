@@ -3,6 +3,9 @@
   "version": "0.8.1",
   "private": true,
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/haptics": "^7.0.2",
+    "@capacitor/local-notifications": "^7.0.3",
     "@stripe/react-stripe-js": "^4.0.2",
     "@stripe/stripe-js": "^7.9.0",
     "eruda": "^3.4.3",
