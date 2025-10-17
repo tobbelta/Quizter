@@ -1217,6 +1217,7 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
 /**
  * Task-dispatched function to run batch AI question validation.
  */
+// eslint-disable-next-line max-len
 exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
   const {taskId, questions} = req.data;
   const db = admin.firestore();
