@@ -172,7 +172,8 @@ const RunMap = ({
   startPoint,
   className = 'h-full',
   onCheckpointClick = null,  // Callback för klick på checkpoint (när GPS är av)
-  manualMode = false         // Om true, gör checkpoints klickbara
+  manualMode = false,        // Om true, gör checkpoints klickbara
+  gpsTrail = null            // GPS-spår för distance-based runs (array av {lat, lng})
 }) => {
   const positions = useMemo(() => checkpoints.map((checkpoint) => [checkpoint.location.lat, checkpoint.location.lng]), [checkpoints]);
 
@@ -250,6 +251,32 @@ const RunMap = ({
             />
             {/* Lägg till riktningspilarna ovanpå rutten */}
             <RouteArrowDecorator route={routePositions} />
+          </>
+        )}
+        {/* GPS-spår för distance-based runs (om tillgängligt) */}
+        {gpsTrail && gpsTrail.length > 1 && (
+          <>
+            {/* Bakgrundsstreck */}
+            <Polyline
+              positions={gpsTrail.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: '#000000',
+                weight: 6,
+                opacity: 0.6
+              }}
+            />
+            {/* Huvudspår i lila/magenta för att skilja från rutt */}
+            <Polyline
+              positions={gpsTrail.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: '#a855f7',
+                weight: 4,
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round',
+                dashArray: '10, 5' // Streckad linje för att visa det är GPS-spår
+              }}
+            />
           </>
         )}
         {positions.map((position, index) => {
