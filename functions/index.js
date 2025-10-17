@@ -1453,7 +1453,10 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             valid: false,
             issues: providerErrors.length > 0 ?
                             providerErrors :
-                            ["AI-valideringen kunde inte genomföras för frågan."],
+                            [
+                              "AI-valideringen kunde inte genomföras " +
+                              "för frågan.",
+                            ],
             reasoning: "",
             providerResults: validationResults,
             providersChecked: successfulProviders.length,
