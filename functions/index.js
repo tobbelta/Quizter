@@ -294,7 +294,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       total: questionsToImport.length,
       details: canGenerateEmoji ?
                 "Skapar Emoji-illustrationer med AI..." :
-                "Inga illustration-providers aktiverade - hoppar över Emoji-generering",
+                "Inga illustration-providers aktiverade - " +
+                "hoppar över Emoji-generering",
     });
 
     let emojiGeneratedCount = 0;
@@ -748,7 +749,9 @@ exports.runaiemojiregeneration = onTaskDispatched(
                 data.languages?.en?.options ??
                 [];
           const normalizedOptions = toArray(rawOptions)
-              .map((option) => (typeof option === "string" ? option : String(option ?? "")))
+              .map((option) => {
+                return typeof option === "string" ? option : String(option ?? "");
+              })
               .filter((option) => option.trim().length > 0);
 
           const explanationText =
@@ -938,7 +941,10 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           reasoningSections.push(`**Anthropic:** ${result.reasoning}`);
         }
       } catch (error) {
-        logger.error("Anthropic validation failed during task", {error: error.message});
+        logger.error(
+            "Anthropic validation failed during task",
+            {error: error.message},
+        );
         validationResults.anthropic = {
           valid: null,
           error: error.message,
@@ -1086,7 +1092,10 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       finalResult.suggestedCorrectOption = suggestedCorrectOption;
     }
 
-    if (Object.values(validationResults).some((result) => result?.error && !result?.valid)) {
+    const hasErrors = Object.values(validationResults).some(
+        (result) => result?.error && !result?.valid,
+    );
+    if (hasErrors) {
       finalResult.providerErrors = Object.entries(validationResults)
           .filter(([, result]) => result?.error)
           .map(([providerName, result]) => ({
@@ -1246,7 +1255,9 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
       error: "AI-valideringen avbröts: inga AI-leverantörer är konfigurerade.",
     });
-    logger.error(`Batch validation task ${taskId} aborted: no AI providers configured.`);
+    logger.error(
+        `Batch validation task ${taskId} aborted: no AI providers configured.`,
+    );
     return;
   }
 
@@ -1494,10 +1505,6 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
         if (hasErrors) {
           questionResult.providerErrors = Object.entries(validationResults)
               .filter(([, result]) => result?.error)
-              .map(([providerName, result]) => ({
-                provider: formatProviderName(providerName),
-                error: result.error,
-              })); ter(([, result]) => result?.error)
               .map(([providerName, result]) => ({
                 provider: formatProviderName(providerName),
                 error: result.error,
