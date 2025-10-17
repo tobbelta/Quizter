@@ -423,6 +423,12 @@ async function getProviderStatus({ force = false } = {}) {
  */
 exports.getAIStatus = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
+    // Handle preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
     try {
       const { providers, primaryProvider, message } = await getProviderStatus({ force: true });
 
@@ -2746,6 +2752,12 @@ exports.createPaymentIntent = createHttpsHandler(async (req, res) => {
  */
 exports.getStripeStatus = createHttpsHandler(async (req, res) => {
   return cors(req, res, async () => {
+    // Handle preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
     if (req.method !== "GET") {
       res.set("Allow", "GET");
       res.status(405).json({ error: "Method Not Allowed" });
