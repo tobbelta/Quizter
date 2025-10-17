@@ -666,28 +666,7 @@ const GenerateRunPage = () => {
               </div>
             </label>
 
-        {currentUser?.isAnonymous && !alias.trim() && (
-          <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
-            <h3 className="text-sm font-semibold text-cyan-200">Ditt alias</h3>
-            <div className="space-y-1.5">
-              <label className="block text-xs text-gray-400">Alias (visas för deltagare)</label>
-              <input
-                type="text"
-                value={alias}
-                onChange={(e) => {
-                  setAlias(e.target.value);
-                }}
-                placeholder="T.ex. Erik"
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-cyan-400 focus:outline-none"
-              />
-            </div>
-            <p className="text-xs text-gray-400">
-              Aliaset sparas på denna enhet och kommer ihåg nästa gång.
-            </p>
-          </div>
-        )}
-
-        <button
+            <button
           type="submit"
           className="w-full rounded-xl bg-purple-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-purple-400"
         >
