@@ -495,6 +495,7 @@ export const buildHostedRun = async ({
   type = 'hosted',
   lengthMeters = 2000,
   allowAnonymous = true,
+  allowRouteSelection = false,
   language = 'sv',
   origin = null
 }, creator) => {
@@ -576,6 +577,7 @@ export const buildHostedRun = async ({
     type,
     lengthMeters,
     allowAnonymous,
+    allowRouteSelection,
     language: language || 'sv',
     joinCode,
     qrSlug: joinCode.toLowerCase(),
@@ -599,6 +601,7 @@ export const buildGeneratedRun = async ({
   questionCount = 8,
   categories = [],
   allowAnonymous = true,
+  allowRouteSelection = false,
   language = 'sv',
   origin,
   seed,
@@ -628,6 +631,7 @@ export const buildGeneratedRun = async ({
     type: 'generated',
     lengthMeters,
     allowAnonymous,
+    allowRouteSelection,
     language: language || 'sv',
     joinCode,
     qrSlug: joinCode.toLowerCase(),

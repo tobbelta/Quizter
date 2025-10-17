@@ -10,6 +10,9 @@ import useRunLocation from '../hooks/useRunLocation';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
 import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
+import { buildJoinLink } from '../utils/joinLink';
+import useQRCode from '../hooks/useQRCode';
+import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
 
@@ -37,6 +40,7 @@ const PlayRunPage = () => {
   const [distanceToStart, setDistanceToStart] = useState(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [questionToReport, setQuestionToReport] = useState(null);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Använd användarens språkval från localStorage
     if (typeof window !== 'undefined') {
@@ -134,6 +138,10 @@ const PlayRunPage = () => {
   const nearCheckpoint = trackingEnabled && distanceToCheckpoint != null && distanceToCheckpoint <= PROXIMITY_THRESHOLD_METERS;
   const nearStartPoint = trackingEnabled && distanceToStart != null && distanceToStart <= PROXIMITY_THRESHOLD_METERS;
 
+  // QR-kod för delning
+  const joinLink = currentRun ? buildJoinLink(currentRun.joinCode) : '';
+  const { dataUrl, isLoading: qrLoading, error: qrError } = useQRCode(joinLink, 280);
+
   // Bestäm om frågan ska visas baserat på läge och närhet.
   const shouldShowQuestion =
     (manualMode && questionVisible) || // Manuell start
@@ -208,7 +216,17 @@ const PlayRunPage = () => {
       </style>
 
       {/* Gemensam Header-komponent */}
-      <Header title={`${currentRun.name} (${Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}/${orderedQuestions.length})`} />
+      <Header 
+        title={`${currentRun.name} (${Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}/${orderedQuestions.length})`}
+      >
+        <button
+          onClick={() => setShareDialogOpen(true)}
+          className="rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-400"
+          title="Dela runda"
+        >
+          📤 Dela
+        </button>
+      </Header>
 
       {/* Spacer för fixed header */}
       <div className="h-16"></div>
@@ -355,6 +373,79 @@ const PlayRunPage = () => {
             setQuestionToReport(null);
           }}
         />
+      )}
+
+      {/* Dela runda dialog */}
+      {shareDialogOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setShareDialogOpen(false)}
+        >
+          <div 
+            className="bg-slate-900 rounded-2xl border border-cyan-500/40 p-6 max-w-md w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-white">Dela {currentRun.name}</h2>
+              <button
+                onClick={() => setShareDialogOpen(false)}
+                className="text-gray-400 hover:text-white text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-sm text-gray-300 mb-3">
+                  Skanna QR-koden eller använd koden för att bjuda in fler deltagare
+                </p>
+                <div className="flex justify-center mb-4">
+                  <QRCodeDisplay dataUrl={dataUrl} isLoading={qrLoading} error={qrError} />
+                </div>
+              </div>
+
+              <div className="bg-slate-800 rounded-lg p-4 border border-slate-600">
+                <p className="text-xs text-gray-400 mb-1">Anslutningskod:</p>
+                <p className="text-2xl font-mono font-bold text-cyan-400 tracking-widest text-center">
+                  {currentRun.joinCode}
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentRun.joinCode);
+                    // Optional: visa toast
+                  }}
+                  className="flex-1 rounded-lg bg-purple-500 px-4 py-2 font-semibold text-white hover:bg-purple-400"
+                >
+                  Kopiera kod
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(joinLink);
+                    // Optional: visa toast
+                  }}
+                  className="flex-1 rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+                >
+                  Kopiera länk
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-400 text-center">
+                <a 
+                  href={joinLink} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-cyan-400 hover:underline break-all"
+                >
+                  {joinLink}
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

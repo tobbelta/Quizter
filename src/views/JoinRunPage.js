@@ -81,6 +81,8 @@ const JoinRunPage = () => {
       setSuccess(`Du är nu ansluten till ${run.name}!`);
 
       setTimeout(() => {
+        // Om rundan tillåter rutt-val, gå till ruttval (TODO: implementera ruttval-sida)
+        // För nu går vi alltid direkt till spel
         navigate(`/run/${run.id}/play`);
       }, 600);
     } catch (joinError) {
