@@ -217,10 +217,12 @@ const RunMap = ({
         style={{ height: '100%', width: '100%' }} // Tvinga full höjd och bredd
         className="h-full w-full relative z-0"
         scrollWheelZoom={true}
-        zoomControl={true}
+        zoomControl={false} // Ta bort zoom-kontroller
         doubleClickZoom={true}
         touchZoom={true}
         dragging={true}
+        touchRotate={true} // Aktivera rotation på mobil
+        rotateControl={false} // Inget rotate UI
       >
         <FitBounds positions={positions} />
         <TileLayer
