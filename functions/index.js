@@ -1652,10 +1652,16 @@ exports.batchRegenerateEmojis = createHttpsHandler(async (req, res) => {
       const {questionIds} = req.body;
 
       if (!Array.isArray(questionIds) || questionIds.length === 0) {
-        return res.status(400).json({error: "questionIds must be a non-empty array"});
+        return res.status(400).json({
+          error: "questionIds must be a non-empty array",
+        });
       }
 
-      const taskId = await enqueueTask("batchregenerateemojis", {questionIds}, userId);
+      const taskId = await enqueueTask(
+          "batchregenerateemojis",
+          {questionIds},
+          userId,
+      );
 
       res.status(202).json({
         success: true,
