@@ -1713,7 +1713,9 @@ exports.runaibatchregenerateemojis = onTaskDispatched(
           await db.runTransaction(async (transaction) => {
             const snapshot = await transaction.get(taskDocRef);
             if (!snapshot.exists) {
-              throw new Error(`Task ${taskId} not found during progress update`);
+              throw new Error(
+                  `Task ${taskId} not found during progress update`,
+              );
             }
             const data = snapshot.data() || {};
             if (["cancelled", "failed", "completed"].includes(data.status)) {
