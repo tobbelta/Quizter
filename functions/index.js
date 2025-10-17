@@ -1336,7 +1336,10 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
             );
             validationResults.anthropic = result;
             providerHealth.anthropic = "healthy";
-            if (typeof result.reasoning === "string" && result.reasoning.trim()) {
+            if (
+              typeof result.reasoning === "string" &&
+              result.reasoning.trim()
+            ) {
               reasoningSections.push(`**Anthropic:** ${result.reasoning}`);
             }
           } catch (error) {
