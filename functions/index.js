@@ -697,9 +697,13 @@ exports.runaiemojiregeneration = onTaskDispatched(
         });
         logger.info(`Processing illustration regeneration task ${taskId}`);
 
-        const illustrationProviders = await getProvidersForPurpose("illustration");
+        const illustrationProviders = await getProvidersForPurpose(
+            "illustration",
+        );
         if (illustrationProviders.length === 0) {
-          throw new Error("No illustration providers are enabled and configured");
+          throw new Error(
+              "No illustration providers are enabled and configured",
+          );
         }
 
         const questionsRef = db.collection("questions");
@@ -758,7 +762,9 @@ exports.runaiemojiregeneration = onTaskDispatched(
                 [];
           const normalizedOptions = toArray(rawOptions)
               .map((option) => {
-                return typeof option === "string" ? option : String(option ?? "");
+                const result = typeof option === "string" ?
+                              option : String(option ?? "");
+                return result;
               })
               .filter((option) => option.trim().length > 0);
 
@@ -788,15 +794,16 @@ exports.runaiemojiregeneration = onTaskDispatched(
               data: {
                 illustration: emojiOutcome.emoji,
                 illustrationProvider: emojiOutcome.provider.name,
-                illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                illustrationGeneratedAt:
+                    admin.firestore.FieldValue.serverTimestamp(),
               },
             });
             generatedCount++;
           } else {
             failedCount++;
             logger.warn(
-                "All illustration providers failed to generate emoji for question " +
-                doc.id,
+                "All illustration providers failed to generate emoji " +
+                "for question " + doc.id,
             );
           }
 
