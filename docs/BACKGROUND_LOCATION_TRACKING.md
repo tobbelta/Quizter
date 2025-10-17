@@ -49,18 +49,35 @@ backgroundLocationService.resetDistance();
 
 ### 3. Native Setup - MÅSTE GÖRAS
 
-#### Android (android/app/src/main/AndroidManifest.xml)
-Lägg till permissions:
+#### Steg 1: Bygg appen först
+```bash
+npm run build
+```
+
+#### Steg 2: Synca Capacitor (detta skapar native project files)
+```bash
+npx cap sync android
+npx cap sync ios
+```
+
+#### Steg 3: Android Permissions
+Efter sync, öppna `android/app/src/main/AndroidManifest.xml` och lägg till:
 ```xml
+<!-- GPS tracking permissions -->
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+<!-- Background service -->
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+<!-- Notifications and vibration -->
 <uses-permission android:name="android.permission.VIBRATE" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 ```
 
-Synca Capacitor:
+Synca igen:
 ```bash
 npx cap sync android
 ```

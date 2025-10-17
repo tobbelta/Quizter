@@ -3,12 +3,14 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import useDistanceTracking from '../hooks/useDistanceTracking';
 import useElapsedTime from '../hooks/useElapsedTime';
+import backgroundLocationService from '../services/backgroundLocationService';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
 import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
@@ -85,9 +87,14 @@ const PlayRunPage = () => {
   }, [refreshParticipants]);
 
   const manualMode = !trackingEnabled;
+  const isNative = Capacitor.isNativePlatform();
 
   // Timer för att mäta total tid
   const { formattedTime } = useElapsedTime(true);
+
+  // State för background tracking (native only)
+  const [backgroundDistance, setBackgroundDistance] = useState(0);
+  const [backgroundDistanceToNext, setBackgroundDistanceToNext] = useState(0);
 
   useEffect(() => {
     setSelectedOption(null);
@@ -125,11 +132,43 @@ const PlayRunPage = () => {
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
     coords,
-    trackingEnabled: trackingEnabled,
+    trackingEnabled: trackingEnabled && !isNative, // Använd inte hook på native
     distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
     currentQuestionIndex: currentOrderIndex,
     totalQuestions: orderedQuestions.length
   });
+
+  // Background location tracking för native apps
+  useEffect(() => {
+    if (!isNative || !isDistanceBased || !trackingEnabled || !currentRun) {
+      return;
+    }
+
+    console.log('[PlayRunPage] Starting background location tracking (native)');
+
+    // Starta background tracking
+    backgroundLocationService.startTracking({
+      distanceBetweenQuestions: currentRun.distanceBetweenQuestions || 500,
+      onDistanceReached: (data) => {
+        console.log('[PlayRunPage] Distance reached!', data);
+        // Visa frågan
+        setQuestionVisible(true);
+      }
+    });
+
+    // Lyssna på distance updates för UI
+    const unsubscribe = backgroundLocationService.addListener((data) => {
+      setBackgroundDistance(data.totalDistance);
+      setBackgroundDistanceToNext(data.distanceSinceLastQuestion);
+    });
+
+    // Cleanup
+    return () => {
+      console.log('[PlayRunPage] Stopping background location tracking');
+      backgroundLocationService.stopTracking();
+      unsubscribe();
+    };
+  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex]);
 
   const nextCheckpoint = currentRun?.checkpoints?.[currentOrderIndex] || null;
 
@@ -198,7 +237,11 @@ const PlayRunPage = () => {
 
     // Återställ distansräknare för distance-based runs
     if (isDistanceBased) {
-      distanceTracking.resetQuestionDistance();
+      if (isNative) {
+        backgroundLocationService.resetDistance();
+      } else {
+        distanceTracking.resetQuestionDistance();
+      }
     }
   };
 
@@ -278,10 +321,12 @@ const PlayRunPage = () => {
                 <div className="flex items-center gap-2">
                   <span className="text-cyan-400">🚶</span>
                   <span className="text-white font-medium">
-                    {distanceTracking.totalDistance >= 1000 
-                      ? `${(distanceTracking.totalDistance / 1000).toFixed(2)} km`
-                      : `${Math.round(distanceTracking.totalDistance)} m`
-                    }
+                    {(() => {
+                      const distance = isNative ? backgroundDistance : distanceTracking.totalDistance;
+                      return distance >= 1000 
+                        ? `${(distance / 1000).toFixed(2)} km`
+                        : `${Math.round(distance)} m`;
+                    })()}
                   </span>
                 </div>
 
@@ -298,7 +343,11 @@ const PlayRunPage = () => {
                   <div className="flex items-center gap-2">
                     <span className="text-purple-400">📍</span>
                     <span className="text-white font-medium">
-                      {Math.round(distanceTracking.distanceToNextQuestion)}m
+                      {Math.round(
+                        isNative 
+                          ? backgroundDistanceToNext 
+                          : distanceTracking.distanceToNextQuestion
+                      )}m
                     </span>
                   </div>
                 )}
@@ -310,7 +359,10 @@ const PlayRunPage = () => {
                   <div 
                     className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 transition-all duration-300"
                     style={{
-                      width: `${Math.min(100, ((currentRun.distanceBetweenQuestions - distanceTracking.distanceToNextQuestion) / currentRun.distanceBetweenQuestions) * 100)}%`
+                      width: `${Math.min(100, (() => {
+                        const distanceToNext = isNative ? backgroundDistanceToNext : distanceTracking.distanceToNextQuestion;
+                        return ((currentRun.distanceBetweenQuestions - distanceToNext) / currentRun.distanceBetweenQuestions) * 100;
+                      })())}%`
                     }}
                   />
                 </div>
