@@ -360,7 +360,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     const batch = db.batch();
     questionsToImport.forEach((question) => {
       const docRef = db.collection("questions").doc(question.id);
-      const questionData = {...question, createdAt: admin.firestore.FieldValue.serverTimestamp()};
+      const questionData = {
+        ...question,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
       batch.set(docRef, questionData);
     });
     await batch.commit();
@@ -535,7 +538,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           phase: "AI-validering",
           completed: validationSuccessCount + validationFailedCount,
           total: questionsToImport.length,
-          details: `${validationSuccessCount} validerade, ${validationFailedCount} misslyckades`,
+          details: `${validationSuccessCount} validerade, ` +
+                   `${validationFailedCount} misslyckades`,
         });
       }
     }
@@ -989,8 +993,14 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
         .filter(([, result]) => typeof result?.valid === "boolean");
 
     if (successfulProviders.length === 0) {
-      if (enabledProviders.every((name) => providerHealth[name] === "unavailable")) {
-        throw new Error("AI-valideringen avbröts: inga AI-leverantörer är tillgängliga just nu.");
+      const allUnavailable = enabledProviders.every(
+          (name) => providerHealth[name] === "unavailable",
+      );
+      if (allUnavailable) {
+        throw new Error(
+            "AI-valideringen avbröts: inga AI-leverantörer är " +
+            "tillgängliga just nu.",
+        );
       }
 
       const providerErrors = Object.entries(validationResults)
@@ -1248,9 +1258,12 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
     let completedCount = 0;
     let validatedCount = 0;
     let failedCount = 0;
-
-    const providerHealth = Object.fromEntries(enabledProviders.map((name) => [name, "unknown"]));
-    const formatProviderName = (provider) => provider.charAt(0).toUpperCase() + provider.slice(1);
+    const providerHealth = Object.fromEntries(
+        enabledProviders.map((name) => [name, "unknown"]),
+    );
+    const formatProviderName = (provider) => {
+      return provider.charAt(0).toUpperCase() + provider.slice(1);
+    };
 
     // Process each question
     for (const questionData of questions) {
@@ -1461,13 +1474,16 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           providersChecked: successfulProviders.length,
         };
 
-        if (suggestedCorrectOption !== undefined) {
-          questionResult.suggestedCorrectOption = suggestedCorrectOption;
-        }
-
-        if (Object.values(validationResults).some((result) => result?.error && !result?.valid)) {
+        const hasErrors = Object.values(validationResults).some(
+            (result) => result?.error && !result?.valid,
+        );
+        if (hasErrors) {
           questionResult.providerErrors = Object.entries(validationResults)
               .filter(([, result]) => result?.error)
+              .map(([providerName, result]) => ({
+                provider: formatProviderName(providerName),
+                error: result.error,
+              })); ter(([, result]) => result?.error)
               .map(([providerName, result]) => ({
                 provider: formatProviderName(providerName),
                 error: result.error,
@@ -1604,7 +1620,8 @@ exports.batchRegenerateEmojis = createHttpsHandler(async (req, res) => {
 
       res.status(202).json({
         success: true,
-        message: `Batch emoji regeneration of ${questionIds.length} questions has been queued.`,
+        message: `Batch emoji regeneration of ${questionIds.length} ` +
+                 `questions has been queued.`,
         taskId: taskId,
         questionCount: questionIds.length,
       });
