@@ -330,7 +330,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
         if (emojiOutcome) {
           question.illustration = emojiOutcome.emoji;
-          question.illustrationGeneratedAt = admin.firestore.FieldValue.serverTimestamp();
+          question.illustrationGeneratedAt =
+              admin.firestore.FieldValue.serverTimestamp();
           question.illustrationProvider = emojiOutcome.provider.name;
           emojiGeneratedCount++;
         } else {
@@ -357,7 +358,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       phase: "Sparar frågor",
       completed: questionsToImport.length,
       total: amount,
-      details: `Sparar ${questionsToImport.length} frågor till databasen${duplicateInfo}...`,
+      details: `Sparar ${questionsToImport.length} frågor till ` +
+               `databasen${duplicateInfo}...`,
     });
 
     const batch = db.batch();
@@ -533,7 +535,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
             validationFailedCount++;
           }
         } catch (error) {
-          logger.error(`Failed to validate question ${question.id}`, {error: error.message});
+          logger.error(
+              `Failed to validate question ${question.id}`,
+              {error: error.message},
+          );
           validationFailedCount++;
         }
 
@@ -780,7 +785,7 @@ exports.runaiemojiregeneration = onTaskDispatched(
             failedCount++;
             logger.warn(
                 "All illustration providers failed to generate emoji for question " +
-            doc.id,
+                doc.id,
             );
           }
 
@@ -789,7 +794,8 @@ exports.runaiemojiregeneration = onTaskDispatched(
             phase: "Regenererar illustrationer",
             completed: processedCount,
             total: snapshot.size,
-            details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
+            details: `${generatedCount} illustrationer uppdaterade, ` +
+                     `${failedCount} misslyckades`,
           });
         }
 
@@ -830,12 +836,12 @@ exports.runaiemojiregeneration = onTaskDispatched(
         await taskDocRef.update({
           status: "completed",
           finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-          result,
           progress: {
             phase: "Klar",
             completed: snapshot.size,
             total: snapshot.size,
-            details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
+            details: `${generatedCount} illustrationer uppdaterade, ` +
+                     `${failedCount} misslyckades`,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
         });
