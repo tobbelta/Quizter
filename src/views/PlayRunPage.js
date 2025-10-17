@@ -7,6 +7,8 @@ import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
+import useDistanceTracking from '../hooks/useDistanceTracking';
+import useElapsedTime from '../hooks/useElapsedTime';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
 import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
@@ -84,6 +86,9 @@ const PlayRunPage = () => {
 
   const manualMode = !trackingEnabled;
 
+  // Timer för att mäta total tid
+  const { formattedTime } = useElapsedTime(true);
+
   useEffect(() => {
     setSelectedOption(null);
     setFeedback(null);
@@ -114,6 +119,18 @@ const PlayRunPage = () => {
     return Math.max(0, currentParticipant.currentOrder - 1);
   }, [currentParticipant]);
 
+  // Distans-baserad tracking (endast för distance-based runs)
+  const isDistanceBased = currentRun?.type === 'distance-based';
+  
+  // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
+  const distanceTracking = useDistanceTracking({
+    coords,
+    trackingEnabled: trackingEnabled,
+    distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
+    currentQuestionIndex: currentOrderIndex,
+    totalQuestions: orderedQuestions.length
+  });
+
   const nextCheckpoint = currentRun?.checkpoints?.[currentOrderIndex] || null;
 
   useEffect(() => {
@@ -143,9 +160,9 @@ const PlayRunPage = () => {
   const { dataUrl, isLoading: qrLoading, error: qrError } = useQRCode(joinLink, 280);
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
-  const shouldShowQuestion =
-    (manualMode && questionVisible) || // Manuell start
-    (!manualMode && nearCheckpoint);   // GPS-läge och nära checkpoint
+  const shouldShowQuestion = isDistanceBased
+    ? (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
+    : (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-based: checkpoint eller manuell
 
   const currentQuestion = shouldShowQuestion
     ? orderedQuestions[currentOrderIndex] || null
@@ -177,6 +194,11 @@ const PlayRunPage = () => {
       setTimeout(() => {
         setQuestionVisible(false);
       }, 2000);
+    }
+
+    // Återställ distansräknare för distance-based runs
+    if (isDistanceBased) {
+      distanceTracking.resetQuestionDistance();
     }
   };
 
@@ -241,10 +263,61 @@ const PlayRunPage = () => {
           route={currentRun.route}
           startPoint={currentRun.startPoint}
           manualMode={!trackingEnabled}
+          gpsTrail={trackingEnabled ? distanceTracking.gpsTrail : null}
           onCheckpointClick={() => {
             setQuestionVisible(true);
           }}
         />
+
+        {/* Stats overlay - Distans och Tid för alla rund-typer */}
+        {trackingEnabled && (
+          <div className="absolute top-4 left-4 right-4 z-20">
+            <div className="bg-slate-900/90 backdrop-blur-sm rounded-lg border border-cyan-400/40 p-3 shadow-lg">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                {/* Total distans (alla typer) */}
+                <div className="flex items-center gap-2">
+                  <span className="text-cyan-400">🚶</span>
+                  <span className="text-white font-medium">
+                    {distanceTracking.totalDistance >= 1000 
+                      ? `${(distanceTracking.totalDistance / 1000).toFixed(2)} km`
+                      : `${Math.round(distanceTracking.totalDistance)} m`
+                    }
+                  </span>
+                </div>
+
+                {/* Tid */}
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-400">⏱️</span>
+                  <span className="text-white font-medium">
+                    {formattedTime}
+                  </span>
+                </div>
+
+                {/* Distans till nästa (endast distance-based) */}
+                {isDistanceBased && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-purple-400">📍</span>
+                    <span className="text-white font-medium">
+                      {Math.round(distanceTracking.distanceToNextQuestion)}m
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress bar (endast för distance-based) */}
+              {isDistanceBased && (
+                <div className="mt-2 h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, ((currentRun.distanceBetweenQuestions - distanceTracking.distanceToNextQuestion) / currentRun.distanceBetweenQuestions) * 100)}%`
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Frågeoverlay över kartan */}
         {currentQuestion && (

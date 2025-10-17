@@ -28,7 +28,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
-import { buildHostedRun, buildGeneratedRun } from '../services/runFactory';
+import { buildHostedRun, buildGeneratedRun, buildDistanceBasedRun } from '../services/runFactory';
 import { FALLBACK_POSITION, PARTICIPANT_TIMEOUT_MS } from '../utils/constants';
 
 /**
@@ -240,21 +240,26 @@ export const firestoreRunGateway = {
     return run;
   },
 
-  /** Sparar en auto-genererad runda. */
+  /** Sparar en auto-genererad runda (både rutt-baserad och distans-baserad). */
   async generateRouteRun(payload, creator) {
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] generateRouteRun startar med payload:', payload);
     }
 
-    const run = await buildGeneratedRun(payload, creator);
+    // Använd buildDistanceBasedRun om runType är 'distance-based'
+    const run = payload.runType === 'distance-based'
+      ? await buildDistanceBasedRun(payload, creator)
+      : await buildGeneratedRun(payload, creator);
 
     if (process.env.NODE_ENV !== 'production') {
-      console.debug('[FirestoreGateway] buildGeneratedRun returnerade:', {
+      console.debug('[FirestoreGateway] build returnerade:', {
         id: run.id,
+        type: run.type,
         hasRoute: !!run.route,
         routePointCount: run.route?.length || 0,
         hasCheckpoints: !!run?.checkpoints,
-        checkpointCount: run.checkpoints?.length || 0
+        checkpointCount: run.checkpoints?.length || 0,
+        distanceBetweenQuestions: run.distanceBetweenQuestions
       });
     }
 
@@ -263,7 +268,7 @@ export const firestoreRunGateway = {
     await setDoc(doc(hämtaRundsCollection(), run.id), { ...serialized, createdAt: serverTimestamp() });
 
     if (process.env.NODE_ENV !== 'production') {
-      console.debug('[FirestoreGateway] Returnerar run med route:', !!run.route);
+      console.debug('[FirestoreGateway] Returnerar run med type:', run.type);
     }
 
     return run;
