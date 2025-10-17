@@ -1169,7 +1169,9 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
       const {questions} = req.body;
 
       if (!Array.isArray(questions) || questions.length === 0) {
-        return res.status(400).json({error: "questions must be a non-empty array"});
+        return res.status(400).json({
+          error: "questions must be a non-empty array",
+        });
       }
 
       // Validate each question has required fields
