@@ -1,6 +1,6 @@
 const {logger} = require("firebase-functions");
 const {createHttpsHandler} = require("../../utils/middleware");
-const {cors} = require("../../config/cors");
+const {corsMiddleware} = require("../../config/cors");
 const {ensurePost} = require("../../utils/middleware");
 const {stripeSecretKey} = require("../../config/runtime");
 
@@ -12,7 +12,7 @@ const {stripeSecretKey} = require("../../config/runtime");
  * @returns {Object} - { client_secret, payment_intent_id } or error
  */
 module.exports = createHttpsHandler(async (req, res) => {
-  return cors(req, res, async () => {
+  return corsMiddleware(req, res, async () => {
     if (!ensurePost(req, res)) {
       return;
     }
