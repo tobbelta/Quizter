@@ -2,10 +2,22 @@
  * Background Location Service
  * Hanterar GPS-tracking även när appen är i bakgrunden eller skärmen är släckt
  */
-import { BackgroundGeolocationPlugin } from '@capacitor-community/background-geolocation';
-import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+// Registrera plugins dynamiskt (lazy loading för webb-kompatibilitet)
+const BackgroundGeolocationPlugin = Capacitor.isNativePlatform() 
+  ? registerPlugin('BackgroundGeolocation')
+  : null;
+
+const LocalNotifications = Capacitor.isNativePlatform()
+  ? registerPlugin('LocalNotifications')
+  : null;
+
+const Haptics = Capacitor.isNativePlatform()
+  ? registerPlugin('Haptics')
+  : null;
+
+const ImpactStyle = { Heavy: 'HEAVY', Medium: 'MEDIUM', Light: 'LIGHT' };
 
 class BackgroundLocationService {
   constructor() {
@@ -64,6 +76,12 @@ class BackgroundLocationService {
    * Native tracking (Android/iOS)
    */
   async startNativeTracking() {
+    if (!BackgroundGeolocationPlugin) {
+      console.warn('[BackgroundLocation] Plugin not available, falling back to web');
+      await this.startWebTracking();
+      return;
+    }
+
     try {
       this.watcher = await BackgroundGeolocationPlugin.addWatcher(
         {
@@ -217,6 +235,11 @@ class BackgroundLocationService {
       return;
     }
 
+    if (!Haptics) {
+      console.warn('[BackgroundLocation] Haptics plugin not available');
+      return;
+    }
+
     try {
       await Haptics.impact({ style: ImpactStyle.Heavy });
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -230,6 +253,11 @@ class BackgroundLocationService {
    * Visar notifikation
    */
   async showNotification() {
+    if (!LocalNotifications) {
+      console.warn('[BackgroundLocation] LocalNotifications plugin not available');
+      return;
+    }
+
     try {
       // Begär permissions
       const permission = await LocalNotifications.requestPermissions();
@@ -298,7 +326,9 @@ class BackgroundLocationService {
       }
 
       // Notification permissions
-      await LocalNotifications.requestPermissions();
+      if (LocalNotifications) {
+        await LocalNotifications.requestPermissions();
+      }
     } catch (error) {
       console.error('[BackgroundLocation] Permission request failed:', error);
     }
