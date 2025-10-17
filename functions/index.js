@@ -275,7 +275,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
     });
 
     const existingQuestions = await loadExistingQuestions(db);
-    const {questionsToImport, stats} = prepareQuestionsForImport(questions, existingQuestions);
+    const {questionsToImport, stats} = prepareQuestionsForImport(
+        questions,
+        existingQuestions,
+    );
 
     if (questionsToImport.length === 0) {
       throw new Error("No new questions passed validation/dublettkontroll.");
@@ -625,235 +628,239 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
   }
 });
 
-exports.runaiemojiregeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-  const {taskId} = req.data;
-  const db = admin.firestore();
-  const taskDocRef = db.collection("backgroundTasks").doc(taskId);
+exports.runaiemojiregeneration = onTaskDispatched(
+    taskRuntimeDefaults,
+    async (req) => {
+      const {taskId} = req.data;
+      const db = admin.firestore();
+      const taskDocRef = db.collection("backgroundTasks").doc(taskId);
 
-  const safeUpdateProgress = async ({phase = "", completed = 0, total = 0, details = ""}) => {
-    try {
-      await db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(taskDocRef);
-        if (!snapshot.exists) {
-          throw new Error(`Task ${taskId} not found during progress update`);
+      const safeUpdateProgress = async (
+          {phase = "", completed = 0, total = 0, details = ""},
+      ) => {
+        try {
+          await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(taskDocRef);
+            if (!snapshot.exists) {
+              throw new Error(`Task ${taskId} not found during progress update`);
+            }
+
+            const data = snapshot.data() || {};
+            const status = data.status;
+            if (["cancelled", "failed"].includes(status)) {
+              return;
+            }
+
+            const nextProgress = {
+              phase,
+              completed: Math.max(0, completed),
+              total: Math.max(0, total),
+              details,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+
+            transaction.update(taskDocRef, {progress: nextProgress});
+          });
+        } catch (progressError) {
+          logger.warn(
+              `Failed to update progress for emoji regeneration task ${taskId}`,
+              {error: progressError.message},
+          );
+        }
+      };
+
+      try {
+        await taskDocRef.update({
+          status: "processing",
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          progress: {
+            phase: "Initierar",
+            completed: 0,
+            total: 0,
+            details: "Förbereder regenerering av illustrationer...",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+        });
+        logger.info(`Processing illustration regeneration task ${taskId}`);
+
+        const illustrationProviders = await getProvidersForPurpose("illustration");
+        if (illustrationProviders.length === 0) {
+          throw new Error("No illustration providers are enabled and configured");
         }
 
-        const data = snapshot.data() || {};
-        const status = data.status;
-        if (["cancelled", "failed"].includes(status)) {
-          return;
+        const questionsRef = db.collection("questions");
+        const snapshot = await questionsRef.get();
+
+        if (snapshot.empty) {
+          throw new Error("No questions found in Firestore");
         }
 
-        const nextProgress = {
-          phase,
-          completed: Math.max(0, completed),
-          total: Math.max(0, total),
-          details,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        await safeUpdateProgress({
+          phase: "Hämtar frågor",
+          completed: 0,
+          total: snapshot.size,
+          details: `Hittade ${snapshot.size} frågor att uppdatera`,
+        });
+
+        let generatedCount = 0;
+        let failedCount = 0;
+        let processedCount = 0;
+        const updates = [];
+
+        const toArray = (value) => {
+          if (Array.isArray(value)) {
+            return value;
+          }
+          if (value && typeof value === "object") {
+            return Object.values(value);
+          }
+          if (typeof value === "string" && value.trim().length > 0) {
+            return [value];
+          }
+          return [];
         };
 
-        transaction.update(taskDocRef, {progress: nextProgress});
-      });
-    } catch (progressError) {
-      logger.warn(
-          `Failed to update progress for emoji regeneration task ${taskId}`,
-          {error: progressError.message},
-      );
-    }
-  };
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
 
-  try {
-    await taskDocRef.update({
-      status: "processing",
-      startedAt: admin.firestore.FieldValue.serverTimestamp(),
-      progress: {
-        phase: "Initierar",
-        completed: 0,
-        total: 0,
-        details: "Förbereder regenerering av illustrationer...",
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-    });
-    logger.info(`Processing illustration regeneration task ${taskId}`);
-
-    const illustrationProviders = await getProvidersForPurpose("illustration");
-    if (illustrationProviders.length === 0) {
-      throw new Error("No illustration providers are enabled and configured");
-    }
-
-    const questionsRef = db.collection("questions");
-    const snapshot = await questionsRef.get();
-
-    if (snapshot.empty) {
-      throw new Error("No questions found in Firestore");
-    }
-
-    await safeUpdateProgress({
-      phase: "Hämtar frågor",
-      completed: 0,
-      total: snapshot.size,
-      details: `Hittade ${snapshot.size} frågor att uppdatera`,
-    });
-
-    let generatedCount = 0;
-    let failedCount = 0;
-    let processedCount = 0;
-    const updates = [];
-
-    const toArray = (value) => {
-      if (Array.isArray(value)) {
-        return value;
-      }
-      if (value && typeof value === "object") {
-        return Object.values(value);
-      }
-      if (typeof value === "string" && value.trim().length > 0) {
-        return [value];
-      }
-      return [];
-    };
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-
-      const questionTextRaw =
+          const questionTextRaw =
                 data.languages?.sv?.text ??
                 data.question?.sv ??
                 data.question ??
                 data.text ??
                 data.languages?.en?.text ??
                 "";
-      const questionText =
+          const questionText =
         typeof questionTextRaw === "string" &&
         questionTextRaw.trim().length > 0 ?
           questionTextRaw :
           "Okänd fråga från tidigare import";
 
-      const rawOptions =
+          const rawOptions =
                 data.languages?.sv?.options ??
                 data.options?.sv ??
                 data.options ??
                 data.languages?.en?.options ??
                 [];
-      const normalizedOptions = toArray(rawOptions)
-          .map((option) => (typeof option === "string" ? option : String(option ?? "")))
-          .filter((option) => option.trim().length > 0);
+          const normalizedOptions = toArray(rawOptions)
+              .map((option) => (typeof option === "string" ? option : String(option ?? "")))
+              .filter((option) => option.trim().length > 0);
 
-      const explanationText =
+          const explanationText =
                 data.languages?.sv?.explanation ??
                 data.explanation?.sv ??
                 data.explanation ??
                 data.languages?.en?.explanation ??
                 "";
 
-      const questionPayload = {
-        question: questionText,
-        options: normalizedOptions,
-        explanation: explanationText,
-      };
+          const questionPayload = {
+            question: questionText,
+            options: normalizedOptions,
+            explanation: explanationText,
+          };
 
-      const emojiOutcome = await runEmojiGenerationWithProviders(
-          questionPayload,
-          illustrationProviders,
-          doc.id,
-          null,
-      );
+          const emojiOutcome = await runEmojiGenerationWithProviders(
+              questionPayload,
+              illustrationProviders,
+              doc.id,
+              null,
+          );
 
-      if (emojiOutcome) {
-        updates.push({
-          ref: doc.ref,
-          data: {
-            illustration: emojiOutcome.emoji,
-            illustrationProvider: emojiOutcome.provider.name,
-            illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+          if (emojiOutcome) {
+            updates.push({
+              ref: doc.ref,
+              data: {
+                illustration: emojiOutcome.emoji,
+                illustrationProvider: emojiOutcome.provider.name,
+                illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+            });
+            generatedCount++;
+          } else {
+            failedCount++;
+            logger.warn(
+                "All illustration providers failed to generate emoji for question " +
+            doc.id,
+            );
+          }
+
+          processedCount++;
+          await safeUpdateProgress({
+            phase: "Regenererar illustrationer",
+            completed: processedCount,
+            total: snapshot.size,
+            details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
+          });
+        }
+
+        await safeUpdateProgress({
+          phase: "Sparar ändringar",
+          completed: snapshot.size,
+          total: snapshot.size,
+          details: `Sparar ${updates.length} uppdateringar till databasen...`,
+        });
+
+        let currentBatch = db.batch();
+        let batchCount = 0;
+        const batchOps = [];
+
+        for (const update of updates) {
+          currentBatch.update(update.ref, update.data);
+          batchCount++;
+
+          if (batchCount >= 400) {
+            batchOps.push(currentBatch.commit());
+            currentBatch = db.batch();
+            batchCount = 0;
+          }
+        }
+
+        if (batchCount > 0) {
+          batchOps.push(currentBatch.commit());
+        }
+
+        await Promise.all(batchOps);
+
+        const result = {
+          generated: generatedCount,
+          failed: failedCount,
+          total: snapshot.size,
+        };
+
+        await taskDocRef.update({
+          status: "completed",
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          result,
+          progress: {
+            phase: "Klar",
+            completed: snapshot.size,
+            total: snapshot.size,
+            details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
         });
-        generatedCount++;
-      } else {
-        failedCount++;
-        logger.warn(
-            "All illustration providers failed to generate emoji for question " +
-            doc.id,
+        logger.info(
+            `Successfully completed illustration regeneration task ${taskId}`,
         );
+      } catch (error) {
+        logger.error(
+            `Failed illustration regeneration task ${taskId}`,
+            {error: error.message, stack: error.stack},
+        );
+        await taskDocRef.update({
+          status: "failed",
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: error.message,
+          progress: {
+            phase: "Misslyckades",
+            completed: 0,
+            total: 0,
+            details: error.message,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+        });
       }
-
-      processedCount++;
-      await safeUpdateProgress({
-        phase: "Regenererar illustrationer",
-        completed: processedCount,
-        total: snapshot.size,
-        details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
-      });
-    }
-
-    await safeUpdateProgress({
-      phase: "Sparar ändringar",
-      completed: snapshot.size,
-      total: snapshot.size,
-      details: `Sparar ${updates.length} uppdateringar till databasen...`,
     });
-
-    let currentBatch = db.batch();
-    let batchCount = 0;
-    const batchOps = [];
-
-    for (const update of updates) {
-      currentBatch.update(update.ref, update.data);
-      batchCount++;
-
-      if (batchCount >= 400) {
-        batchOps.push(currentBatch.commit());
-        currentBatch = db.batch();
-        batchCount = 0;
-      }
-    }
-
-    if (batchCount > 0) {
-      batchOps.push(currentBatch.commit());
-    }
-
-    await Promise.all(batchOps);
-
-    const result = {
-      generated: generatedCount,
-      failed: failedCount,
-      total: snapshot.size,
-    };
-
-    await taskDocRef.update({
-      status: "completed",
-      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-      result,
-      progress: {
-        phase: "Klar",
-        completed: snapshot.size,
-        total: snapshot.size,
-        details: `${generatedCount} illustrationer uppdaterade, ${failedCount} misslyckades`,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-    });
-    logger.info(
-        `Successfully completed illustration regeneration task ${taskId}`,
-    );
-  } catch (error) {
-    logger.error(
-        `Failed illustration regeneration task ${taskId}`,
-        {error: error.message, stack: error.stack},
-    );
-    await taskDocRef.update({
-      status: "failed",
-      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-      error: error.message,
-      progress: {
-        phase: "Misslyckades",
-        completed: 0,
-        total: 0,
-        details: error.message,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-    });
-  }
-});
 
 /**
  * Task-dispatched function to run AI question validation.
@@ -1426,7 +1433,8 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           if (Array.isArray(result.issues) && result.issues.length > 0) {
             return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
           }
-          return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+          return [`[${providerLabel}] AI-valideringen rapporterade ett ` +
+                  `problem utan detaljer`];
         });
 
         if (invalidProviders.length > 0 && suggestedCorrectOption === undefined) {
@@ -1511,10 +1519,11 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
           );
           // Continue processing even if update fails
         }
-
-        results.push(questionResult);
       } catch (error) {
-        logger.error(`Failed to validate question in batch ${taskId}`, {error: error.message});
+        logger.error(
+            `Failed to validate question in batch ${taskId}`,
+            {error: error.message},
+        );
         results.push({
           questionId: questionData.id,
           valid: false,
@@ -1645,189 +1654,193 @@ exports.batchRegenerateEmojis = createHttpsHandler(async (req, res) => {
 /**
  * Task-dispatched function to run batch emoji regeneration.
  */
-exports.runaibatchregenerateemojis = onTaskDispatched(taskRuntimeDefaults, async (req) => {
-  const {taskId, questionIds} = req.data;
-  const db = admin.firestore();
-  const taskDocRef = db.collection("backgroundTasks").doc(taskId);
+exports.runaibatchregenerateemojis = onTaskDispatched(
+    taskRuntimeDefaults,
+    async (req) => {
+      const {taskId, questionIds} = req.data;
+      const db = admin.firestore();
+      const taskDocRef = db.collection("backgroundTasks").doc(taskId);
 
-  const safeUpdateProgress = async ({phase = "", completed = 0, total = 0, details = ""}) => {
-    try {
-      await db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(taskDocRef);
-        if (!snapshot.exists) {
-          throw new Error(`Task ${taskId} not found during progress update`);
+      const safeUpdateProgress = async (
+          {phase = "", completed = 0, total = 0, details = ""},
+      ) => {
+        try {
+          await db.runTransaction(async (transaction) => {
+            const snapshot = await transaction.get(taskDocRef);
+            if (!snapshot.exists) {
+              throw new Error(`Task ${taskId} not found during progress update`);
+            }
+            const data = snapshot.data() || {};
+            if (["cancelled", "failed", "completed"].includes(data.status)) {
+              return;
+            }
+            const nextProgress = {
+              phase,
+              completed,
+              total,
+              details,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+            transaction.update(taskDocRef, {progress: nextProgress});
+          });
+        } catch (progressError) {
+          logger.warn(
+              `Failed to update progress for batch emoji task ${taskId}`,
+              {error: progressError.message},
+          );
         }
-        const data = snapshot.data() || {};
-        if (["cancelled", "failed", "completed"].includes(data.status)) {
-          return;
-        }
-        const nextProgress = {
-          phase,
-          completed,
-          total,
-          details,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-        transaction.update(taskDocRef, {progress: nextProgress});
-      });
-    } catch (progressError) {
-      logger.warn(
-          `Failed to update progress for batch emoji task ${taskId}`,
-          {error: progressError.message},
-      );
-    }
-  };
-
-  try {
-    await taskDocRef.update({
-      status: "processing",
-      startedAt: admin.firestore.FieldValue.serverTimestamp(),
-      progress: {
-        phase: "Initierar",
-        completed: 0,
-        total: questionIds.length,
-        details: "Förbereder regenerering av emojis...",
-      },
-    });
-
-    const illustrationProviders = await getProvidersForPurpose(
-        "illustration",
-    );
-    if (illustrationProviders.length === 0) {
-      throw new Error("No illustration providers are enabled and configured");
-    }
-
-    let generatedCount = 0;
-    let failedCount = 0;
-    const updates = [];
-
-    const questionRefs = questionIds.map(
-        (id) => db.collection("questions").doc(id),
-    );
-    const questionSnapshots = await db.getAll(...questionRefs);
-
-    await safeUpdateProgress({
-      phase: "Hämtar frågor",
-      completed: 0,
-      total: questionIds.length,
-      details: `Hittade ${questionSnapshots.length} frågor att uppdatera`,
-    });
-
-    const toArray = (value) => {
-      if (Array.isArray(value)) return value;
-      if (value && typeof value === "object") return Object.values(value);
-      if (typeof value === "string" && value.trim().length > 0) return [value];
-      return [];
-    };
-
-    for (const doc of questionSnapshots) {
-      if (!doc.exists) {
-        logger.warn(`Question ${doc.id} not found in batch emoji regeneration.`);
-        failedCount++;
-        continue;
-      }
-      const data = doc.data();
-      const questionPayload = {
-        question: data.languages?.sv?.text || data.question?.sv ||
-          data.question || data.text || "",
-        options: toArray(
-            data.languages?.sv?.options || data.options?.sv ||
-          data.options || [],
-        ),
-        explanation: data.languages?.sv?.explanation ||
-          data.explanation?.sv || data.explanation || "",
       };
 
-      const emojiOutcome = await runEmojiGenerationWithProviders(
-          questionPayload,
-          illustrationProviders,
-          doc.id,
-          null,
-      );
-
-      if (emojiOutcome) {
-        updates.push({
-          ref: doc.ref,
-          data: {
-            illustration: emojiOutcome.emoji,
-            illustrationProvider: emojiOutcome.provider.name,
-            illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+      try {
+        await taskDocRef.update({
+          status: "processing",
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          progress: {
+            phase: "Initierar",
+            completed: 0,
+            total: questionIds.length,
+            details: "Förbereder regenerering av emojis...",
           },
         });
-        generatedCount++;
-      } else {
-        failedCount++;
-        logger.warn(
-            "All illustration providers failed to generate emoji " +
-          "for question " + doc.id,
+
+        const illustrationProviders = await getProvidersForPurpose(
+            "illustration",
         );
-      }
-      await safeUpdateProgress({
-        phase: "Regenererar emojis",
-        completed: generatedCount + failedCount,
-        total: questionIds.length,
-        details: `${generatedCount} emojis uppdaterade, ` +
+        if (illustrationProviders.length === 0) {
+          throw new Error("No illustration providers are enabled and configured");
+        }
+
+        let generatedCount = 0;
+        let failedCount = 0;
+        const updates = [];
+
+        const questionRefs = questionIds.map(
+            (id) => db.collection("questions").doc(id),
+        );
+        const questionSnapshots = await db.getAll(...questionRefs);
+
+        await safeUpdateProgress({
+          phase: "Hämtar frågor",
+          completed: 0,
+          total: questionIds.length,
+          details: `Hittade ${questionSnapshots.length} frågor att uppdatera`,
+        });
+
+        const toArray = (value) => {
+          if (Array.isArray(value)) return value;
+          if (value && typeof value === "object") return Object.values(value);
+          if (typeof value === "string" && value.trim().length > 0) return [value];
+          return [];
+        };
+
+        for (const doc of questionSnapshots) {
+          if (!doc.exists) {
+            logger.warn(`Question ${doc.id} not found in batch emoji regeneration.`);
+            failedCount++;
+            continue;
+          }
+          const data = doc.data();
+          const questionPayload = {
+            question: data.languages?.sv?.text || data.question?.sv ||
+          data.question || data.text || "",
+            options: toArray(
+                data.languages?.sv?.options || data.options?.sv ||
+          data.options || [],
+            ),
+            explanation: data.languages?.sv?.explanation ||
+          data.explanation?.sv || data.explanation || "",
+          };
+
+          const emojiOutcome = await runEmojiGenerationWithProviders(
+              questionPayload,
+              illustrationProviders,
+              doc.id,
+              null,
+          );
+
+          if (emojiOutcome) {
+            updates.push({
+              ref: doc.ref,
+              data: {
+                illustration: emojiOutcome.emoji,
+                illustrationProvider: emojiOutcome.provider.name,
+                illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+            });
+            generatedCount++;
+          } else {
+            failedCount++;
+            logger.warn(
+                "All illustration providers failed to generate emoji " +
+          "for question " + doc.id,
+            );
+          }
+          await safeUpdateProgress({
+            phase: "Regenererar emojis",
+            completed: generatedCount + failedCount,
+            total: questionIds.length,
+            details: `${generatedCount} emojis uppdaterade, ` +
           `${failedCount} misslyckades`,
-      });
-    }
+          });
+        }
 
-    await safeUpdateProgress({
-      phase: "Sparar ändringar",
-      completed: questionIds.length,
-      total: questionIds.length,
-      details: `Sparar ${updates.length} uppdateringar...`,
-    });
+        await safeUpdateProgress({
+          phase: "Sparar ändringar",
+          completed: questionIds.length,
+          total: questionIds.length,
+          details: `Sparar ${updates.length} uppdateringar...`,
+        });
 
-    let currentBatch = db.batch();
-    let batchCount = 0;
-    const batchOps = [];
-    for (const update of updates) {
-      currentBatch.update(update.ref, update.data);
-      batchCount++;
-      if (batchCount >= 400) {
-        batchOps.push(currentBatch.commit());
-        currentBatch = db.batch();
-        batchCount = 0;
-      }
-    }
-    if (batchCount > 0) {
-      batchOps.push(currentBatch.commit());
-    }
-    await Promise.all(batchOps);
+        let currentBatch = db.batch();
+        let batchCount = 0;
+        const batchOps = [];
+        for (const update of updates) {
+          currentBatch.update(update.ref, update.data);
+          batchCount++;
+          if (batchCount >= 400) {
+            batchOps.push(currentBatch.commit());
+            currentBatch = db.batch();
+            batchCount = 0;
+          }
+        }
+        if (batchCount > 0) {
+          batchOps.push(currentBatch.commit());
+        }
+        await Promise.all(batchOps);
 
-    const result = {
-      generated: generatedCount,
-      failed: failedCount,
-      total: questionIds.length,
-    };
-    await taskDocRef.update({
-      status: "completed",
-      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-      result,
-      progress: {
-        phase: "Klar",
-        completed: questionIds.length,
-        total: questionIds.length,
-        details: `${generatedCount} emojis uppdaterade, ` +
+        const result = {
+          generated: generatedCount,
+          failed: failedCount,
+          total: questionIds.length,
+        };
+        await taskDocRef.update({
+          status: "completed",
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          result,
+          progress: {
+            phase: "Klar",
+            completed: questionIds.length,
+            total: questionIds.length,
+            details: `${generatedCount} emojis uppdaterade, ` +
           `${failedCount} misslyckades`,
-      },
+          },
+        });
+        logger.info(
+            `Successfully completed batch emoji regeneration task ${taskId}`,
+        );
+      } catch (error) {
+        logger.error(
+            `Failed batch emoji regeneration task ${taskId}`,
+            {error: error.message, stack: error.stack},
+        );
+        await taskDocRef.update({
+          status: "failed",
+          finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+          error: error.message,
+          progress: {phase: "Misslyckades", details: error.message},
+        });
+      }
     });
-    logger.info(
-        `Successfully completed batch emoji regeneration task ${taskId}`,
-    );
-  } catch (error) {
-    logger.error(
-        `Failed batch emoji regeneration task ${taskId}`,
-        {error: error.message, stack: error.stack},
-    );
-    await taskDocRef.update({
-      status: "failed",
-      finishedAt: admin.firestore.FieldValue.serverTimestamp(),
-      error: error.message,
-      progress: {phase: "Misslyckades", details: error.message},
-    });
-  }
-});
 
 // ============================================================================
 // ADMIN HANDLERS (Inline for now - to be refactored)
