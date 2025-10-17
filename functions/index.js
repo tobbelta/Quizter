@@ -1320,7 +1320,9 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
     // Process each question
     for (const questionData of questions) {
       try {
-        const {id, question, options, correctOption, explanation} = questionData;
+        const {
+          id, question, options, correctOption, explanation,
+        } = questionData;
 
         const validationResults = {};
         const reasoningSections = [];
