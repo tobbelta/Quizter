@@ -271,7 +271,9 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       phase: "Validerar frågor",
       completed: questions.length,
       total: amount,
-      details: `${questions.length} frågor genererade, kontrollerar dubletter...`,
+      details:
+          `${questions.length} frågor genererade, ` +
+          `kontrollerar dubletter...`,
     });
 
     const existingQuestions = await loadExistingQuestions(db);
@@ -396,7 +398,8 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       total: questionsToImport.length,
       details: canValidate ?
                 "Kör AI-validering med alla providers..." :
-                "Inga validation-providers aktiverade - hoppar över AI-validering",
+                "Inga validation-providers aktiverade - " +
+                "hoppar över AI-validering",
     });
 
     let validationSuccessCount = 0;
@@ -1769,7 +1772,9 @@ exports.runaibatchregenerateemojis = onTaskDispatched(
         const toArray = (value) => {
           if (Array.isArray(value)) return value;
           if (value && typeof value === "object") return Object.values(value);
-          if (typeof value === "string" && value.trim().length > 0) return [value];
+          if (typeof value === "string" && value.trim().length > 0) {
+            return [value];
+          }
           return [];
         };
 
