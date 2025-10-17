@@ -1,7 +1,7 @@
 const {logger} = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const {cors} = require("../../config/cors");
+const {corsMiddleware} = require("../../config/cors");
 
 /**
  * One-time function to update all existing questions with createdAt field
@@ -12,7 +12,7 @@ module.exports = onRequest({
   region: "europe-west1",
   timeoutSeconds: 300, // 5 minutes
 }, async (req, res) => {
-  cors(req, res, async () => {
+  corsMiddleware(req, res, async () => {
     try {
       logger.info("Starting update of questions with createdAt field");
 

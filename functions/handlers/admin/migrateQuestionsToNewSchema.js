@@ -1,7 +1,7 @@
 const {logger} = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const {cors} = require("../../config/cors");
+const {corsMiddleware} = require("../../config/cors");
 const {
   anthropicApiKey,
   openaiApiKey,
@@ -26,7 +26,7 @@ module.exports = onRequest({
   timeoutSeconds: 540, // 9 minutes
   secrets: [anthropicApiKey, openaiApiKey, geminiApiKey],
 }, async (req, res) => {
-  cors(req, res, async () => {
+  corsMiddleware(req, res, async () => {
     try {
       logger.info(
           "Starting AI-powered migration of questions to new schema",

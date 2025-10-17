@@ -1,7 +1,7 @@
 const {logger} = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const {cors} = require("../../config/cors");
+const {corsMiddleware} = require("../../config/cors");
 const {ensurePost} = require("../../utils/middleware");
 
 /**
@@ -13,7 +13,7 @@ module.exports = onRequest({
   timeoutSeconds: 60,
 },
 async (req, res) => {
-  cors(req, res, async () => {
+  corsMiddleware(req, res, async () => {
     if (!ensurePost(req, res)) {
       return;
     }
