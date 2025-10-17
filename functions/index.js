@@ -845,12 +845,6 @@ exports.runaiemojiregeneration = onTaskDispatched(
 
         await Promise.all(batchOps);
 
-        const result = {
-          generated: generatedCount,
-          failed: failedCount,
-          total: snapshot.size,
-        };
-
         await taskDocRef.update({
           status: "completed",
           finishedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -922,7 +916,9 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       finishedAt: admin.firestore.FieldValue.serverTimestamp(),
       error: "AI-valideringen avbröts: inga AI-leverantörer är konfigurerade.",
     });
-    logger.error(`AI validation task ${taskId} aborted: no AI providers configured.`);
+    logger.error(
+        `AI validation task ${taskId} aborted: no AI providers configured.`,
+    );
     return;
   }
 
@@ -985,7 +981,10 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           reasoningSections.push(`**Gemini:** ${result.reasoning}`);
         }
       } catch (error) {
-        logger.error("Gemini validation failed during task", {error: error.message});
+        logger.error(
+            "Gemini validation failed during task",
+            {error: error.message},
+        );
         validationResults.gemini = {
           valid: null,
           error: error.message,
@@ -1011,7 +1010,10 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
           reasoningSections.push(`**OpenAI:** ${result.reasoning}`);
         }
       } catch (error) {
-        logger.error("OpenAI validation failed during task", {error: error.message});
+        logger.error(
+            "OpenAI validation failed during task",
+            {error: error.message},
+        );
         validationResults.openai = {
           valid: null,
           error: error.message,
@@ -1182,7 +1184,9 @@ exports.batchValidateQuestions = createHttpsHandler(async (req, res) => {
 
       res.status(202).json({
         success: true,
-        message: `Batch validation of ${questions.length} questions has been queued.`,
+        message:
+            `Batch validation of ${questions.length} questions ` +
+            `has been queued.`,
         taskId: taskId,
         questionCount: questions.length,
       });
@@ -1771,7 +1775,9 @@ exports.runaibatchregenerateemojis = onTaskDispatched(
 
         for (const doc of questionSnapshots) {
           if (!doc.exists) {
-            logger.warn(`Question ${doc.id} not found in batch emoji regeneration.`);
+            logger.warn(
+                `Question ${doc.id} not found in batch emoji regeneration.`,
+            );
             failedCount++;
             continue;
           }
@@ -1800,7 +1806,8 @@ exports.runaibatchregenerateemojis = onTaskDispatched(
               data: {
                 illustration: emojiOutcome.emoji,
                 illustrationProvider: emojiOutcome.provider.name,
-                illustrationGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                illustrationGeneratedAt:
+                    admin.firestore.FieldValue.serverTimestamp(),
               },
             });
             generatedCount++;
