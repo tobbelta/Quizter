@@ -394,7 +394,6 @@ const GenerateRunPage = () => {
 
       if (run) {
         setGeneratedRun(run);
-        setIsRunSaved(false);
         analyticsService.logVisit('create_run', {
           runId: run.id,
           difficulty: form.difficulty,
@@ -408,6 +407,19 @@ const GenerateRunPage = () => {
           usedGPS: !!userPosition,
           originPosition,
         });
+
+        // Om allowRouteSelection är false, använd join-flödet för att gå direkt till spel
+        if (!form.allowRouteSelection) {
+          // Spara rundan lokalt om användaren inte är inloggad
+          if (!currentUser) {
+            localStorageService.addCreatedRun(run);
+          }
+          // Använd join-flödet som hanterar participant-registrering korrekt
+          navigate(`/join?code=${run.joinCode}`, { replace: true });
+        } else {
+          // Om allowRouteSelection är true, visa "Förslag på runda"
+          setIsRunSaved(false);
+        }
       }
     } catch (generationError) {
       console.error('❌ Fel vid generering:', generationError);
