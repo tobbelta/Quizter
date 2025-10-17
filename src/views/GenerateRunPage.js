@@ -27,6 +27,7 @@ const defaultForm = {
   lengthMeters: 3000,
   questionCount: 9,
   preferGreenAreas: false,
+  allowRouteSelection: false,
 };
 
 const difficultyOptions = [
@@ -235,6 +236,7 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
+        allowRouteSelection: form.allowRouteSelection,
         origin: originPosition,
         seed: newSeed,
         preferGreenAreas: form.preferGreenAreas,
@@ -384,6 +386,7 @@ const GenerateRunPage = () => {
         lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
+        allowRouteSelection: form.allowRouteSelection,
         origin: originPosition,
         seed,
         preferGreenAreas: form.preferGreenAreas,
@@ -633,6 +636,22 @@ const GenerateRunPage = () => {
                 className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
               />
               Föredra parker och stigar
+            </label>
+
+            <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
+              <input
+                type="checkbox"
+                name="allowRouteSelection"
+                checked={form.allowRouteSelection}
+                onChange={handleChange}
+                className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
+              />
+              <div className="flex-1">
+                <span>Visa karta innan start</span>
+                <p className="text-xs font-normal text-gray-400 mt-0.5">
+                  Om ikryssad kan deltagare se kartan och generera om rutten innan de startar
+                </p>
+              </div>
             </label>
 
         {currentUser?.isAnonymous && !alias.trim() && (
