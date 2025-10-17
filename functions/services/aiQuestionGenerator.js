@@ -16,7 +16,7 @@ const CATEGORIES = [
 const AGE_GROUPS = ['children', 'youth', 'adults'];
 
 // Målgrupper
-const TARGET_AUDIENCES = ['swedish']; // Kan utökas senare med 'english', 'german', etc.
+const TARGET_AUDIENCES = ['swedish', 'international']; // swedish = svensk kontext, international = global kontext
 
 /**
  * Genererar frågor med Anthropic Claude
@@ -35,11 +35,11 @@ async function generateQuestions({ amount = 10, category = null, ageGroup = null
 
   const anthropic = new Anthropic({ apiKey });
 
-  // Översätt åldersgrupp till läsbart format
+  // Översätt åldersgrupp till läsbart format med STRIKTA kriterier
   const ageGroupMapping = {
-    'children': 'barn (6-12 år, enkla och roliga frågor anpassade för barn, svensk kontext med svenska förhållanden och kultur)',
-    'youth': 'ungdomar (13-25 år, moderna frågor om sociala medier, populärkultur, idrott och aktuella trender, globalt perspektiv)',
-    'adults': 'vuxna (25+ år, utmanande frågor om samhälle, historia, kultur och vetenskap, svensk kontext med svenska förhållanden)'
+    'children': 'barn (6-12 år) - ENDAST mycket enkla frågor med konkreta, vardagliga ämnen som barn känner till. Enkla ord, tydliga svar. Exempel: "Vilken färg har himlen?" eller "Hur många ben har en hund?". ABSOLUT INTE: abstrakta koncept, komplexa fakta, kulturella referenser som barn inte känner till. Sätt targetAudience till "swedish".',
+    'youth': 'ungdomar (13-25 år) - MÅSTE ALLTID ha INTERNATIONELL inriktning och global räckvidd. Frågor ska handla om globala fenomen som ungdomar världen över känner till, INTE om nationella eller lokala förhållanden. Ungdomar intresserar sig för kategorier (sociala medier, musik, film, sport, gaming, tech) snarare än geografiska begränsningar. INKLUDERA FLER FRÅGOR OM: Internationella influencers på TikTok/Instagram/Snapchat/YouTube och deras liv, virala trender, challenges, memes, internationella kändisar och deras aktuella händelser, globala popkultur-fenomen. Exempel PÅ RÄTT: "Vilket år lanserades TikTok?", "Vem har flest följare på Instagram 2024?", "Vilken TikTok-influencer blev känd för dansvideos 2020?", "Vilket år lanserades Snapchat?", "Vem vann fotbolls-VM 2022?", "Vilken artist har flest streams på Spotify?", "Vilket Netflix-original blev mest streamat 2023?", "Vilken YouTuber har flest prenumeranter?". Exempel PÅ FEL: "Vem är Sveriges statsminister?", "Vilken svensk artist...?", "Vilket lag vann Allsvenskan...?", "Vilken svensk influencer...?". Sätt ALLTID targetAudience till "international".',
+    'adults': 'vuxna (25+ år) - Utmanande frågor som kräver allmänbildning, historisk kunskap, eller samhällskunskap. Svensk kontext med svenska förhållanden. KRÄVER: vuxen kunskapsnivå, abstrakt tänkande. Exempel: "När infördes allmän rösträtt i Sverige?" eller "Vad är BNP?". Sätt targetAudience till "swedish".'
   };
 
   // Hantera kategorier (kan vara en sträng eller array)
@@ -51,12 +51,12 @@ async function generateQuestions({ amount = 10, category = null, ageGroup = null
   // Hantera åldersgrupper (kan vara en sträng eller array)
   const ageGroups = Array.isArray(ageGroup) ? ageGroup : (ageGroup ? [ageGroup] : null);
   const ageGroupPrompt = ageGroups && ageGroups.length > 0
-    ? `Frågorna ska passa för: ${ageGroups.map(ag => ageGroupMapping[ag] || ag).join(', ')}. Om en fråga kan passa flera åldersgrupper, markera den för alla relevanta grupper.`
-    : `Blanda olika åldersgrupper: barn (children), ungdomar (youth), vuxna (adults). Frågor kan passa flera åldersgrupper samtidigt.`;
+    ? `Frågorna ska passa för: ${ageGroups.map(ag => ageGroupMapping[ag] || ag).join(', ')}. Var MYCKET STRIKT - välj endast EN åldersgrupp per fråga baserat på svårighetsgrad och kunskap som krävs. Tagga ALDRIG en fråga för flera åldersgrupper såvida den inte genuint kräver exakt samma kunskapsnivå för båda grupperna (mycket sällsynt).`
+    : `Blanda olika åldersgrupper: barn (children), ungdomar (youth), vuxna (adults). Var MYCKET STRIKT - varje fråga ska ha ENDAST EN åldersgrupp baserat på svårighetsgrad och kunskap som krävs. Multi-age ska vara extremt sällsynt.`;
 
   const targetAudienceContext = targetAudience === 'swedish'
-    ? 'Frågor för barn och vuxna ska ha svensk kontext (svenska förhållanden, svensk geografi, svensk kultur, svenska förebilder). Ungdomsfrågor KAN ha antingen svensk eller internationell kontext - om frågan är internationell (globala fenomen, internationell populärkultur, sociala medier), sätt targetAudience till "international".'
-    : 'Frågor ska ha internationellt perspektiv.';
+    ? 'KRITISKT VIKTIGT - Målgrupp per åldersgrupp:\n- Barnfrågor (children): Svensk kontext (svenska förhållanden, svensk geografi, svensk kultur). Sätt targetAudience till "swedish".\n- Ungdomsfrågor (youth): MÅSTE ALLTID ha INTERNATIONELL kontext - frågor om globala fenomen som ungdomar världen över känner till. Ungdomar definieras av KATEGORIER (sociala medier, gaming, musik, streaming, internationell sport, tech, film) INTE av geografiska gränser. Inkludera FLER frågor om: Internationella TikTok/Instagram/Snapchat/YouTube-influencers och creators (t.ex. Charli D\'Amelio, Addison Rae, Khaby Lame, MrBeast, Emma Chamberlain), deras liv, samarbeten, virala moment, challenges, memes, globala kändisar och aktuella händelser i deras liv (t.ex. Billie Eilish, Dua Lipa, The Weeknd, BTS, Taylor Swift), Netflix-serier och filmer, streaming-trender. Undvik allt svenskt eller lokalt. Sätt ALLTID targetAudience till "international".\n- Vuxenfrågor (adults): Svensk kontext (svenska förhållanden, svensk historia, svenskt samhälle). Sätt targetAudience till "swedish".'
+    : 'Alla frågor ska ha internationellt perspektiv. Sätt targetAudience till "international".';
 
   const systemPrompt = `Du är en expert på att skapa quizfrågor. Generera ${amount} flervalsfrågor på både svenska och engelska.
 
@@ -99,8 +99,14 @@ Svara ENDAST med en giltig JSON-array med denna exakta struktur:
 Viktigt:
 - correctOption är 0-indexerad (0 = första alternativet, 1 = andra, etc.)
 - categories är en ARRAY och kan innehålla flera kategorier om frågan täcker flera ämnen: ${CATEGORIES.join(', ')}
-- ageGroups är en ARRAY och kan innehålla flera åldersgrupper om frågan passar för flera: children, youth, adults
-- En fråga som passar både barn och vuxna ska ha: "ageGroups": ["children", "adults"]
+- ageGroups är en ARRAY men ska NÄSTAN ALLTID innehålla endast EN åldersgrupp: children, youth, eller adults
+- VAR MYCKET STRIKT MED ÅLDERSINDELNING:
+  * Barnfrågor (children): Endast mycket enkla frågor som 6-åringar kan svara på. Svensk kontext. targetAudience="swedish".
+  * Ungdomsfrågor (youth): MÅSTE ALLTID ha global räckvidd och internationell inriktning. Ungdomar definieras av KATEGORIER och INTRESSEN (TikTok, Instagram, YouTube, Spotify, Netflix, gaming, internationell fotboll, NBA, F1, tech-trender), INTE av geografiska gränser. INKLUDERA FLER FRÅGOR OM: Internationella influencers och creators (TikTok-stjärnor, Instagram-profiler, YouTubers, Snapchat-creators), deras liv, virala trender, challenges, memes, popkultur-ikoner och aktuella händelser. Undvik ALLT som är svenskt, lokalt eller nationellt. targetAudience="international".
+  * Vuxenfrågor (adults): Frågor som kräver allmänbildning, historisk kunskap, eller vuxen erfarenhet. Svensk kontext. targetAudience="swedish".
+  * EXEMPEL PÅ FEL för ungdomsfrågor: "Vem är Sveriges statsminister?", "Vilket lag vann Allsvenskan?", "Vilken svensk YouTuber...?", "Vilken stad är Sveriges näst största?", "Vilken svensk influencer...?"
+  * EXEMPEL PÅ RÄTT för ungdomsfrågor: "Vilket år lanserades Instagram?", "Vem har flest följare på TikTok 2024?", "Vilken TikTok-creator är känd för sina tysta komedivideos?", "Vilket land vann fotbolls-VM 2022?", "Vem spelar Spider-Man i MCU?", "Vilket spel skapades av Mojang?", "Vilken YouTuber är känd för sina dyra challenges och giveaways?", "Vilket år lanserades Snapchat?", "Vilken Netflix-serie blev mest streamad 2023?"
+  * Multi-age tagging ska vara EXTREMT SÄLLSYNT (< 5% av frågor)
 - targetAudience ska vara: ${targetAudience}
 - Svara ENDAST med giltig JSON, ingen markdown eller annan formatering`;
 

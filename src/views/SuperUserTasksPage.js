@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
+import { useAuth } from '../context/AuthContext';
+import { getFirebaseAuth } from '../firebaseClient';
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -59,6 +61,7 @@ const toDuration = (start, end) => {
 const SuperUserTasksPage = () => {
   const navigate = useNavigate();
   const { allTasks, refreshAllTasks } = useBackgroundTasks();
+  const { currentUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,6 +72,7 @@ const SuperUserTasksPage = () => {
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [migrationLoading, setMigrationLoading] = useState(false);
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -427,6 +431,62 @@ const SuperUserTasksPage = () => {
     }
   };
 
+  const handleMigration = async () => {
+    if (!window.confirm('⚠️ Vill du köra om AI-kategorisering på alla befintliga frågor med striktare svårighetsnivåer?\n\nDetta kommer att:\n- Uppdatera ageGroups för alla frågor\n- Använd striktare kriterier för barn/ungdom/vuxen\n- Köras som en bakgrundsuppgift\n\nFortse tt?')) {
+      return;
+    }
+
+    setMigrationLoading(true);
+    try {
+      if (!currentUser) {
+        throw new Error('Du måste vara inloggad för att köra migration');
+      }
+
+      // Hämta Firebase user för att få ID token
+      const auth = getFirebaseAuth();
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser) {
+        throw new Error('Kunde inte hitta Firebase-användare');
+      }
+
+      const idToken = await firebaseUser.getIdToken();
+      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/queueMigration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Migration startad',
+          message: `AI-migration har köats som bakgrundsjobb. Du kan följa progress nedan.`,
+          type: 'success'
+        });
+      } else {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Kunde inte starta migration',
+          message: data.error || 'Okänt fel',
+          type: 'error'
+        });
+      }
+    } catch (error) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid migration',
+        message: error.message,
+        type: 'error'
+      });
+    } finally {
+      setMigrationLoading(false);
+      await refreshAllTasks();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-gray-100">
       <Header title="Bakgrundsjobb" />
@@ -456,7 +516,7 @@ const SuperUserTasksPage = () => {
             <div>
               <h3 className="text-lg font-semibold text-white">Developer Tools</h3>
               <p className="text-sm text-slate-400 mt-1">
-                Städa gamla jobb eller konfigurera AI-providers
+                Migrera frågor, städa gamla jobb eller konfigurera AI-providers
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -465,6 +525,13 @@ const SuperUserTasksPage = () => {
                 className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
               >
                 ⚙️ AI Providers
+              </button>
+              <button
+                onClick={handleMigration}
+                disabled={migrationLoading}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
+              >
+                {migrationLoading ? '🔄 Kör migration...' : '🔄 Migrera frågor'}
               </button>
               <button
                 onClick={handleCleanup}
