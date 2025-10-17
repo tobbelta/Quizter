@@ -413,7 +413,10 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       for (const question of questionsToImport) {
         try {
           // Hämta frågedata från databasen
-          const questionDoc = await db.collection("questions").doc(question.id).get();
+          const questionDoc = await db
+              .collection("questions")
+              .doc(question.id)
+              .get();
           if (!questionDoc.exists) {
             logger.warn(`Question ${question.id} not found for validation`);
             validationFailedCount++;
@@ -461,9 +464,14 @@ exports.runaigeneration = onTaskDispatched(taskRuntimeDefaults, async (req) => {
 
               if (result) {
                 validationResults[name] = result;
-                if (typeof result.reasoning === "string" && result.reasoning.trim()) {
-                  const providerLabel = name.charAt(0).toUpperCase() + name.slice(1);
-                  reasoningSections.push(`**${providerLabel}:** ${result.reasoning}`);
+                const hasReasoning = typeof result.reasoning === "string" &&
+                                    result.reasoning.trim();
+                if (hasReasoning) {
+                  const providerLabel = name.charAt(0).toUpperCase() +
+                                       name.slice(1);
+                  reasoningSections.push(
+                      `**${providerLabel}:** ${result.reasoning}`,
+                  );
                 }
               }
             } catch (error) {
@@ -1062,7 +1070,9 @@ exports.runaivalidation = onTaskDispatched(taskRuntimeDefaults, async (req) => {
       if (Array.isArray(result.issues) && result.issues.length > 0) {
         return result.issues.map((issue) => `[${providerLabel}] ${issue}`);
       }
-      return [`[${providerLabel}] AI-valideringen rapporterade ett problem utan detaljer`];
+      const defaultMsg = `[${providerLabel}] AI-valideringen rapporterade ` +
+                        `ett problem utan detaljer`;
+      return [defaultMsg];
     });
 
     if (invalidProviders.length > 0 && suggestedCorrectOption === undefined) {
