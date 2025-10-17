@@ -1222,7 +1222,9 @@ exports.runaibatchvalidation = onTaskDispatched(taskRuntimeDefaults, async (req)
   const db = admin.firestore();
   const taskDocRef = db.collection("backgroundTasks").doc(taskId);
 
-  const safeUpdateProgress = async ({completed = 0, validated = 0, failed = 0}) => {
+  const safeUpdateProgress = async (
+      {completed = 0, validated = 0, failed = 0},
+  ) => {
     try {
       await db.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(taskDocRef);
