@@ -22,10 +22,12 @@ import FullscreenMap from '../components/shared/FullscreenMap';
 
 const defaultForm = {
   name: '',
+  runType: 'route-based', // 'route-based' eller 'distance-based'
   difficulty: 'family',
   categories: [],
   lengthMeters: 3000,
   questionCount: 9,
+  distanceBetweenQuestions: 500, // För distance-based
   preferGreenAreas: false,
   allowRouteSelection: false,
 };
@@ -378,19 +380,32 @@ const GenerateRunPage = () => {
 
       const creatorIdentity = await ensureCreatorIdentity();
 
-      const run = await generateRun({
+      // Bygg payload baserat på runType
+      const basePayload = {
         name: form.name,
         difficulty: form.difficulty,
         audience: form.difficulty,
         categories: form.categories || [],
-        lengthMeters: Number(form.lengthMeters),
         questionCount: Number(form.questionCount),
         allowAnonymous: true,
-        allowRouteSelection: form.allowRouteSelection,
-        origin: originPosition,
-        seed,
-        preferGreenAreas: form.preferGreenAreas,
-      }, creatorIdentity);
+        runType: form.runType
+      };
+
+      const payload = form.runType === 'distance-based'
+        ? {
+            ...basePayload,
+            distanceBetweenQuestions: Number(form.distanceBetweenQuestions)
+          }
+        : {
+            ...basePayload,
+            lengthMeters: Number(form.lengthMeters),
+            allowRouteSelection: form.allowRouteSelection,
+            origin: originPosition,
+            seed,
+            preferGreenAreas: form.preferGreenAreas
+          };
+
+      const run = await generateRun(payload, creatorIdentity);
 
       if (run) {
         setGeneratedRun(run);
@@ -556,6 +571,39 @@ const GenerateRunPage = () => {
               />
             </div>
 
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-purple-200">Typ av runda</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, runType: 'route-based' })}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                    form.runType === 'route-based'
+                      ? 'bg-purple-500 text-black'
+                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                  }`}
+                >
+                  📍 Rutt-baserad
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, runType: 'distance-based' })}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                    form.runType === 'distance-based'
+                      ? 'bg-purple-500 text-black'
+                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                  }`}
+                >
+                  🚶 Distans-baserad
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">
+                {form.runType === 'route-based' 
+                  ? 'Förutbestämd rutt på kartan med frågor på specifika platser.'
+                  : 'Gå fritt - frågor triggas automatiskt när du gått tillräckligt långt.'}
+              </p>
+            </div>
+
             <div className="space-y-1.5">
               <label className="block text-sm font-semibold text-purple-200">Svårighetsgrad</label>
               <select
@@ -604,74 +652,122 @@ const GenerateRunPage = () => {
               <p className="text-xs text-gray-400">Välj kategorier eller lämna tomt för alla.</p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="block text-sm font-semibold text-purple-200">Rundans längd (meter)</label>
-                <input
-                  type="number"
-                  name="lengthMeters"
-                  min={500}
-                  max={10000}
-                  step={100}
-                  value={form.lengthMeters}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-sm font-semibold text-purple-200">Antal frågor</label>
-                <input
-                  type="number"
-                  name="questionCount"
-                  min={3}
-                  max={20}
-                  step={form.difficulty === 'family' ? 3 : 1}
-                  value={form.questionCount}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
-                />
-                {form.difficulty === 'family' && (
-                  <p className="text-xs text-gray-400">
-                    Familjeläge använder en tredjedel per åldersgrupp. Antal frågor rundas till närmaste
-                    multipel av tre.
-                  </p>
-                )}
-              </div>
-            </div>
+            {/* Rutt-baserad: Visa längd och preferGreenAreas */}
+            {form.runType === 'route-based' && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Rundans längd (meter)</label>
+                    <input
+                      type="number"
+                      name="lengthMeters"
+                      min={500}
+                      max={10000}
+                      step={100}
+                      value={form.lengthMeters}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Antal frågor</label>
+                    <input
+                      type="number"
+                      name="questionCount"
+                      min={3}
+                      max={20}
+                      step={form.difficulty === 'family' ? 3 : 1}
+                      value={form.questionCount}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                    {form.difficulty === 'family' && (
+                      <p className="text-xs text-gray-400">
+                        Familjeläge använder en tredjedel per åldersgrupp. Antal frågor rundas till närmaste
+                        multipel av tre.
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-            <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
-              <input
-                type="checkbox"
-                name="preferGreenAreas"
-                checked={form.preferGreenAreas}
-                onChange={handleChange}
-                className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
-              />
-              Föredra parker och stigar
-            </label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
+                  <input
+                    type="checkbox"
+                    name="preferGreenAreas"
+                    checked={form.preferGreenAreas}
+                    onChange={handleChange}
+                    className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
+                  />
+                  Föredra parker och stigar
+                </label>
 
-            <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
-              <input
-                type="checkbox"
-                name="allowRouteSelection"
-                checked={form.allowRouteSelection}
-                onChange={handleChange}
-                className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
-              />
-              <div className="flex-1">
-                <span>Visa karta innan start</span>
-                <p className="text-xs font-normal text-gray-400 mt-0.5">
-                  Om ikryssad kan deltagare se kartan och generera om rutten innan de startar
-                </p>
-              </div>
-            </label>
+                <label className="flex items-center gap-2 text-sm font-semibold text-purple-200">
+                  <input
+                    type="checkbox"
+                    name="allowRouteSelection"
+                    checked={form.allowRouteSelection}
+                    onChange={handleChange}
+                    className="rounded border-slate-600 bg-slate-800 text-purple-500 focus:ring-purple-500"
+                  />
+                  <div className="flex-1">
+                    <span>Visa karta innan start</span>
+                    <p className="text-xs font-normal text-gray-400 mt-0.5">
+                      Om ikryssad kan deltagare se kartan och generera om rutten innan de startar
+                    </p>
+                  </div>
+                </label>
+              </>
+            )}
+
+            {/* Distans-baserad: Visa distans mellan frågor */}
+            {form.runType === 'distance-based' && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Distans mellan frågor (meter)</label>
+                    <input
+                      type="number"
+                      name="distanceBetweenQuestions"
+                      min={100}
+                      max={2000}
+                      step={50}
+                      value={form.distanceBetweenQuestions}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                    <p className="text-xs text-gray-400">
+                      Frågor triggas automatiskt när du gått denna distans
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Antal frågor</label>
+                    <input
+                      type="number"
+                      name="questionCount"
+                      min={3}
+                      max={20}
+                      step={form.difficulty === 'family' ? 3 : 1}
+                      value={form.questionCount}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                    {form.difficulty === 'family' && (
+                      <p className="text-xs text-gray-400">
+                        Familjeläge använder en tredjedel per åldersgrupp. Antal frågor rundas till närmaste
+                        multipel av tre.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
 
             <button
-          type="submit"
-          className="w-full rounded-xl bg-purple-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-purple-400"
-        >
-          Skapa runda
-        </button>
+              type="submit"
+              className="w-full rounded-xl bg-purple-500 px-4 py-3 font-semibold text-black transition-colors hover:bg-purple-400"
+            >
+              Skapa runda
+            </button>
           </form>
         </section>
       ) : (
