@@ -324,9 +324,9 @@ const CreateRunPage = () => {
                 className="h-4 w-4 text-cyan-500"
               />
               <div className="flex-1">
-                <label className="text-sm font-semibold text-cyan-200">Tillåt rutt-val</label>
+                <label className="text-sm font-semibold text-cyan-200">Visa karta innan start</label>
                 <p className="text-xs text-gray-400 mt-1">
-                  Om avkryssad går deltagare direkt till spel utan att välja rutt på kartan
+                  Om ikryssad kan deltagare se kartan och generera om rutten innan de startar. Om avkryssad går de direkt till spel.
                 </p>
               </div>
             </div>
