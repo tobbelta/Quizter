@@ -20,7 +20,7 @@ import { VERSION, BUILD_DATE } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
 
-const Header = ({ title = 'RouteQuest' }) => {
+const Header = ({ title = 'RouteQuest', children }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const { status: gpsStatus, coords, trackingEnabled, enableTracking, disableTracking } = useRunLocation();
@@ -233,8 +233,9 @@ const Header = ({ title = 'RouteQuest' }) => {
           )}
         </div>
 
-        {/* Höger: Hamburger-meny */}
-        <div className="relative flex justify-end">
+        {/* Höger: Custom children eller Hamburger-meny */}
+        <div className="relative flex justify-end items-center gap-2">
+          {children}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors relative"

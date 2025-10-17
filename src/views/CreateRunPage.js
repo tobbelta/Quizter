@@ -20,7 +20,8 @@ const defaultForm = {
   categories: [], // Valda kategorier (tom = alla)
   questionCount: 9,
   lengthMeters: 2000,
-  allowAnonymous: true
+  allowAnonymous: true,
+  allowRouteSelection: false
 };
 
 const difficultyOptions = [
@@ -312,6 +313,22 @@ const CreateRunPage = () => {
                 className="h-4 w-4 text-cyan-500"
               />
               <label className="text-sm font-semibold text-cyan-200">Tillåt anonyma deltagare</label>
+            </div>
+
+            <div className="flex items-center space-x-3 rounded-lg bg-slate-800 border border-slate-600 px-4 py-3">
+              <input
+                type="checkbox"
+                name="allowRouteSelection"
+                checked={form.allowRouteSelection}
+                onChange={handleChange}
+                className="h-4 w-4 text-cyan-500"
+              />
+              <div className="flex-1">
+                <label className="text-sm font-semibold text-cyan-200">Tillåt rutt-val</label>
+                <p className="text-xs text-gray-400 mt-1">
+                  Om avkryssad går deltagare direkt till spel utan att välja rutt på kartan
+                </p>
+              </div>
             </div>
           </div>
 
