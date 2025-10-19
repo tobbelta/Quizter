@@ -85,9 +85,16 @@ export const useDistanceTracking = ({
     const remainingDistance = distanceBetweenQuestions - questionDistanceRef.current;
     setDistanceToNextQuestion(Math.max(0, remainingDistance));
 
+    console.log('[DistanceTracking] Position update:', {
+      moved: Math.round(distanceFromLast) + 'm',
+      questionDistance: Math.round(questionDistanceRef.current) + 'm',
+      required: distanceBetweenQuestions + 'm',
+      remaining: Math.round(remainingDistance) + 'm'
+    });
+
     // Trigga nästa fråga om vi gått tillräckligt långt
     if (questionDistanceRef.current >= distanceBetweenQuestions) {
-      console.log('[DistanceTracking] Triggering next question:', {
+      console.log('🎯 [DistanceTracking] TRIGGERING QUESTION!', {
         questionDistance: questionDistanceRef.current,
         required: distanceBetweenQuestions,
         currentIndex: currentQuestionIndex

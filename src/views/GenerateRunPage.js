@@ -728,15 +728,15 @@ const GenerateRunPage = () => {
                     <input
                       type="number"
                       name="distanceBetweenQuestions"
-                      min={100}
+                      min={10}
                       max={2000}
-                      step={50}
+                      step={10}
                       value={form.distanceBetweenQuestions}
                       onChange={handleChange}
                       className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
                     />
                     <p className="text-xs text-gray-400">
-                      Frågor triggas automatiskt när du gått denna distans
+                      Frågor triggas automatiskt när du gått denna distans (min 10m för testning)
                     </p>
                   </div>
                   <div className="space-y-1.5">
