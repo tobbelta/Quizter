@@ -3,14 +3,11 @@
  * Hanterar GPS-tracking även när appen är i bakgrunden eller skärmen är släckt
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { ensureNotificationPermissions, notifyQuestionAvailable } from './questionNotificationService';
 
 // Registrera plugins dynamiskt (lazy loading för webb-kompatibilitet)
-const BackgroundGeolocationPlugin = Capacitor.isNativePlatform() 
+const BackgroundGeolocationPlugin = Capacitor.isNativePlatform()
   ? registerPlugin('BackgroundGeolocation')
-  : null;
-
-const LocalNotifications = Capacitor.isNativePlatform()
-  ? registerPlugin('LocalNotifications')
   : null;
 
 const Haptics = Capacitor.isNativePlatform()
@@ -29,6 +26,7 @@ class BackgroundLocationService {
     this.lastPosition = null;
     this.distanceSinceLastQuestion = 0;
     this.distanceThreshold = 500; // Default 500m
+    this.notificationPayloadSupplier = null;
     this.isTracking = false;
   }
 
@@ -36,10 +34,16 @@ class BackgroundLocationService {
    * Startar background location tracking
    */
   async startTracking(options = {}) {
-    const { distanceBetweenQuestions = 500, onDistanceReached } = options;
-    
+    const {
+      distanceBetweenQuestions = 500,
+      onDistanceReached,
+      getNotificationPayload,
+    } = options;
+
     this.distanceThreshold = distanceBetweenQuestions;
     this.distanceCallback = onDistanceReached;
+    this.notificationPayloadSupplier =
+      typeof getNotificationPayload === 'function' ? getNotificationPayload : null;
     this.isTracking = true;
 
     // Begär permissions
@@ -59,6 +63,7 @@ class BackgroundLocationService {
    */
   async stopTracking() {
     this.isTracking = false;
+    this.notificationPayloadSupplier = null;
     
     if (this.watcher) {
       if (this.isNative && BackgroundGeolocationPlugin) {
@@ -253,36 +258,18 @@ class BackgroundLocationService {
    * Visar notifikation
    */
   async showNotification() {
-    if (!LocalNotifications) {
-      console.warn('[BackgroundLocation] LocalNotifications plugin not available');
-      return;
-    }
+    console.log('[BackgroundLocation] showNotification() called');
 
-    try {
-      // Begär permissions
-      const permission = await LocalNotifications.requestPermissions();
-      if (permission.display !== 'granted') {
-        console.warn('[BackgroundLocation] Notification permission denied');
-        return;
-      }
+    const payload =
+      typeof this.notificationPayloadSupplier === 'function'
+        ? this.notificationPayloadSupplier()
+        : null;
 
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            title: 'Ny fråga väntar! 🎯',
-            body: `Du har gått ${Math.round(this.distanceSinceLastQuestion)}m. Öppna appen för att svara!`,
-            id: Date.now(),
-            schedule: { at: new Date(Date.now() + 100) },
-            sound: 'default',
-            attachments: null,
-            actionTypeId: '',
-            extra: null
-          }
-        ]
-      });
-    } catch (error) {
-      console.error('[BackgroundLocation] Failed to show notification:', error);
-    }
+    await notifyQuestionAvailable({
+      ...payload,
+      distanceMeters: payload?.distanceMeters ?? this.distanceSinceLastQuestion,
+      mode: 'distance',
+    });
   }
 
   /**
@@ -326,9 +313,7 @@ class BackgroundLocationService {
       }
 
       // Notification permissions
-      if (LocalNotifications) {
-        await LocalNotifications.requestPermissions();
-      }
+      await ensureNotificationPermissions();
     } catch (error) {
       console.error('[BackgroundLocation] Permission request failed:', error);
     }
@@ -372,3 +357,5 @@ class BackgroundLocationService {
 const backgroundLocationService = new BackgroundLocationService();
 
 export default backgroundLocationService;
+
+

@@ -29,7 +29,7 @@ service cloud.firestore {
               (data.lengthMeters is int && data.lengthMeters >= 500 && data.lengthMeters <= 10000)) &&
              // Validera distanceBetweenQuestions om det finns (för distance-based runs)
              (!('distanceBetweenQuestions' in data.keys()) ||
-              (data.distanceBetweenQuestions is int && data.distanceBetweenQuestions >= 100 && data.distanceBetweenQuestions <= 5000)) &&
+              (data.distanceBetweenQuestions is int && data.distanceBetweenQuestions >= 10 && data.distanceBetweenQuestions <= 5000)) &&
              // Validera type om det finns
              (!('type' in data.keys()) || data.type in ['hosted', 'generated', 'route-based', 'distance-based']) &&
              // Validera difficulty om det finns

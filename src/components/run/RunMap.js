@@ -109,9 +109,21 @@ const FitBounds = ({ positions }) => {
   const map = useMap();
 
   useEffect(() => {
-    if (positions && positions.length > 0) {
-      map.fitBounds(positions, { padding: [50, 50] });
-    }
+    if (!map || !positions || positions.length === 0) return;
+    
+    // Vänta tills kartan är klar med initialization
+    const timeoutId = setTimeout(() => {
+      try {
+        // Kolla att kartan fortfarande finns och är valid
+        if (map && map._container && positions.length > 0) {
+          map.fitBounds(positions, { padding: [50, 50] });
+        }
+      } catch (error) {
+        console.warn('FitBounds error (ignoreras):', error);
+      }
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
   }, [positions, map]);
 
   return null;
@@ -218,11 +230,10 @@ const RunMap = ({
         className="h-full w-full relative z-0"
         scrollWheelZoom={true}
         zoomControl={false} // Ta bort zoom-kontroller
+        attributionControl={false} // Ta bort attribution (kugghjul)
         doubleClickZoom={true}
         touchZoom={true}
         dragging={true}
-        touchRotate={true} // Aktivera rotation på mobil
-        rotateControl={false} // Inget rotate UI
       >
         <FitBounds positions={positions} />
         <TileLayer

@@ -1,7 +1,7 @@
 /**
  * Spelvy där deltagaren ser karta, frågor och status.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { useRun } from '../context/RunContext';
@@ -17,6 +17,7 @@ import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
 import { buildJoinLink } from '../utils/joinLink';
 import useQRCode from '../hooks/useQRCode';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import { ensureNotificationPermissions, notifyQuestionAvailable } from '../services/questionNotificationService';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
 
@@ -52,6 +53,12 @@ const PlayRunPage = () => {
     }
     return 'sv';
   });
+  const notifiedQuestionIdsRef = useRef(new Set());
+  const handlingNotificationRef = useRef(false);
+
+  useEffect(() => {
+    notifiedQuestionIdsRef.current.clear();
+  }, [runId]);
 
   // Lyssna på ändringar i localStorage (när användaren byter språk i menyn)
   useEffect(() => {
@@ -84,6 +91,16 @@ const PlayRunPage = () => {
 
   useEffect(() => {
     refreshParticipants().catch((err) => console.warn('Kunde inte uppdatera deltagare', err));
+    
+    if (!Capacitor.isNativePlatform()) {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    } else {
+      ensureNotificationPermissions().catch((err) => {
+        console.warn('[PlayRunPage] Could not ensure notification permissions', err);
+      });
+    }
   }, [refreshParticipants]);
 
   const manualMode = !trackingEnabled;
@@ -120,6 +137,7 @@ const PlayRunPage = () => {
       return question;
     });
   }, [currentRun, selectedLanguage]);
+  const totalQuestions = orderedQuestions.length;
 
   const currentOrderIndex = useMemo(() => {
     if (!currentParticipant) return 0;
@@ -135,8 +153,9 @@ const PlayRunPage = () => {
     trackingEnabled: trackingEnabled && !isNative, // Använd inte hook på native
     distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
     currentQuestionIndex: currentOrderIndex,
-    totalQuestions: orderedQuestions.length
+    totalQuestions: totalQuestions
   });
+  const { resetQuestionDistance } = distanceTracking;
 
   // Background location tracking för native apps
   useEffect(() => {
@@ -151,9 +170,28 @@ const PlayRunPage = () => {
       distanceBetweenQuestions: currentRun.distanceBetweenQuestions || 500,
       onDistanceReached: (data) => {
         console.log('[PlayRunPage] Distance reached!', data);
-        // Visa frågan
         setQuestionVisible(true);
-      }
+        const upcomingQuestion = orderedQuestions[currentOrderIndex] || null;
+        if (upcomingQuestion?.id) {
+          notifiedQuestionIdsRef.current.add(upcomingQuestion.id);
+        }
+      },
+      getNotificationPayload: () => {
+        const question = orderedQuestions[currentOrderIndex];
+        if (!question) {
+          return null;
+        }
+
+        return {
+          questionId: question.id,
+          questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+          questionText: question.text,
+          options: question.options,
+          order: currentOrderIndex + 1,
+          total: totalQuestions,
+          mode: 'distance',
+        };
+      },
     });
 
     // Lyssna på distance updates för UI
@@ -168,7 +206,7 @@ const PlayRunPage = () => {
       backgroundLocationService.stopTracking();
       unsubscribe();
     };
-  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex]);
+  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex, orderedQuestions, totalQuestions]);
 
   const nextCheckpoint = currentRun?.checkpoints?.[currentOrderIndex] || null;
 
@@ -207,8 +245,87 @@ const PlayRunPage = () => {
     ? orderedQuestions[currentOrderIndex] || null
     : null;
 
+  useEffect(() => {
+    if (!isDistanceBased || isNative || !distanceTracking.shouldShowQuestion) {
+      return;
+    }
+
+    setQuestionVisible(true);
+
+    const nextQuestion = orderedQuestions[currentOrderIndex] || null;
+    const questionId = nextQuestion?.id;
+
+    if (questionId && !notifiedQuestionIdsRef.current.has(questionId)) {
+      notifiedQuestionIdsRef.current.add(questionId);
+      notifyQuestionAvailable({
+        questionId,
+        questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+        questionText: nextQuestion?.text || '',
+        options: nextQuestion?.options || [],
+        order: currentOrderIndex + 1,
+        total: totalQuestions,
+        mode: 'distance',
+      });
+    }
+
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification('Ny fraga!', {
+        body: `Du har gatt ${currentRun?.distanceBetweenQuestions || 500}m. Dags att svara!`,
+        icon: '/favicon.ico',
+        tag: 'question-trigger',
+      });
+    }
+
+    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiDcIF2W57OScTgwOUKXh8LljHA==');
+    audio.play().catch(() => console.log('Could not play sound'));
+  }, [
+    distanceTracking.shouldShowQuestion,
+    isDistanceBased,
+    isNative,
+    orderedQuestions,
+    currentOrderIndex,
+    totalQuestions,
+    currentRun?.name,
+    currentRun?.distanceBetweenQuestions,
+  ]);
+
+  useEffect(() => {
+    if (isDistanceBased) {
+      return;
+    }
+
+    if (!shouldShowQuestion || !currentQuestion) {
+      return;
+    }
+
+    const questionId = currentQuestion.id;
+    if (!questionId) {
+      return;
+    }
+
+    if (notifiedQuestionIdsRef.current.has(questionId)) {
+      return;
+    }
+
+    notifiedQuestionIdsRef.current.add(questionId);
+
+    notifyQuestionAvailable({
+      questionId,
+      questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+      questionText: currentQuestion.text,
+      options: currentQuestion.options,
+      order: currentOrderIndex + 1,
+      total: totalQuestions,
+      mode: 'route',
+    });
+  }, [isDistanceBased, shouldShowQuestion, currentQuestion, currentOrderIndex, totalQuestions, currentRun?.name]);
+
   const answeredCount = currentParticipant?.answers?.length || 0;
-  const hasAnsweredAll = answeredCount >= orderedQuestions.length;
+  const hasAnsweredAll = answeredCount >= totalQuestions;
   const hasCompleted = hasAnsweredAll && (manualMode || nearStartPoint);
 
   /** Skickar in valt svar och visar feedback kortvarigt. */
@@ -240,16 +357,157 @@ const PlayRunPage = () => {
       if (isNative) {
         backgroundLocationService.resetDistance();
       } else {
-        distanceTracking.resetQuestionDistance();
+        resetQuestionDistance();
+      }
+
+      if (answeredCount + 1 >= totalQuestions) {
+        setTimeout(() => {
+          handleFinish();
+        }, 500);
       }
     }
   };
 
   /** Markerar rundan som avslutad för nuvarande deltagare. */
-  const handleFinish = async () => {
+  const handleFinish = useCallback(async () => {
     await completeRunForParticipant();
-    navigate(`/run/${currentRun.id}/results`);
-  };
+    const runIdentifier = currentRun?.id;
+    if (!runIdentifier) {
+      return;
+    }
+    navigate(`/run/${runIdentifier}/results`);
+  }, [completeRunForParticipant, currentRun?.id, navigate]);
+
+  const submitAnswerFromNotification = useCallback(async (questionId, answerIndex) => {
+    if (questionId == null || typeof answerIndex !== 'number' || Number.isNaN(answerIndex) || answerIndex < 0) {
+      console.warn('[PlayRunPage] Invalid notification answer payload', { questionId, answerIndex });
+      return;
+    }
+
+    const question = orderedQuestions.find((q) => q.id === questionId) || null;
+    if (!question) {
+      console.warn(`[PlayRunPage] Question ${questionId} not found when answering via notification`);
+      return;
+    }
+
+    if (handlingNotificationRef.current) {
+      return;
+    }
+    handlingNotificationRef.current = true;
+
+    try {
+      await submitAnswer({
+        questionId,
+        answerIndex,
+      });
+
+      setFeedback(null);
+
+      if (isDistanceBased) {
+        setQuestionVisible(false);
+        if (isNative) {
+          backgroundLocationService.resetDistance();
+        } else {
+          resetQuestionDistance();
+        }
+      } else if (manualMode) {
+        setTimeout(() => setQuestionVisible(false), 500);
+      }
+
+      const nextAnswered = answeredCount + 1;
+      if (isDistanceBased && nextAnswered >= totalQuestions) {
+        setTimeout(() => {
+          handleFinish();
+        }, 500);
+      }
+    } catch (notificationError) {
+      console.error('[PlayRunPage] Failed to submit answer from notification:', notificationError);
+    } finally {
+      handlingNotificationRef.current = false;
+    }
+  }, [
+    orderedQuestions,
+    submitAnswer,
+    isDistanceBased,
+    manualMode,
+    isNative,
+    resetQuestionDistance,
+    answeredCount,
+    totalQuestions,
+    handleFinish,
+  ]);
+
+  const handleNotificationAction = useCallback(async (eventDetail) => {
+    if (!eventDetail) {
+      return;
+    }
+
+    const actionId = eventDetail.actionId;
+    const notification = eventDetail.notification || {};
+    const extra = notification.extra || eventDetail.extra || {};
+    const questionId = extra.questionId;
+    const optionsList = Array.isArray(extra.options) ? extra.options : [];
+
+    if (actionId === 'open' || actionId === 'tap') {
+      if (questionId) {
+        notifiedQuestionIdsRef.current.add(questionId);
+      }
+      setQuestionVisible(true);
+      return;
+    }
+
+    if (actionId === 'answer') {
+      const rawValue = eventDetail.inputValue || '';
+      const trimmed = rawValue.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      let parsedIndex = Number.parseInt(trimmed, 10) - 1;
+      if (Number.isNaN(parsedIndex) || parsedIndex < 0 || parsedIndex >= optionsList.length) {
+        const lowerValue = trimmed.toLowerCase();
+        parsedIndex = optionsList.findIndex((option) => {
+          if (!option) return false;
+          const loweredOption = option.toLowerCase();
+          return loweredOption === lowerValue || loweredOption.startsWith(lowerValue);
+        });
+      }
+
+      if (parsedIndex >= 0) {
+        await submitAnswerFromNotification(questionId, parsedIndex);
+      } else {
+        console.warn('[PlayRunPage] Could not parse notification answer', { rawValue, optionsList });
+      }
+    }
+  }, [submitAnswerFromNotification]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleActionEvent = (event) => {
+      Promise.resolve(handleNotificationAction(event.detail)).catch((err) => {
+        console.error('[PlayRunPage] Notification action handler error:', err);
+      });
+    };
+
+    const handleWebClick = (event) => {
+      const detail = event?.detail;
+      if (detail?.questionId) {
+        notifiedQuestionIdsRef.current.add(detail.questionId);
+      }
+      setQuestionVisible(true);
+    };
+
+    window.addEventListener('routequest:notificationAction', handleActionEvent);
+    window.addEventListener('routequest:webNotificationClicked', handleWebClick);
+
+    return () => {
+      window.removeEventListener('routequest:notificationAction', handleActionEvent);
+      window.removeEventListener('routequest:webNotificationClicked', handleWebClick);
+    };
+  }, [handleNotificationAction]);
 
   if (error) {
     return (
@@ -282,7 +540,7 @@ const PlayRunPage = () => {
 
       {/* Gemensam Header-komponent */}
       <Header 
-        title={`${currentRun.name} (${Math.min(currentParticipant?.currentOrder || 1, orderedQuestions.length)}/${orderedQuestions.length})`}
+        title={`${currentRun.name} (${Math.min(currentParticipant?.currentOrder || 1, totalQuestions)}/${totalQuestions})`}
       >
         <button
           onClick={() => setShareDialogOpen(true)}
@@ -577,3 +835,6 @@ const PlayRunPage = () => {
 };
 
 export default PlayRunPage;
+
+
+
