@@ -217,9 +217,74 @@ self.addEventListener('push', (event) => {
 
 // Notification click handler
 self.addEventListener('notificationclick', (event) => {
+  console.log('Service Worker: Notification clicked');
+  console.log('Service Worker: Notification data:', event.notification.data);
   event.notification.close();
 
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url || '/')
-  );
+  event.waitUntil(handleNotificationClick(event));
 });
+
+async function handleNotificationClick(event) {
+  const notificationData = event.notification.data || {};
+  let rawTarget = notificationData.url;
+
+  if (!rawTarget && notificationData.runId) {
+    rawTarget = `/run/${notificationData.runId}/play`;
+  }
+
+  if (!rawTarget) {
+    rawTarget = '/';
+  }
+  console.log('Service Worker: Target URL from notification:', rawTarget);
+
+  const targetUrl = new URL(rawTarget, self.location.origin);
+  targetUrl.searchParams.set('fromNotification', 'true');
+  const normalizedTarget = targetUrl.href;
+
+  console.log('Service Worker: URL with notification flag:', normalizedTarget);
+
+  try {
+    const clientList = await clients.matchAll({ type: 'window' });
+    console.log('Service Worker: Found clients:', clientList.length);
+
+    for (const client of clientList) {
+      console.log('Service Worker: Checking client:', client.url);
+      const clientUrl = new URL(client.url);
+
+      if (clientUrl.origin !== targetUrl.origin || !('focus' in client)) {
+        continue;
+      }
+
+      await client.focus();
+
+      if ('navigate' in client && client.url !== normalizedTarget) {
+        try {
+          await client.navigate(normalizedTarget);
+          console.log('Service Worker: Navigated existing client');
+        } catch (navigateError) {
+          console.error('Service Worker: Failed to navigate client', navigateError);
+          if (clients.openWindow) {
+            return clients.openWindow(normalizedTarget);
+          }
+        }
+      }
+
+      if ('postMessage' in client) {
+        client.postMessage({
+          type: 'NOTIFICATION_CLICKED',
+          url: normalizedTarget,
+          data: notificationData
+        });
+      }
+
+      return;
+    }
+  } catch (error) {
+    console.error('Service Worker: Error handling notification click', error);
+  }
+
+  if (clients.openWindow) {
+    console.log('Service Worker: Opening new window', normalizedTarget);
+    return clients.openWindow(normalizedTarget);
+  }
+}

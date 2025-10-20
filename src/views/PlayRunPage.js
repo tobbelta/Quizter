@@ -4,12 +4,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
 import useDistanceTracking from '../hooks/useDistanceTracking';
 import useElapsedTime from '../hooks/useElapsedTime';
+import useTimeQuestionTrigger from '../hooks/useTimeQuestionTrigger';
 import backgroundLocationService from '../services/backgroundLocationService';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
@@ -20,6 +22,17 @@ import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import { ensureNotificationPermissions, notifyQuestionAvailable } from '../services/questionNotificationService';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
+
+const formatCountdown = (ms) => {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return '0:00';
+  }
+
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+};
 
 const PlayRunPage = () => {
   const { runId } = useParams();
@@ -40,7 +53,7 @@ const PlayRunPage = () => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [error, setError] = useState('');
-  const [questionVisible, setQuestionVisible] = useState(true);
+  const [questionVisible, setQuestionVisible] = useState(false);
   const [distanceToCheckpoint, setDistanceToCheckpoint] = useState(null);
   const [distanceToStart, setDistanceToStart] = useState(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
@@ -55,9 +68,56 @@ const PlayRunPage = () => {
   });
   const notifiedQuestionIdsRef = useRef(new Set());
   const handlingNotificationRef = useRef(false);
+  const isDistanceBased = currentRun?.type === 'distance-based';
+  const isTimeBased = currentRun?.type === 'time-based';
+
+  // Detektera om vi kom från en notifiering (via URL parameter)
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('fromNotification') === 'true') {
+      console.log('[PlayRunPage] Opened from notification via URL parameter, showing question');
+      setQuestionVisible(true);
+      
+      // Rensa URL parametern utan att ladda om sidan
+      const newUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
+  // Förhindra att service worker navigerar oss bort från sidan när vi redan är här
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Sätt en flag som service worker kan kolla
+    sessionStorage.setItem('currentPlayRunId', runId);
+    
+    return () => {
+      sessionStorage.removeItem('currentPlayRunId');
+    };
+  }, [runId]);
 
   useEffect(() => {
     notifiedQuestionIdsRef.current.clear();
+    
+    // Stäng alla gamla notifieringar vid mount (kan finnas kvar från innan reload)
+    if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
+      console.log('[PlayRunPage] Attempting to close old notifications...');
+      navigator.serviceWorker.ready.then(registration => {
+        if ('getNotifications' in registration) {
+          return registration.getNotifications();
+        }
+        console.log('[PlayRunPage] getNotifications not available');
+        return [];
+      }).then(notifications => {
+        console.log('[PlayRunPage] Found', notifications.length, 'old notifications, closing them');
+        notifications.forEach(notification => {
+          console.log('[PlayRunPage] Closing notification:', notification.data?.questionId);
+          notification.close();
+        });
+      }).catch(err => {
+        console.warn('[PlayRunPage] Could not close old notifications:', err);
+      });
+    }
   }, [runId]);
 
   // Lyssna på ändringar i localStorage (när användaren byter språk i menyn)
@@ -103,7 +163,31 @@ const PlayRunPage = () => {
     }
   }, [refreshParticipants]);
 
-  const manualMode = !trackingEnabled;
+  // Lyssna på native notification clicks
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      return undefined;
+    }
+
+    const listener = LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
+      console.log('[PlayRunPage] Native notification clicked:', notification);
+      
+      // Visa frågan när användaren klickar på notifieringen
+      setQuestionVisible(true);
+      
+      // Om det finns extra data, hantera det
+      if (notification.notification?.extra?.questionId) {
+        notifiedQuestionIdsRef.current.add(notification.notification.extra.questionId);
+      }
+    });
+
+    return () => {
+      listener.remove();
+    };
+  }, []);
+
+  const requiresTracking = currentRun?.type === 'route-based' || currentRun?.type === 'distance-based';
+  const manualMode = requiresTracking ? !trackingEnabled : false;
   const isNative = Capacitor.isNativePlatform();
 
   // Timer för att mäta total tid
@@ -116,8 +200,12 @@ const PlayRunPage = () => {
   useEffect(() => {
     setSelectedOption(null);
     setFeedback(null);
-    setQuestionVisible(!manualMode);
-  }, [currentParticipant?.currentOrder, manualMode]);
+    if (isTimeBased) {
+      setQuestionVisible(false);
+    } else {
+      setQuestionVisible(!manualMode);
+    }
+  }, [currentParticipant?.currentOrder, isTimeBased, manualMode]);
 
 
   const orderedQuestions = useMemo(() => {
@@ -144,9 +232,6 @@ const PlayRunPage = () => {
     return Math.max(0, currentParticipant.currentOrder - 1);
   }, [currentParticipant]);
 
-  // Distans-baserad tracking (endast för distance-based runs)
-  const isDistanceBased = currentRun?.type === 'distance-based';
-  
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
     coords,
@@ -156,6 +241,133 @@ const PlayRunPage = () => {
     totalQuestions: totalQuestions
   });
   const { resetQuestionDistance } = distanceTracking;
+
+  const {
+    shouldShowQuestion: timedShouldShowQuestion,
+    timeRemainingMs,
+    armNextQuestion: scheduleNextTimedQuestion,
+    showQuestionNow: showTimedQuestionNow,
+    resetForNextQuestion: resetTimedQuestion,
+    wasTriggeredByTimer
+  } = useTimeQuestionTrigger({
+    isEnabled: Boolean(isTimeBased),
+    intervalMinutes: currentRun?.minutesBetweenQuestions || 5,
+    currentQuestionIndex: currentOrderIndex,
+    totalQuestions
+  });
+
+  const formattedTimeRemaining = useMemo(() => formatCountdown(timeRemainingMs), [timeRemainingMs]);
+
+  // Cleanup: rensa gamla sessionStorage för besvarade frågor vid mount/reload
+  useEffect(() => {
+    if (!isTimeBased || currentOrderIndex === 0) {
+      return;
+    }
+    
+    // Om currentOrderIndex > 0 betyder det att användaren redan svarat på tidigare frågor
+    // Rensa sessionStorage för dessa (men INTE för currentOrderIndex - den pågår!)
+    console.log('[PlayRunPage] Cleaning up sessionStorage for answered questions (0 to', currentOrderIndex - 1, ')');
+    for (let i = 0; i < currentOrderIndex; i++) {
+      const storageKey = `timeQuestionTrigger_q${i}`;
+      sessionStorage.removeItem(storageKey);
+    }
+  }, [runId, isTimeBased, currentOrderIndex]);
+
+  // Schemalägger nästa time-based fråga när användaren svarar (currentOrderIndex ökar)
+  useEffect(() => {
+    if (!isTimeBased || currentOrderIndex === 0) {
+      return;
+    }
+    
+    // När currentOrderIndex ökar (efter att ha svarat), schemalägg nästa fråga
+    if (currentOrderIndex > 0 && currentOrderIndex < totalQuestions) {
+      console.log('[PlayRunPage] Scheduling next timed question after answer, index:', currentOrderIndex);
+      scheduleNextTimedQuestion();
+    }
+  }, [isTimeBased, currentOrderIndex, totalQuestions, scheduleNextTimedQuestion]);
+
+  // Lyssna på web notification clicks (via service worker)
+  useEffect(() => {
+    if (Capacitor.isNativePlatform() || !('serviceWorker' in navigator)) {
+      return undefined;
+    }
+
+    const handleServiceWorkerMessage = (event) => {
+      console.log('[PlayRunPage] Service worker message received:', event.data);
+      
+      if (event.data?.type === 'SHOW_QUESTION') {
+        // Service worker hittade exakt samma run - visa bara frågan
+        const notificationQuestionId = event.data?.data?.questionId;
+        const currentQuestionId = orderedQuestions[currentOrderIndex]?.id;
+        
+        console.log('[PlayRunPage] SHOW_QUESTION received, notification questionId:', notificationQuestionId, 'current:', currentQuestionId);
+        
+        // Kontrollera om notifieringen är för rätt fråga (inte en gammal notifiering)
+        if (notificationQuestionId !== currentQuestionId) {
+          console.log('[PlayRunPage] ⚠️ Ignoring old notification - question already answered');
+          return;
+        }
+        
+        console.log('[PlayRunPage] Showing question without navigation');
+        setQuestionVisible(true);
+        if (isTimeBased) {
+          showTimedQuestionNow();
+        }
+        
+        if (notificationQuestionId) {
+          notifiedQuestionIdsRef.current.add(notificationQuestionId);
+        }
+        return;
+      }
+      
+      if (event.data?.type === 'NAVIGATE_TO') {
+        // Service worker vill att vi ska navigera till en annan URL
+        const targetUrl = event.data.url;
+        console.log('[PlayRunPage] NAVIGATE_TO received, target:', targetUrl);
+        
+        // Kontrollera om vi redan är på samma run - då ska vi INTE navigera
+        const currentPath = window.location.pathname;
+        const targetPath = new URL(targetUrl).pathname;
+        
+        // Om vi redan är på samma run-sida, visa bara frågan istället för att navigera
+        if (currentPath === targetPath || 
+            (currentPath === `/play/${runId}` || currentPath === `/run/${runId}/play`)) {
+          console.log('[PlayRunPage] Already on target page, showing question instead of navigating');
+          setQuestionVisible(true);
+          if (isTimeBased) {
+            showTimedQuestionNow();
+          }
+          if (event.data?.data?.questionId) {
+            notifiedQuestionIdsRef.current.add(event.data.data.questionId);
+          }
+          return;
+        }
+        
+        console.log('[PlayRunPage] Navigating to different page:', targetUrl);
+        window.location.href = targetUrl;
+        return;
+      }
+      
+      if (event.data?.type === 'NOTIFICATION_CLICKED') {
+        // Fallback - visa frågan
+        console.log('[PlayRunPage] Web notification clicked, showing question');
+        setQuestionVisible(true);
+        if (isTimeBased) {
+          showTimedQuestionNow();
+        }
+        
+        if (event.data?.data?.questionId) {
+          notifiedQuestionIdsRef.current.add(event.data.data.questionId);
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+    };
+  }, [isTimeBased, showTimedQuestionNow, runId, currentOrderIndex, orderedQuestions]);
 
   // Background location tracking för native apps
   useEffect(() => {
@@ -184,6 +396,7 @@ const PlayRunPage = () => {
 
         return {
           questionId: question.id,
+          runId,
           questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
           questionText: question.text,
           options: question.options,
@@ -206,7 +419,7 @@ const PlayRunPage = () => {
       backgroundLocationService.stopTracking();
       unsubscribe();
     };
-  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex, orderedQuestions, totalQuestions]);
+  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex, orderedQuestions, totalQuestions, runId]);
 
   const nextCheckpoint = currentRun?.checkpoints?.[currentOrderIndex] || null;
 
@@ -237,13 +450,82 @@ const PlayRunPage = () => {
   const { dataUrl, isLoading: qrLoading, error: qrError } = useQRCode(joinLink, 280);
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
-  const shouldShowQuestion = isDistanceBased
-    ? (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
-    : (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-based: checkpoint eller manuell
+  const shouldShowQuestion = isTimeBased
+    ? timedShouldShowQuestion
+    : isDistanceBased
+      ? (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
+      : (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-baserad: checkpoint eller manuell
 
   const currentQuestion = shouldShowQuestion
     ? orderedQuestions[currentOrderIndex] || null
     : null;
+
+  useEffect(() => {
+    if (!isTimeBased || !timedShouldShowQuestion) {
+      return;
+    }
+
+    console.log('[PlayRunPage] timedShouldShowQuestion=true, currentOrderIndex:', currentOrderIndex, 'wasTriggeredByTimer:', wasTriggeredByTimer, 'remaining:', timeRemainingMs);
+    
+    // VIKTIG: Skicka BARA notifiering om shouldShowQuestion sattes av timern som gick ut
+    // Om shouldShowQuestion=true men wasTriggeredByTimer=false är det en race condition vid mount
+    if (!wasTriggeredByTimer) {
+      console.log('[PlayRunPage] NOT sending notification - shouldShowQuestion not triggered by timer, race condition at mount');
+      setQuestionVisible(true);
+      return;
+    }
+    
+    console.log('[PlayRunPage] ✅ Timer triggered shouldShowQuestion, sending notification');
+    
+    // Kontrollera att komponenten fortfarande är monterad och användaren är på sidan
+    const isOnPlayPage = window.location.pathname.includes('/run/') || window.location.pathname.includes('/play/');
+    if (!isOnPlayPage) {
+      console.log('[PlayRunPage] NOT sending notification - user not on play page, path:', window.location.pathname);
+      return;
+    }
+    
+    setQuestionVisible(true);
+
+    const nextQuestion = orderedQuestions[currentOrderIndex] || null;
+    const questionId = nextQuestion?.id;
+
+    // Skicka notifiering ENDAST när tiden faktiskt går ut (inte när frågan skapas)
+    // Använd en ref för att spåra om detta är första gången timedShouldShowQuestion blir true
+    if (questionId && !notifiedQuestionIdsRef.current.has(questionId)) {
+      console.log('[PlayRunPage] Sending notification for question', currentOrderIndex, questionId);
+      notifiedQuestionIdsRef.current.add(questionId);
+      
+      // Skicka notifiering
+      notifyQuestionAvailable({
+        questionId,
+        runId,
+        questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+        questionText: nextQuestion?.text || '',
+        options: nextQuestion?.options || [],
+        questionOrder: currentOrderIndex + 1,
+        totalQuestions: totalQuestions,
+        mode: 'time',
+        minutesBetweenQuestions: currentRun?.minutesBetweenQuestions
+      });
+
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      }
+    } else {
+      console.log('[PlayRunPage] NOT sending notification - already notified or no questionId:', questionId, 'has?', notifiedQuestionIdsRef.current.has(questionId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isTimeBased,
+    timedShouldShowQuestion,
+    orderedQuestions,
+    currentOrderIndex,
+    totalQuestions,
+    currentRun?.name,
+    currentRun?.minutesBetweenQuestions,
+    runId
+    // timeRemainingMs intentionally omitted - we only read it, don't want to re-run on every tick
+  ]);
 
   useEffect(() => {
     if (!isDistanceBased || isNative || !distanceTracking.shouldShowQuestion) {
@@ -259,6 +541,7 @@ const PlayRunPage = () => {
       notifiedQuestionIdsRef.current.add(questionId);
       notifyQuestionAvailable({
         questionId,
+        runId,
         questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
         questionText: nextQuestion?.text || '',
         options: nextQuestion?.options || [],
@@ -273,11 +556,27 @@ const PlayRunPage = () => {
     }
 
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Ny fraga!', {
-        body: `Du har gatt ${currentRun?.distanceBetweenQuestions || 500}m. Dags att svara!`,
-        icon: '/favicon.ico',
-        tag: 'question-trigger',
-      });
+      // Använd service worker om tillgänglig
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then(registration => {
+          registration.showNotification('Ny fråga!', {
+            body: `Du har gått ${currentRun?.distanceBetweenQuestions || 500}m. Dags att svara!`,
+            icon: '/favicon.ico',
+            tag: 'question-trigger',
+          }).catch(err => console.warn('[PlayRunPage] Kunde inte visa notifikation:', err));
+        });
+      } else {
+        // Fallback till vanlig Notification
+        try {
+          new Notification('Ny fråga!', {
+            body: `Du har gått ${currentRun?.distanceBetweenQuestions || 500}m. Dags att svara!`,
+            icon: '/favicon.ico',
+            tag: 'question-trigger',
+          });
+        } catch (err) {
+          console.warn('[PlayRunPage] Kunde inte visa notifikation:', err);
+        }
+      }
     }
 
     const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiDcIF2W57OScTgwOUKXh8LljHA==');
@@ -291,10 +590,11 @@ const PlayRunPage = () => {
     totalQuestions,
     currentRun?.name,
     currentRun?.distanceBetweenQuestions,
+    runId,
   ]);
 
   useEffect(() => {
-    if (isDistanceBased) {
+    if (isDistanceBased || isTimeBased) {
       return;
     }
 
@@ -315,6 +615,7 @@ const PlayRunPage = () => {
 
     notifyQuestionAvailable({
       questionId,
+      runId,
       questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
       questionText: currentQuestion.text,
       options: currentQuestion.options,
@@ -322,11 +623,21 @@ const PlayRunPage = () => {
       total: totalQuestions,
       mode: 'route',
     });
-  }, [isDistanceBased, shouldShowQuestion, currentQuestion, currentOrderIndex, totalQuestions, currentRun?.name]);
+  }, [
+    isDistanceBased,
+    isTimeBased,
+    shouldShowQuestion,
+    currentQuestion,
+    currentOrderIndex,
+    totalQuestions,
+    currentRun?.name,
+    runId
+  ]);
 
   const answeredCount = currentParticipant?.answers?.length || 0;
   const hasAnsweredAll = answeredCount >= totalQuestions;
-  const hasCompleted = hasAnsweredAll && (manualMode || nearStartPoint);
+  const requiresReturnToStart = currentRun?.type === 'route-based' && !manualMode;
+  const hasCompleted = hasAnsweredAll && (!requiresReturnToStart || nearStartPoint);
 
   /** Skickar in valt svar och visar feedback kortvarigt. */
   const handleSubmit = async (event) => {
@@ -334,6 +645,17 @@ const PlayRunPage = () => {
     if (selectedOption === null || !currentQuestion) {
       return;
     }
+    
+    // För time-based runs: rensa timer och shouldShowQuestion för DENNA fråga innan vi svarar
+    if (isTimeBased) {
+      const storageKey = `timeQuestionTrigger_q${currentOrderIndex}`;
+      sessionStorage.removeItem(storageKey);
+      console.log('[PlayRunPage] Cleared timer for answered question', currentOrderIndex);
+      
+      // VIKTIGT: Rensa shouldShowQuestion INNAN currentOrderIndex ökar
+      resetTimedQuestion();
+    }
+    
     const { correct } = await submitAnswer({
       questionId: currentQuestion.id,
       answerIndex: selectedOption
@@ -366,6 +688,7 @@ const PlayRunPage = () => {
         }, 500);
       }
     }
+    // För time-based runs hanteras scheduling automatiskt i useEffect
   };
 
   /** Markerar rundan som avslutad för nuvarande deltagare. */
@@ -544,15 +867,25 @@ const PlayRunPage = () => {
       >
         <button
           onClick={() => setShareDialogOpen(true)}
-          className="rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-400"
+          className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors"
           title="Dela runda"
+          aria-label="Dela runda"
         >
-          📤 Dela
+          <svg 
+            className="w-5 h-5 text-gray-300" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" 
+            />
+          </svg>
         </button>
       </Header>
-
-      {/* Spacer för fixed header */}
-      <div className="h-16"></div>
 
       {/* Huvudinnehåll - karta */}
       <main className="flex-1 relative overflow-hidden">
@@ -571,39 +904,58 @@ const PlayRunPage = () => {
         />
 
         {/* Stats overlay - Distans och Tid för alla rund-typer */}
-        {trackingEnabled && (
+        {(trackingEnabled || isTimeBased) && (
           <div className="absolute top-4 left-4 right-4 z-20">
             <div className="bg-slate-900/90 backdrop-blur-sm rounded-lg border border-cyan-400/40 p-3 shadow-lg">
               <div className="flex items-center justify-between gap-4 text-sm">
-                {/* Total distans (alla typer) */}
-                <div className="flex items-center gap-2">
-                  <span className="text-cyan-400">🚶</span>
-                  <span className="text-white font-medium">
-                    {(() => {
-                      const distance = isNative ? backgroundDistance : distanceTracking.totalDistance;
-                      return distance >= 1000 
-                        ? `${(distance / 1000).toFixed(2)} km`
-                        : `${Math.round(distance)} m`;
-                    })()}
-                  </span>
-                </div>
+                {/* Total distans (visa endast om tracking är aktiv) */}
+                {trackingEnabled && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-cyan-400">??</span>
+                    <span className="text-white font-medium">
+                      {(() => {
+                        const distance = isNative ? backgroundDistance : distanceTracking.totalDistance;
+                        return distance >= 1000
+                          ? `${(distance / 1000).toFixed(2)} km`
+                          : `${Math.round(distance)} m`;
+                      })()}
+                    </span>
+                  </div>
+                )}
 
                 {/* Tid */}
                 <div className="flex items-center gap-2">
-                  <span className="text-yellow-400">⏱️</span>
+                  <span className="text-yellow-400">??</span>
                   <span className="text-white font-medium">
                     {formattedTime}
                   </span>
                 </div>
 
+                {/* Tids-baserad: Visa nedräkning till nästa fråga */}
+                {isTimeBased && (
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Nedräkning till nästa fråga</label>
+                    <div className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-2xl font-semibold text-slate-100">
+                      {hasAnsweredAll
+                        ? 'Alla frågor klara'
+                        : timedShouldShowQuestion
+                          ? 'Fråga tillgänglig'
+                          : formattedTimeRemaining}
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      Frågor låses upp automatiskt när nedräkningen når noll.
+                    </p>
+                  </div>
+                )}
+
                 {/* Distans till nästa (endast distance-based) */}
-                {isDistanceBased && (
+                {trackingEnabled && isDistanceBased && (
                   <div className="flex items-center gap-2">
-                    <span className="text-purple-400">📍</span>
+                    <span className="text-purple-400">??</span>
                     <span className="text-white font-medium">
                       {Math.round(
-                        isNative 
-                          ? backgroundDistanceToNext 
+                        isNative
+                          ? backgroundDistanceToNext
                           : distanceTracking.distanceToNextQuestion
                       )}m
                     </span>
@@ -612,15 +964,16 @@ const PlayRunPage = () => {
               </div>
 
               {/* Progress bar (endast för distance-based) */}
-              {isDistanceBased && (
-                <div className="mt-2 h-2 bg-slate-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 transition-all duration-300"
+              {trackingEnabled && isDistanceBased && (
+                <div className="mt-3 h-2 rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-purple-500 transition-all"
                     style={{
-                      width: `${Math.min(100, (() => {
-                        const distanceToNext = isNative ? backgroundDistanceToNext : distanceTracking.distanceToNextQuestion;
-                        return ((currentRun.distanceBetweenQuestions - distanceToNext) / currentRun.distanceBetweenQuestions) * 100;
-                      })())}%`
+                      width: `${Math.min(
+                        100,
+                        ((isNative ? backgroundDistanceToNext : distanceTracking.distanceToNextQuestion) /
+                          (currentRun.distanceBetweenQuestions || 1)) * 100
+                      )}%`
                     }}
                   />
                 </div>
@@ -628,6 +981,8 @@ const PlayRunPage = () => {
             </div>
           </div>
         )}
+
+              {/* Progress bar (endast för distance-based) */}
 
         {/* Frågeoverlay över kartan */}
         {currentQuestion && (

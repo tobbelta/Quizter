@@ -169,7 +169,9 @@ const SuperUserAllRunsPage = () => {
                         <span className="font-semibold">Längd:</span> {
                           run.type === 'distance-based' 
                             ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
-                            : `${run.lengthMeters || 0}m`
+                            : run.type === 'time-based'
+                              ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
+                              : `${run.lengthMeters || 0}m`
                         }
                       </div>
                       <div>

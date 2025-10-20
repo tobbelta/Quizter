@@ -140,11 +140,22 @@ const Header = ({ title = 'RouteQuest', children }) => {
 
         if (Notification.permission === 'granted') {
           try {
-            new Notification(title, {
-              body,
-              tag: `message-${message?.id || Date.now()}`,
-              data: { messageId: message?.id || null },
-            });
+            // Använd service worker om tillgänglig
+            if ('serviceWorker' in navigator) {
+              const registration = await navigator.serviceWorker.ready;
+              await registration.showNotification(title, {
+                body,
+                tag: `message-${message?.id || Date.now()}`,
+                data: { messageId: message?.id || null },
+              });
+            } else {
+              // Fallback till vanlig Notification
+              new Notification(title, {
+                body,
+                tag: `message-${message?.id || Date.now()}`,
+                data: { messageId: message?.id || null },
+              });
+            }
           } catch (err) {
             console.warn('[Header] Kunde inte skapa web-notifikation:', err);
           }

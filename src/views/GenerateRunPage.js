@@ -22,12 +22,13 @@ import FullscreenMap from '../components/shared/FullscreenMap';
 
 const defaultForm = {
   name: '',
-  runType: 'route-based', // 'route-based' eller 'distance-based'
+  runType: 'route-based', // 'route-based', 'distance-based' eller 'time-based'
   difficulty: 'family',
   categories: [],
   lengthMeters: 3000,
   questionCount: 9,
   distanceBetweenQuestions: 500, // För distance-based
+  minutesBetweenQuestions: 5, // För time-based
   preferGreenAreas: false,
   allowRouteSelection: false,
 };
@@ -391,21 +392,27 @@ const GenerateRunPage = () => {
         runType: form.runType
       };
 
-      const payload = form.runType === 'distance-based'
-        ? {
-            ...basePayload,
-            distanceBetweenQuestions: Number(form.distanceBetweenQuestions)
-          }
-        : {
-            ...basePayload,
-            lengthMeters: Number(form.lengthMeters),
-            allowRouteSelection: form.allowRouteSelection,
-            origin: originPosition,
-            seed,
-            preferGreenAreas: form.preferGreenAreas
-          };
-
-      const run = await generateRun(payload, creatorIdentity);
+      let payload;
+      if (form.runType === 'distance-based') {
+        payload = {
+          ...basePayload,
+          distanceBetweenQuestions: Number(form.distanceBetweenQuestions)
+        };
+      } else if (form.runType === 'time-based') {
+        payload = {
+          ...basePayload,
+          minutesBetweenQuestions: Number(form.minutesBetweenQuestions)
+        };
+      } else {
+        payload = {
+          ...basePayload,
+          lengthMeters: Number(form.lengthMeters),
+          allowRouteSelection: form.allowRouteSelection,
+          origin: originPosition,
+          seed,
+          preferGreenAreas: form.preferGreenAreas
+        };
+      }      const run = await generateRun(payload, creatorIdentity);
 
       if (run) {
         setGeneratedRun(run);
@@ -573,17 +580,17 @@ const GenerateRunPage = () => {
 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-purple-200">Typ av runda</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, runType: 'route-based' })}
                   className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
                     form.runType === 'route-based'
                       ? 'bg-purple-500 text-black'
-                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover-border-purple-400'
                   }`}
                 >
-                  📍 Rutt-baserad
+                  Rutt-baserad
                 </button>
                 <button
                   type="button"
@@ -591,16 +598,29 @@ const GenerateRunPage = () => {
                   className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
                     form.runType === 'distance-based'
                       ? 'bg-purple-500 text-black'
-                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover-border-purple-400'
                   }`}
                 >
-                  🚶 Distans-baserad
+                  Distans-baserad
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, runType: 'time-based' })}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                    form.runType === 'time-based'
+                      ? 'bg-purple-500 text-black'
+                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover-border-purple-400'
+                  }`}
+                >
+                  Tids-baserad
                 </button>
               </div>
               <p className="text-xs text-gray-400">
-                {form.runType === 'route-based' 
+                {form.runType === 'route-based'
                   ? 'Förutbestämd rutt på kartan med frågor på specifika platser.'
-                  : 'Gå fritt - frågor triggas automatiskt när du gått tillräckligt långt.'}
+                  : form.runType === 'distance-based'
+                    ? 'Gå fritt – frågor triggas automatiskt när du gått tillräckligt långt.'
+                    : 'Frågor triggas automatiskt efter ett valt tidsintervall.'}
               </p>
             </div>
 
@@ -641,7 +661,7 @@ const GenerateRunPage = () => {
                       className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                         isSelected
                           ? 'bg-purple-500 text-black'
-                          : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                          : 'border border-slate-600 bg-slate-800 text-slate-100 hover-border-purple-400'
                       }`}
                     >
                       {cat.label}
@@ -719,6 +739,26 @@ const GenerateRunPage = () => {
               </>
             )}
 
+            {/* Tids-baserad: Visa intervall mellan frågor */}
+            {form.runType === 'time-based' && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-purple-200">Minuter mellan frågor</label>
+                  <input
+                    type="number"
+                    name="minutesBetweenQuestions"
+                    min={1}
+                    max={180}
+                    value={form.minutesBetweenQuestions}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                  />
+                  <p className="text-xs text-gray-400">
+                    Ange hur många minuter som ska gå innan nästa fråga låses upp automatiskt.
+                  </p>
+                </div>
+              </>
+            )}
             {/* Distans-baserad: Visa distans mellan frågor */}
             {form.runType === 'distance-based' && (
               <>
@@ -910,6 +950,9 @@ const GenerateRunPage = () => {
 };
 
 export default GenerateRunPage;
+
+
+
 
 
 

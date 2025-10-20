@@ -8,15 +8,13 @@ import App from './App';
 import { BrowserRouter } from 'react-router-dom';
 import eruda from 'eruda'; // Direkt import istället för dynamic
 
-// Initiera Eruda direkt
-console.log('[STARTUP] Loading Eruda directly...');
+// Initiera Eruda direkt (mobil debugging console)
 eruda.init({
   defaults: {
     displaySize: 50,
     transparency: 0.9
   }
 });
-console.log('[STARTUP] Eruda initialized!');
 
 // Säkerställ att 100vh i webview motsvarar synlig höjd på mobila enheter
 if (typeof window !== 'undefined' && !window.__geoquestViewportSetup) {
@@ -44,11 +42,8 @@ if (typeof window !== 'undefined' && !window.__geoquestViewportSetup) {
 // Funktion för att hitta och styla Eruda-knappen med retry
 const styleErudaButton = (attempts = 0, maxAttempts = 20) => {
   const entryBtn = document.querySelector('.eruda-entry-btn');
-  console.log(`[STARTUP] Attempt ${attempts + 1}/${maxAttempts} - Looking for Eruda button:`, entryBtn);
   
   if (entryBtn) {
-    console.log('[SUCCESS] Found Eruda button! Styling...');
-    
     // Använd setProperty med 'important' för att tvinga igenom
     entryBtn.style.setProperty('position', 'fixed', 'important');
     entryBtn.style.setProperty('left', '10px', 'important');
@@ -61,16 +56,11 @@ const styleErudaButton = (attempts = 0, maxAttempts = 20) => {
     entryBtn.style.setProperty('border', '3px solid red', 'important');
     entryBtn.style.setProperty('width', '60px', 'important');
     entryBtn.style.setProperty('height', '60px', 'important');
-    
-    console.log('[SUCCESS] Eruda styled with !important!');
-    console.log('[SUCCESS] New position:', entryBtn.style.left, entryBtn.style.top);
   } else if (attempts < maxAttempts - 1) {
-    // Försök igen om 500ms
-    console.log('[RETRY] Button not found, retrying in 500ms...');
+    // Försök igen om 500ms (tyst)
     setTimeout(() => styleErudaButton(attempts + 1, maxAttempts), 500);
-  } else {
-    console.error('[ERROR] Eruda button not found after', maxAttempts, 'attempts!');
   }
+  // Tyst om det inte hittas - knappen kanske renderas senare eller är dold
 };
 
 // Starta första försöket efter 1 sekund
