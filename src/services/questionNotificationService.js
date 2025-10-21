@@ -36,19 +36,23 @@ export const ensureNotificationPermissions = async () => {
   }
 };
 
-const generateNotificationId = (questionId) => {
-  if (!questionId && questionId !== 0) {
-    return Date.now();
+const MAX_NOTIFICATION_ID = 2000000000;
+
+const generateNotificationId = (key, salt) => {
+  const input = `${key ?? ''}${salt ?? ''}`;
+
+  if (!input) {
+    return Date.now() % MAX_NOTIFICATION_ID;
   }
 
-  if (typeof questionId === 'number' && Number.isFinite(questionId)) {
-    return Math.abs(Math.trunc(questionId));
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash) + input.charCodeAt(i);
+    hash |= 0; // Force 32-bit
   }
 
-  const source = String(questionId);
-  return Math.abs(
-    source.split('').reduce((hash, char) => ((hash << 5) - hash) + char.charCodeAt(0), 0)
-  );
+  const normalized = Math.abs(hash) % MAX_NOTIFICATION_ID;
+  return normalized === 0 ? 1 : normalized;
 };
 
 const buildNotificationContent = (questionData = {}) => {
@@ -209,7 +213,7 @@ export const scheduleNativeQuestionNotification = async (questionData = {}, sche
       }
     }
 
-    const numericId = generateNotificationId(questionId || `${scheduleAt}`);
+    const numericId = generateNotificationId(questionId || 'scheduled', scheduleAt);
 
     try {
       await LocalNotifications.cancel({ notifications: [{ id: numericId }] });
@@ -244,7 +248,11 @@ export const scheduleNativeQuestionNotification = async (questionData = {}, sche
     console.log('[QuestionNotification] Scheduled native notification', numericId, 'for', new Date(scheduleAt).toISOString());
     return numericId;
   } catch (error) {
-    console.error('[QuestionNotification] Could not schedule native notification:', error);
+    const details = typeof error?.message === 'string' ? error.message : String(error);
+    console.error('[QuestionNotification] Could not schedule native notification:', details, {
+      code: error?.code,
+      data: error?.data,
+    });
     return null;
   }
 };
@@ -274,4 +282,3 @@ const questionNotificationService = {
 };
 
 export default questionNotificationService;
-
