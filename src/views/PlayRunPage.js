@@ -600,7 +600,10 @@ const PlayRunPage = () => {
     }
     
     const hadScheduledNativeNotification = Boolean(scheduledTimeNotificationRef.current);
-    cancelNativeTimeNotification();
+
+    if (isAppForeground) {
+      cancelNativeTimeNotification();
+    }
 
     // Appens synlighet hanteras via useAppVisibility-hooken
     setQuestionVisible(true);
@@ -650,6 +653,8 @@ const PlayRunPage = () => {
     } else {
       console.log('[PlayRunPage] NOT sending notification - already notified or no questionId:', questionId, 'has?', notifiedQuestionIdsRef.current.has(questionId));
     }
+
+    scheduledTimeNotificationRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isTimeBased,

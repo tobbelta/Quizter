@@ -72,7 +72,7 @@ const useTimeQuestionTrigger = ({
   const tickerRef = useRef(null);
   const questionShownByTimerRef = useRef(false); // Track if showQuestionNow was called by timer
 
-  const clearTimers = useCallback(() => {
+  const clearTimers = useCallback((shouldNotify = true) => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -83,14 +83,14 @@ const useTimeQuestionTrigger = ({
     }
     targetTimestampRef.current = null;
 
-    if (typeof onTimerCleared === 'function') {
+    if (shouldNotify && typeof onTimerCleared === 'function') {
       onTimerCleared(currentQuestionIndex);
     }
   }, [currentQuestionIndex, onTimerCleared]);
 
   const showQuestionNow = useCallback(() => {
     console.log('[TimeQuestionTrigger] showQuestionNow called for question', currentQuestionIndex);
-    clearTimers();
+    clearTimers(false);
     questionShownByTimerRef.current = true; // Mark that timer triggered this
     setShouldShowQuestion(true);
     setTimeRemainingMs(0);
