@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { useRun } from '../context/RunContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
@@ -12,6 +13,7 @@ import useRunLocation from '../hooks/useRunLocation';
 import useDistanceTracking from '../hooks/useDistanceTracking';
 import useElapsedTime from '../hooks/useElapsedTime';
 import useTimeQuestionTrigger from '../hooks/useTimeQuestionTrigger';
+import useAppVisibility from '../hooks/useAppVisibility';
 import backgroundLocationService from '../services/backgroundLocationService';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
@@ -19,9 +21,40 @@ import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
 import { buildJoinLink } from '../utils/joinLink';
 import useQRCode from '../hooks/useQRCode';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
-import { ensureNotificationPermissions, notifyQuestionAvailable } from '../services/questionNotificationService';
+import {
+  ensureNotificationPermissions,
+  notifyQuestionAvailable,
+  scheduleNativeQuestionNotification,
+  cancelNativeNotification
+} from '../services/questionNotificationService';
 
 const PROXIMITY_THRESHOLD_METERS = 25;
+const IN_APP_ALERT_SOUND_PATH = (() => {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/sounds/question_alert.wav`;
+  }
+  return '/sounds/question_alert.wav';
+})();
+
+let inAppAlertAudio = null;
+const playInAppAlertSound = () => {
+  if (typeof Audio === 'undefined') {
+    return;
+  }
+  try {
+    if (!inAppAlertAudio) {
+      inAppAlertAudio = new Audio(IN_APP_ALERT_SOUND_PATH);
+      inAppAlertAudio.preload = 'auto';
+    }
+    inAppAlertAudio.currentTime = 0;
+    inAppAlertAudio.play().catch((err) => {
+      console.warn('[PlayRunPage] Could not play in-app alert sound', err);
+      inAppAlertAudio = null;
+    });
+  } catch (error) {
+    console.warn('[PlayRunPage] Failed to play in-app alert sound:', error);
+  }
+};
 
 const formatCountdown = (ms) => {
   if (!Number.isFinite(ms) || ms <= 0) {
@@ -68,8 +101,29 @@ const PlayRunPage = () => {
   });
   const notifiedQuestionIdsRef = useRef(new Set());
   const handlingNotificationRef = useRef(false);
+  const scheduledTimeNotificationRef = useRef(null);
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
+  const isAppForeground = useAppVisibility();
+
+  const cancelNativeTimeNotification = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) {
+      return;
+    }
+
+    const scheduled = scheduledTimeNotificationRef.current;
+    if (!scheduled) {
+      return;
+    }
+
+    try {
+      await cancelNativeNotification(scheduled.id);
+    } catch (error) {
+      console.warn('[PlayRunPage] Could not cancel scheduled native notification:', error);
+    } finally {
+      scheduledTimeNotificationRef.current = null;
+    }
+  }, []); // Empty deps - only uses refs and imported function
 
   // Detektera om vi kom från en notifiering (via URL parameter)
   useEffect(() => {
@@ -227,6 +281,61 @@ const PlayRunPage = () => {
   }, [currentRun, selectedLanguage]);
   const totalQuestions = orderedQuestions.length;
 
+  // Schedule native notification for time-based questions
+  // Must be defined AFTER orderedQuestions and totalQuestions
+  const scheduleNativeTimeNotification = useCallback(async (targetTimestamp, questionIndex) => {
+    if (!Capacitor.isNativePlatform() || !isTimeBased) {
+      return;
+    }
+
+    const question = orderedQuestions[questionIndex];
+    if (!question) {
+      console.warn('[PlayRunPage] Cannot schedule native timer notification, question missing for index', questionIndex);
+      return;
+    }
+
+    const now = Date.now();
+    if (targetTimestamp <= now + 500) {
+      console.log('[PlayRunPage] Skipping native scheduling, target timestamp already passed or too close');
+      scheduledTimeNotificationRef.current = null;
+      return;
+    }
+
+    await cancelNativeTimeNotification();
+
+    const notificationId = await scheduleNativeQuestionNotification(
+      {
+        questionId: question.id,
+        questionText: question.text,
+        questionOrder: questionIndex + 1,
+        totalQuestions,
+        mode: 'time',
+        runId,
+        minutesBetweenQuestions: currentRun?.minutesBetweenQuestions,
+      },
+      targetTimestamp,
+      {
+        questionIndex,
+        type: 'time-question',
+        runId,
+      }
+    );
+
+    if (notificationId !== null) {
+      scheduledTimeNotificationRef.current = {
+        id: notificationId,
+        questionId: question.id ?? `time-${questionIndex}`,
+      };
+    }
+  }, [
+    cancelNativeTimeNotification,
+    currentRun?.minutesBetweenQuestions,
+    isTimeBased,
+    orderedQuestions,
+    runId,
+    totalQuestions
+  ]);
+
   const currentOrderIndex = useMemo(() => {
     if (!currentParticipant) return 0;
     return Math.max(0, currentParticipant.currentOrder - 1);
@@ -253,7 +362,9 @@ const PlayRunPage = () => {
     isEnabled: Boolean(isTimeBased),
     intervalMinutes: currentRun?.minutesBetweenQuestions || 5,
     currentQuestionIndex: currentOrderIndex,
-    totalQuestions
+    totalQuestions,
+    onTimerScheduled: scheduleNativeTimeNotification,
+    onTimerCleared: cancelNativeTimeNotification
   });
 
   const formattedTimeRemaining = useMemo(() => formatCountdown(timeRemainingMs), [timeRemainingMs]);
@@ -387,6 +498,10 @@ const PlayRunPage = () => {
         if (upcomingQuestion?.id) {
           notifiedQuestionIdsRef.current.add(upcomingQuestion.id);
         }
+
+        if (isAppForeground) {
+          playInAppAlertSound();
+        }
       },
       getNotificationPayload: () => {
         const question = orderedQuestions[currentOrderIndex];
@@ -419,7 +534,7 @@ const PlayRunPage = () => {
       backgroundLocationService.stopTracking();
       unsubscribe();
     };
-  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex, orderedQuestions, totalQuestions, runId]);
+  }, [isNative, isDistanceBased, trackingEnabled, currentRun, currentOrderIndex, orderedQuestions, totalQuestions, runId, isAppForeground]);
 
   const nextCheckpoint = currentRun?.checkpoints?.[currentOrderIndex] || null;
 
@@ -475,7 +590,7 @@ const PlayRunPage = () => {
       return;
     }
     
-    console.log('[PlayRunPage] ✅ Timer triggered shouldShowQuestion, sending notification');
+    console.log('[PlayRunPage] ✅ Timer triggered shouldShowQuestion');
     
     // Kontrollera att komponenten fortfarande är monterad och användaren är på sidan
     const isOnPlayPage = window.location.pathname.includes('/run/') || window.location.pathname.includes('/play/');
@@ -484,32 +599,53 @@ const PlayRunPage = () => {
       return;
     }
     
+    const hadScheduledNativeNotification = Boolean(scheduledTimeNotificationRef.current);
+    cancelNativeTimeNotification();
+
+    // Appens synlighet hanteras via useAppVisibility-hooken
     setQuestionVisible(true);
 
     const nextQuestion = orderedQuestions[currentOrderIndex] || null;
     const questionId = nextQuestion?.id;
 
     // Skicka notifiering ENDAST när tiden faktiskt går ut (inte när frågan skapas)
-    // Använd en ref för att spåra om detta är första gången timedShouldShowQuestion blir true
     if (questionId && !notifiedQuestionIdsRef.current.has(questionId)) {
-      console.log('[PlayRunPage] Sending notification for question', currentOrderIndex, questionId);
       notifiedQuestionIdsRef.current.add(questionId);
       
-      // Skicka notifiering
-      notifyQuestionAvailable({
-        questionId,
-        runId,
-        questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
-        questionText: nextQuestion?.text || '',
-        options: nextQuestion?.options || [],
-        questionOrder: currentOrderIndex + 1,
-        totalQuestions: totalQuestions,
-        mode: 'time',
-        minutesBetweenQuestions: currentRun?.minutesBetweenQuestions
-      });
+      if (isAppForeground) {
+        // Appen är i förgrunden - ge ljud/haptik utan visuell banner
+        console.log('[PlayRunPage] 🟢 App in foreground, playing sound + haptics');
 
-      if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200]);
+        playInAppAlertSound();
+
+        if (Capacitor.isNativePlatform()) {
+          Haptics.impact({ style: ImpactStyle.Heavy }).catch(err =>
+            console.warn('[PlayRunPage] Could not trigger haptics:', err)
+          );
+        } else if (navigator.vibrate) {
+          navigator.vibrate([150, 75, 150]);
+        }
+      } else {
+        // Appen är i bakgrunden - skicka riktig notifikation
+        console.log('[PlayRunPage] 📢 App in background, notification handling');
+
+        if (!hadScheduledNativeNotification) {
+          notifyQuestionAvailable({
+            questionId,
+            runId,
+            questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+            questionText: nextQuestion?.text || '',
+            options: nextQuestion?.options || [],
+            questionOrder: currentOrderIndex + 1,
+            totalQuestions: totalQuestions,
+            mode: 'time',
+            minutesBetweenQuestions: currentRun?.minutesBetweenQuestions
+          });
+
+          if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200]);
+          }
+        }
       }
     } else {
       console.log('[PlayRunPage] NOT sending notification - already notified or no questionId:', questionId, 'has?', notifiedQuestionIdsRef.current.has(questionId));
@@ -523,7 +659,9 @@ const PlayRunPage = () => {
     totalQuestions,
     currentRun?.name,
     currentRun?.minutesBetweenQuestions,
-    runId
+    runId,
+    cancelNativeTimeNotification,
+    isAppForeground
     // timeRemainingMs intentionally omitted - we only read it, don't want to re-run on every tick
   ]);
 
@@ -579,8 +717,7 @@ const PlayRunPage = () => {
       }
     }
 
-    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiDcIF2W57OScTgwOUKXh8LljHA==');
-    audio.play().catch(() => console.log('Could not play sound'));
+    playInAppAlertSound();
   }, [
     distanceTracking.shouldShowQuestion,
     isDistanceBased,
@@ -613,16 +750,32 @@ const PlayRunPage = () => {
 
     notifiedQuestionIdsRef.current.add(questionId);
 
-    notifyQuestionAvailable({
-      questionId,
-      runId,
-      questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
-      questionText: currentQuestion.text,
-      options: currentQuestion.options,
-      order: currentOrderIndex + 1,
-      total: totalQuestions,
-      mode: 'route',
-    });
+    if (isAppForeground) {
+      playInAppAlertSound();
+
+      if (Capacitor.isNativePlatform()) {
+        Haptics.impact({ style: ImpactStyle.Heavy }).catch((err) => {
+          console.warn('[PlayRunPage] Could not trigger haptics for route trigger:', err);
+        });
+      } else if (navigator.vibrate) {
+        navigator.vibrate([150, 75, 150]);
+      }
+    } else {
+      notifyQuestionAvailable({
+        questionId,
+        runId,
+        questionTitle: `${currentRun?.name || 'GeoQuest'} - Fraga ${currentOrderIndex + 1}/${totalQuestions}`,
+        questionText: currentQuestion.text,
+        options: currentQuestion.options,
+        order: currentOrderIndex + 1,
+        total: totalQuestions,
+        mode: 'route',
+      });
+
+      if (navigator.vibrate && !Capacitor.isNativePlatform()) {
+        navigator.vibrate([200, 100, 200]);
+      }
+    }
   }, [
     isDistanceBased,
     isTimeBased,
@@ -631,7 +784,8 @@ const PlayRunPage = () => {
     currentOrderIndex,
     totalQuestions,
     currentRun?.name,
-    runId
+    runId,
+    isAppForeground
   ]);
 
   const answeredCount = currentParticipant?.answers?.length || 0;
@@ -903,15 +1057,15 @@ const PlayRunPage = () => {
           }}
         />
 
-        {/* Stats overlay - Distans och Tid för alla rund-typer */}
-        {(trackingEnabled || isTimeBased) && (
+        {/* Stats overlay - flyttad till footer för time-based, behålls på toppen för andra typer */}
+        {!isTimeBased && (trackingEnabled) && (
           <div className="absolute top-4 left-4 right-4 z-20">
             <div className="bg-slate-900/90 backdrop-blur-sm rounded-lg border border-cyan-400/40 p-3 shadow-lg">
               <div className="flex items-center justify-between gap-4 text-sm">
                 {/* Total distans (visa endast om tracking är aktiv) */}
                 {trackingEnabled && (
                   <div className="flex items-center gap-2">
-                    <span className="text-cyan-400">??</span>
+                    <span className="text-cyan-400">📍</span>
                     <span className="text-white font-medium">
                       {(() => {
                         const distance = isNative ? backgroundDistance : distanceTracking.totalDistance;
@@ -925,33 +1079,16 @@ const PlayRunPage = () => {
 
                 {/* Tid */}
                 <div className="flex items-center gap-2">
-                  <span className="text-yellow-400">??</span>
+                  <span className="text-yellow-400">⏱️</span>
                   <span className="text-white font-medium">
                     {formattedTime}
                   </span>
                 </div>
 
-                {/* Tids-baserad: Visa nedräkning till nästa fråga */}
-                {isTimeBased && (
-                  <div className="space-y-1.5">
-                    <label className="block text-sm font-semibold text-purple-200">Nedräkning till nästa fråga</label>
-                    <div className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-2xl font-semibold text-slate-100">
-                      {hasAnsweredAll
-                        ? 'Alla frågor klara'
-                        : timedShouldShowQuestion
-                          ? 'Fråga tillgänglig'
-                          : formattedTimeRemaining}
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      Frågor låses upp automatiskt när nedräkningen når noll.
-                    </p>
-                  </div>
-                )}
-
                 {/* Distans till nästa (endast distance-based) */}
                 {trackingEnabled && isDistanceBased && (
                   <div className="flex items-center gap-2">
-                    <span className="text-purple-400">??</span>
+                    <span className="text-purple-400">🎯</span>
                     <span className="text-white font-medium">
                       {Math.round(
                         isNative
@@ -975,14 +1112,12 @@ const PlayRunPage = () => {
                           (currentRun.distanceBetweenQuestions || 1)) * 100
                       )}%`
                     }}
-                  />
+                  ></div>
                 </div>
               )}
             </div>
           </div>
         )}
-
-              {/* Progress bar (endast för distance-based) */}
 
         {/* Frågeoverlay över kartan */}
         {currentQuestion && (
@@ -1096,6 +1231,31 @@ const PlayRunPage = () => {
           </div>
         )}
       </main>
+
+      {/* Footer stats för time-based runs */}
+      {isTimeBased && (
+        <div className="bg-slate-900/95 backdrop-blur-sm border-t border-cyan-400/40 p-4 shadow-lg">
+          <div className="flex items-center justify-around gap-4 text-sm max-w-2xl mx-auto">
+            {/* Tid till nästa fråga */}
+            <div className="flex flex-col items-center">
+              <span className="text-purple-400 text-xs mb-1">Nästa fråga</span>
+              <span className="text-white font-bold text-xl">
+                {hasAnsweredAll
+                  ? '✓ Klar'
+                  : timedShouldShowQuestion
+                    ? 'Tillgänglig!'
+                    : formattedTimeRemaining}
+              </span>
+            </div>
+            
+            {/* Total tid */}
+            <div className="flex flex-col items-center">
+              <span className="text-yellow-400 text-xs mb-1">Total tid</span>
+              <span className="text-white font-bold text-xl">{formattedTime}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Rapportera fråga dialog */}
       {reportDialogOpen && questionToReport && (

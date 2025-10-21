@@ -47,7 +47,9 @@ const useTimeQuestionTrigger = ({
   isEnabled,
   intervalMinutes,
   currentQuestionIndex,
-  totalQuestions
+  totalQuestions,
+  onTimerScheduled,
+  onTimerCleared
 }) => {
   const safeMinutes = clampInterval(intervalMinutes);
   const intervalMs = useMemo(() => safeMinutes * MS_PER_MINUTE, [safeMinutes]);
@@ -80,7 +82,11 @@ const useTimeQuestionTrigger = ({
       tickerRef.current = null;
     }
     targetTimestampRef.current = null;
-  }, []);
+
+    if (typeof onTimerCleared === 'function') {
+      onTimerCleared(currentQuestionIndex);
+    }
+  }, [currentQuestionIndex, onTimerCleared]);
 
   const showQuestionNow = useCallback(() => {
     console.log('[TimeQuestionTrigger] showQuestionNow called for question', currentQuestionIndex);
@@ -99,10 +105,14 @@ const useTimeQuestionTrigger = ({
   }, [clearTimers, intervalMs]);
 
   const armNextQuestion = useCallback(() => {
+    console.log('[TimeQuestionTrigger] 🔵 armNextQuestion called for index:', currentQuestionIndex, 'isEnabled:', isEnabled);
+    
     if (!isEnabled) {
+      console.log('[TimeQuestionTrigger] Not enabled, returning');
       return;
     }
     if (currentQuestionIndex >= totalQuestions) {
+      console.log('[TimeQuestionTrigger] All questions done, showing question now');
       showQuestionNow();
       clearTimerState(currentQuestionIndex);
       return;
@@ -114,6 +124,7 @@ const useTimeQuestionTrigger = ({
     for (let i = 0; i < currentQuestionIndex; i++) {
       clearTimerState(i);
     }
+    console.log('[TimeQuestionTrigger] Cleared old timers for questions 0 to', currentQuestionIndex - 1);
     
     // Kolla om vi har en sparad timer för denna fråga
     const savedTarget = loadTimerState(currentQuestionIndex);
@@ -122,12 +133,12 @@ const useTimeQuestionTrigger = ({
     if (savedTarget && savedTarget > Date.now()) {
       // Återställ från sparad timer
       target = savedTarget;
-      console.log('[TimeQuestionTrigger] Restored timer for question', currentQuestionIndex, 'remaining:', target - Date.now());
+      console.log('[TimeQuestionTrigger] Restored timer for question', currentQuestionIndex, 'remaining:', target - Date.now(), 'ms');
     } else {
       // Skapa ny timer
       target = Date.now() + intervalMs;
       saveTimerState(currentQuestionIndex, target);
-      console.log('[TimeQuestionTrigger] Created new timer for question', currentQuestionIndex);
+      console.log('[TimeQuestionTrigger] Created new timer for question', currentQuestionIndex, 'intervalMs:', intervalMs);
     }
     
     targetTimestampRef.current = target;
@@ -136,7 +147,13 @@ const useTimeQuestionTrigger = ({
     setShouldShowQuestion(false);
     setTimeRemainingMs(remainingMs);
 
+    if (typeof onTimerScheduled === 'function') {
+      onTimerScheduled(target, currentQuestionIndex);
+    }
+
+    console.log('[TimeQuestionTrigger] Starting setTimeout for', remainingMs, 'ms');
     timeoutRef.current = setTimeout(() => {
+      console.log('[TimeQuestionTrigger] ⏰ setTimeout fired for question', currentQuestionIndex);
       showQuestionNow();
       clearTimerState(currentQuestionIndex);
     }, remainingMs);
@@ -146,11 +163,12 @@ const useTimeQuestionTrigger = ({
       const remaining = Math.max(0, target - now);
       setTimeRemainingMs(remaining);
       if (remaining === 0) {
+        console.log('[TimeQuestionTrigger] ⏰ Ticker reached 0 for question', currentQuestionIndex);
         showQuestionNow();
         clearTimerState(currentQuestionIndex);
       }
     }, 1000);
-  }, [clearTimers, currentQuestionIndex, intervalMs, isEnabled, showQuestionNow, totalQuestions]);
+  }, [clearTimers, currentQuestionIndex, intervalMs, isEnabled, onTimerScheduled, showQuestionNow, totalQuestions]);
 
   useEffect(() => {
     if (!isEnabled) {
