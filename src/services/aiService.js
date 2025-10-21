@@ -1,6 +1,35 @@
 /**
- * Service for interacting with AI-related backend functions.
- * This service handles the queuing of AI tasks.
+ * AI SERVICE
+ * 
+ * SYFTE: Kommunicerar med Firebase Cloud Functions för AI-uppgifter
+ * 
+ * FUNKTIONALITET:
+ * - Kö-hantering för AI-tasks (generering, validering, emoji-regenerering)
+ * - Authentication med Firebase ID tokens
+ * - Error handling och response parsing
+ * 
+ * TILLGÄNGLIGA TASKS:
+ * - startAIGeneration(): Generera batch med frågor (OpenAI/Gemini)
+ * - startAIValidation(): Validera en fråga med AI
+ * - startBatchValidation(): Validera flera frågor
+ * - startEmojiRegeneration(): Regenerera emoji för fråga
+ * - startBatchEmojiRegeneration(): Regenerera emojis för flera frågor
+ * 
+ * CLOUD FUNCTIONS ENDPOINTS:
+ * - generateAIQuestions
+ * - validateQuestionWithAI
+ * - batchValidateQuestions
+ * - regenerateQuestionEmoji
+ * - batchRegenerateEmojis
+ * 
+ * AUTHENTICATION:
+ * - Kräver inloggad användare (getAuth().currentUser)
+ * - Skickar Firebase ID token i Authorization header
+ * 
+ * ANVÄNDNING:
+ * - questionService: Triggar AI-operationer
+ * - AdminQuestionsPage: AI-validering och generering
+ * - BackgroundTaskContext: Spårar task progress
  */
 import { getAuth } from "firebase/auth";
 

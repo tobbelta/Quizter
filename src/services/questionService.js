@@ -1,5 +1,36 @@
 /**
- * Hanterar frågebanken, nu med Firestore-synkronisering.
+ * QUESTION SERVICE
+ * 
+ * SYFTE: Central tjänst för att hantera frågebanken med Firestore-synkronisering
+ * 
+ * FUNKTIONALITET:
+ * - CRUD-operationer för frågor (skapa, läsa, uppdatera, radera)
+ * - Lokal cache för snabb access (cachedQuestions + cachedQuestionMap)
+ * - Listener-system för att notifiera components om ändringar
+ * - AI-integration för generering och validering
+ * - Validering av frågor (questionValidationService)
+ * - Dubblettdetektering
+ * - Sortering (nyaste först baserat på createdAt)
+ * 
+ * CACHE-STRATEGI:
+ * - Laddar alla frågor vid första anropet (hydrateCache)
+ * - Håller Map för snabb lookup via ID
+ * - Uppdaterar cache vid varje operation
+ * - Notifierar listeners vid ändringar
+ * 
+ * HUVUDFUNKTIONER:
+ * - loadAllQuestions(): Hämta alla frågor (med cache)
+ * - addQuestion(question): Lägg till ny fråga
+ * - updateQuestion(id, updates): Uppdatera befintlig fråga
+ * - deleteQuestion(id): Radera fråga
+ * - subscribe(callback): Lyssna på ändringar
+ * - generateQuestions(): Trigga AI-generering
+ * - validateWithAI(): Validera fråga med AI
+ * 
+ * ANVÄNDNING:
+ * - AdminQuestionsPage: CRUD-operations
+ * - runFactory: Hämta frågor för run-skapande
+ * - questionRepository: Abstraherar Firestore-operations
  */
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';

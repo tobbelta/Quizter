@@ -1,5 +1,27 @@
 /**
- * Fabriksfunktioner som bygger run-objekt och deras checkpoints baserat på önskat scenario.
+ * RUN FACTORY SERVICE
+ * 
+ * SYFTE: Fabriksfunktioner för att skapa run-objekt med checkpoints baserat på olika scenarion
+ * 
+ * HUVUDFUNKTIONER:
+ * - createRouteBasedRun(): Skapar GPS-baserad runda med waypoints längs en rutt
+ * - createDistanceBasedRun(): Skapar distansbaserad runda där frågor frisläpps efter X meter
+ * - createTimeBasedRun(): Skapar tidsbaserad runda där frågor frisläpps efter X minuter
+ * - countAvailableQuestions(): Räknar tillgängliga frågor för given konfiguration
+ * - generateJoinCode(): Skapar unik 6-teckens joincode
+ * 
+ * RUN TYPES:
+ * - route: GPS-waypoints, kräver användaren att röra sig till specifika platser
+ * - distance: Totaldistans, frisläpper frågor baserat på tillryggalagd sträcka
+ * - time: Timer-baserad, frisläpper frågor efter tidsintervall
+ * 
+ * QUESTION FILTERING:
+ * - Filtrerar på audience (åldersgrupp)
+ * - Filtrerar på difficulty (familj-mode = blandning av svårighetsgrader)
+ * - Filtrerar på categories
+ * - Exkluderar avvisade, rapporterade och AI-failade frågor
+ * 
+ * ANVÄNDNING: Anropas från RunContext.generateRun()
  */
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
@@ -7,11 +29,20 @@ import { questionService } from './questionService';
 import { generateWalkingRoute } from './routeService';
 import { FALLBACK_POSITION } from '../utils/constants';
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 /**
- * Skapar en slumpad anslutningskod utan lättförväxlade tecken.
+ * Skapar en slumpad anslutningskod utan lättförväxlade tecken
+ * 
+ * SYFTE: Generera unik 6-teckens kod för att joina rundor
+ * ANVÄNDER: A-Z (utan O och I) och 2-9 för läsbarhet
+ * 
+ * @returns {string} 6-teckens joincode, t.ex. "A3K9P2"
  */
 const generateJoinCode = () => {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Ingen O, I, 0, 1 för att undvika förväxling
   let code = '';
   for (let index = 0; index < 6; index += 1) {
     code += alphabet[Math.floor(Math.random() * alphabet.length)];
@@ -20,30 +51,53 @@ const generateJoinCode = () => {
 };
 
 /**
- * Hämtar frågebanken från questionService och faller tillbaka till den bundlade listan.
- */
-/**
- * Hämtar den aktuella frågebanken från Firestore eller fallback-listan.
+ * Hämtar den aktuella frågebanken från Firestore eller fallback
+ * 
+ * SYFTE: Försöker ladda frågor från Firestore, faller tillbaka till bundlade frågor om fel
+ * 
+ * FALLBACK-KEDJA:
+ * 1. Försök ladda från Firestore (questionService.loadAllQuestions)
+ * 2. Om tom array eller fel → använd QUESTION_BANK från data/questions.js
+ * 
+ * @returns {Promise<Array>} Array med frågor
  */
 const resolveQuestionPool = async () => {
   try {
     const questions = await questionService.loadAllQuestions();
     if (questions.length === 0) {
+      console.warn('[runFactory] No questions in Firestore, using QUESTION_BANK fallback');
       return QUESTION_BANK;
     }
     return questions;
   } catch (error) {
+    console.warn('[runFactory] Error loading questions, using QUESTION_BANK fallback:', error);
     return QUESTION_BANK;
   }
 };
 
 /**
- * Räknar antalet godkända frågor som matchar givna kriterier.
- * Används för att varna användaren om det inte finns tillräckligt med frågor.
- *
- * NYTT SCHEMA:
- * - Stöder både ageGroups (array) och difficulty (string)
- * - Stöder både categories (array) och category (string)
+ * Räknar antalet godkända frågor som matchar givna kriterier
+ * 
+ * SYFTE: Används för att validera att det finns tillräckligt med frågor före run-skapande
+ * Visar varning till användaren om för få frågor matchar kriterierna
+ * 
+ * FILTRERING:
+ * - Exkluderar frågor med aiValidated=false, manuallyRejected=true, eller reported=true
+ * - Matchar audience (ageGroups array eller difficulty string)
+ * - Matchar categories (stöder både categories array och category string)
+ * 
+ * SPECIAL: difficulty='family' → fördelar frågor mellan barn/ungdom/vuxna
+ * 
+ * @param {object} options
+ * @param {string} options.audience - Målgrupp (children/youth/adults)
+ * @param {string} options.difficulty - Svårighetsgrad (easy/medium/hard/family)
+ * @param {string[]} options.categories - Kategorier att filtrera på
+ * @param {number} options.questionCount - Antal frågor som behövs
+ * @returns {Promise<number>} Antal tillgängliga frågor
+ * 
+ * NYTT SCHEMA (stöds):
+ * - ageGroups (array) istället för difficulty (string)
+ * - categories (array) istället för category (string)
  */
 const distributeFamilyCounts = (total) => {
   const safeTotal = Math.max(0, total);
