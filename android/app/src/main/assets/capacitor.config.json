@@ -1,5 +1,15 @@
 {
 	"appId": "com.geoquest.app",
 	"appName": "GeoQuest",
-	"webDir": "build"
+	"webDir": "build",
+	"server": {
+		"androidScheme": "https"
+	},
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_notification_compass",
+			"iconColor": "#488AFF",
+			"sound": "question_alert.wav"
+		}
+	}
 }

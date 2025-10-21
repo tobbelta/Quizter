@@ -277,8 +277,8 @@ const refreshAllTasks = useCallback(async () => {
 
     resetState();
 
-    const trackedKey = `geoquest:tasks:tracked:${currentUser.uid}`;
-    const acknowledgedKey = `geoquest:tasks:ack:${currentUser.uid}`;
+    const trackedKey = `quizter:tasks:tracked:${currentUser.uid}`;
+    const acknowledgedKey = `quizter:tasks:ack:${currentUser.uid}`;
     storageKeysRef.current = { tracked: trackedKey, acknowledged: acknowledgedKey };
 
     const storedTracked = safeParseJSON(

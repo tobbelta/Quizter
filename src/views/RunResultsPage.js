@@ -22,7 +22,7 @@ const RunResultsPage = () => {
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('geoquest:language') || 'sv';
+      return localStorage.getItem('quizter:language') || 'sv';
     }
     return 'sv';
   });
@@ -296,7 +296,7 @@ const RunResultsPage = () => {
           disabled={showDonationModal}
           className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
         >
-          Stöd RouteQuest (20 kr)
+          Stöd Quizter (20 kr)
         </button>
         <button
           type="button"

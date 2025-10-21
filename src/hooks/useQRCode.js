@@ -1,7 +1,7 @@
 /**
  * useQRCode Hook
  * 
- * SYFTE: Genererar QR-koder med inbäddad GeoQuest-logotyp
+ * SYFTE: Genererar QR-koder med inbäddad Quizter-logotyp
  * 
  * ANVÄNDNING: 
  * - MyRunsPage: QR-kod för att dela rundor
@@ -10,7 +10,7 @@
  * 
  * FUNKTIONALITET:
  * - Genererar QR-kod från en sträng (t.ex. join-länk)
- * - Lägger till GeoQuest compass-logotyp i mitten (25% av QR-storleken)
+ * - Lägger till Quizter compass-logotyp i mitten (25% av QR-storleken)
  * - Hög felkorrigering (Level H) för att logotyp ska fungera
  * - Returnerar data URL för <img src={dataUrl}>
  * 
@@ -55,7 +55,7 @@ const useQRCode = (value, size) => {
       .then(() => {
         if (cancelled) return; // Avbryt om component unmounted
 
-        // Rita GeoQuest-logotyp över QR-koden
+        // Rita Quizter-logotyp över QR-koden
         const context = canvas.getContext('2d');
         const logoImg = new Image();
         logoImg.src = '/logo-compass.svg'; // Compass-logotypen från public/

@@ -1,6 +1,6 @@
 /**
  * Första sidan användare möter – fokuserar på CTA för att skapa/ansluta rundor
- * och förklarar kort hur RouteQuest fungerar.
+ * och förklarar kort hur Quizter fungerar.
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,11 +21,11 @@ const LandingPage = () => {
   };
 
   return (
-    <PageLayout headerTitle="RouteQuest" maxWidth="max-w-3xl" className="space-y-8">
+    <PageLayout headerTitle="Quizter" maxWidth="max-w-3xl" className="space-y-8">
       <section className="space-y-6 text-center">
         <div className="space-y-3">
           <h1 className="text-3xl font-bold text-slate-100 sm:text-4xl">
-            Välkommen till RouteQuest
+            Välkommen till Quizter
           </h1>
           <p className="text-base text-gray-300 sm:text-lg">
             Skapa och spela digitala tipsrundor direkt i mobilen
@@ -43,7 +43,7 @@ const LandingPage = () => {
           <div className="flex items-center gap-3">
             <span aria-hidden="true" className="text-xl">🚧</span>
             <div>
-              <h2 className="text-base font-semibold text-amber-200 sm:text-lg">RouteQuest är i beta</h2>
+              <h2 className="text-base font-semibold text-amber-200 sm:text-lg">Quizter är i beta</h2>
               <p className="text-xs text-amber-100/80 sm:text-sm">Vi slipar upplevelsen och välkomnar din feedback.</p>
             </div>
           </div>
@@ -54,14 +54,14 @@ const LandingPage = () => {
         {isBetaExpanded && (
           <div className="space-y-3 border-t border-amber-500/20 px-4 py-4 text-sm text-amber-50 sm:px-6">
             <p>
-              RouteQuest är under aktiv utveckling. Hör gärna av dig om du saknar funktioner eller
+              Quizter är under aktiv utveckling. Hör gärna av dig om du saknar funktioner eller
               hittar problem – varje synpunkt hjälper oss framåt.
             </p>
             <p>
               Donationer går direkt till drift och vidareutveckling. Är du inte nöjd? Mejla oss på
               {' '}
-              <a href="mailto:info@routequest.se" className="text-cyan-300 underline hover:text-cyan-200">
-                info@routequest.se
+              <a href="mailto:info@quizter.se" className="text-cyan-300 underline hover:text-cyan-200">
+                info@quizter.se
               </a>{' '}så hittar vi en lösning.
             </p>
           </div>
@@ -141,7 +141,7 @@ const LandingPage = () => {
         <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
           <h2 className="text-xl font-semibold text-slate-100">Perfekt för alla tillfällen</h2>
           <p className="mt-3 text-gray-300">
-            Använd RouteQuest för teambuilding, familjeaktiviteter, skolprojekt eller bara för att göra
+            Använd Quizter för teambuilding, familjeaktiviteter, skolprojekt eller bara för att göra
             en promenad mer engagerande. Ingen installation behövs – allt fungerar direkt i webbläsaren.
           </p>
         </div>

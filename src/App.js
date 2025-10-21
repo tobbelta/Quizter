@@ -260,7 +260,7 @@ const LocalRunsImportHandler = () => {
       }
 
       // Kolla om användaren redan har sett/hanterat importdialogen
-      const importHandledKey = `geoquest:import:handled:${currentUser.id}`;
+      const importHandledKey = `quizter:import:handled:${currentUser.id}`;
       const alreadyHandled = localStorage.getItem(importHandledKey) === 'true';
 
       if (alreadyHandled) {
@@ -291,7 +291,7 @@ const LocalRunsImportHandler = () => {
   const handleImportComplete = (success) => {
     // Markera att användaren har hanterat importen (även om de hoppade över)
     if (currentUser && !currentUser.isAnonymous) {
-      const importHandledKey = `geoquest:import:handled:${currentUser.id}`;
+      const importHandledKey = `quizter:import:handled:${currentUser.id}`;
       localStorage.setItem(importHandledKey, 'true');
     }
 

@@ -9,7 +9,7 @@ const ORS_API_KEY = process.env.REACT_APP_OPENROUTE_API_KEY;
 const ORS_BASE_URL = 'https://api.openrouteservice.org/v2';
 
 // Cache-konfiguration
-const CACHE_KEY_PREFIX = 'routequest_route_cache_';
+const CACHE_KEY_PREFIX = 'quizter_route_cache_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 timmar
 
 /**

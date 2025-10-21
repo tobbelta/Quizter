@@ -1,5 +1,5 @@
 /**
- * AboutDialog - Om-dialog med information om RouteQuest
+ * AboutDialog - Om-dialog med information om Quizter
  *
  * Props:
  * - isOpen: boolean - om dialogen ska visas
@@ -45,9 +45,9 @@ const AboutDialog = ({ isOpen, onClose }) => {
           {/* Header */}
           <div className="bg-slate-900 border-b border-slate-700 p-6 flex items-center justify-between rounded-t-xl">
             <div className="flex items-center gap-3">
-              <img src="/logo-compass.svg" alt="RouteQuest" className="w-10 h-10" />
+              <img src="/logo-compass.svg" alt="Quizter" className="w-10 h-10" />
               <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-                Om RouteQuest
+                Om Quizter
               </h2>
             </div>
             <button
@@ -71,10 +71,10 @@ const AboutDialog = ({ isOpen, onClose }) => {
             {/* Beskrivning */}
             <section>
               <h3 className="text-lg font-semibold text-cyan-400 mb-2">
-                Vad är RouteQuest?
+                Vad är Quizter?
               </h3>
               <p className="leading-relaxed">
-                RouteQuest är en plattform för att skapa och spela interaktiva tipspromenader.
+                Quizter är en plattform för att skapa och spela interaktiva tipspromenader.
                 Skapa spännande rutter med frågor och utmaningar, eller delta i redan skapade äventyr!
               </p>
             </section>
@@ -140,10 +140,10 @@ const AboutDialog = ({ isOpen, onClose }) => {
             {/* Donation */}
             <section className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 rounded-lg p-4 border border-purple-500/20">
               <h3 className="text-lg font-semibold text-cyan-400 mb-2">
-                Stöd RouteQuest
+                Stöd Quizter
               </h3>
               <p className="text-sm mb-3 leading-relaxed">
-                RouteQuest är gratis att använda! Om du tycker om tjänsten kan du stödja utvecklingen med en donation.
+                Quizter är gratis att använda! Om du tycker om tjänsten kan du stödja utvecklingen med en donation.
               </p>
               <div className="flex items-center gap-3">
                 <input
@@ -183,8 +183,8 @@ const AboutDialog = ({ isOpen, onClose }) => {
                   <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                   </svg>
-                  <a href="https://www.routequest.se" target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:text-cyan-200 transition-colors">
-                    www.routequest.se
+                  <a href="https://www.Quizter.se" target="_blank" rel="noopener noreferrer" className="text-cyan-300 hover:text-cyan-200 transition-colors">
+                    www.Quizter.se
                   </a>
                 </div>
               </div>
@@ -192,7 +192,7 @@ const AboutDialog = ({ isOpen, onClose }) => {
 
             {/* Footer */}
             <div className="text-center text-sm text-gray-500 pt-4 border-t border-slate-700">
-              <p className="mb-2">© 2025 RouteQuest. Skapad med ❤️ för äventyrslystna själar.</p>
+              <p className="mb-2">© 2025 Quizter. Skapad med ❤️ för äventyrslystna själar.</p>
               <div className="flex justify-center gap-4 text-xs">
                 <a href="/privacy-policy.html" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">
                   Integritetspolicy
@@ -221,7 +221,7 @@ const AboutDialog = ({ isOpen, onClose }) => {
       {showDonation && (
         <PaymentModal
           isOpen={showDonation}
-          runName="RouteQuest Donation"
+          runName="Quizter Donation"
           runId="donation"
           participantId="donation"
           amount={donationAmount * 100}

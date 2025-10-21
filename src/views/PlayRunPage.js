@@ -44,7 +44,7 @@ const PlayRunPage = () => {
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Använd användarens språkval från localStorage
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('routequest:language') || 'sv';
+      return localStorage.getItem('quizter:language') || 'sv';
     }
     return 'sv';
   });
@@ -52,7 +52,7 @@ const PlayRunPage = () => {
   // Lyssna på ändringar i localStorage (när användaren byter språk i menyn)
   useEffect(() => {
     const handleStorageChange = () => {
-      const newLanguage = localStorage.getItem('routequest:language') || 'sv';
+      const newLanguage = localStorage.getItem('quizter:language') || 'sv';
       setSelectedLanguage(newLanguage);
     };
 

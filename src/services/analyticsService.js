@@ -75,12 +75,12 @@ const getTimezone = () => {
 const getDeviceId = () => {
   if (typeof window === 'undefined') return null;
 
-  let deviceId = localStorage.getItem('geoquest:deviceId');
+  let deviceId = localStorage.getItem('quizter:deviceId');
 
   if (!deviceId) {
     // Generera nytt device ID
     deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem('geoquest:deviceId', deviceId);
+    localStorage.setItem('quizter:deviceId', deviceId);
   }
 
   return deviceId;
@@ -205,8 +205,8 @@ export const logDonation = async (amount, paymentIntentId, metadata = {}) => {
     });
 
     // Spara donation info i localStorage också
-    localStorage.setItem('geoquest:hasDonated', 'true');
-    localStorage.setItem('geoquest:donationTimestamp', new Date().toISOString());
+    localStorage.setItem('quizter:hasDonated', 'true');
+    localStorage.setItem('quizter:donationTimestamp', new Date().toISOString());
   } catch (error) {
     console.error('Error logging donation:', error);
   }
@@ -217,7 +217,7 @@ export const logDonation = async (amount, paymentIntentId, metadata = {}) => {
  */
 export const hasDonated = () => {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem('geoquest:hasDonated') === 'true';
+  return localStorage.getItem('quizter:hasDonated') === 'true';
 };
 
 /**

@@ -63,7 +63,7 @@ const TestModePaymentForm = ({ runName, amount, onSuccess, onCancel, allowSkip =
             {runName}
           </p>
           <p className="text-gray-400 text-sm">
-            Vill du stödja utvecklingen av RouteQuest med en frivillig donation?
+            Vill du stödja utvecklingen av Quizter med en frivillig donation?
           </p>
           <div className="mt-2 bg-emerald-900/30 border border-emerald-500/50 rounded p-2">
             <p className="text-emerald-200 text-xs">
@@ -220,7 +220,7 @@ const StripePaymentForm = ({ runName, amount, onSuccess, onCancel, runId, partic
             {runName}
           </p>
           <p className="text-gray-400 text-sm">
-            Vill du stödja utvecklingen av RouteQuest med en frivillig donation?
+            Vill du stödja utvecklingen av Quizter med en frivillig donation?
           </p>
         </div>
 

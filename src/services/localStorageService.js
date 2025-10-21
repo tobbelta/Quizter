@@ -4,14 +4,14 @@
  * ENDAST ID:n sparas lokalt - all rundata finns i Firebase-databasen.
  *
  * Datastruktur:
- * - geoquest:local:createdRuns - Endast ID:n för rundor som användaren skapat
- * - geoquest:local:joinedRuns - Endast runId + participantId för rundor användaren deltar i
- * - geoquest:local:migrated - Flagga för om data har migrerats till konto
+ * - quizter:local:createdRuns - Endast ID:n för rundor som användaren skapat
+ * - quizter:local:joinedRuns - Endast runId + participantId för rundor användaren deltar i
+ * - quizter:local:migrated - Flagga för om data har migrerats till konto
  */
 
-const CREATED_RUNS_KEY = 'geoquest:local:createdRuns';
-const JOINED_RUNS_KEY = 'geoquest:local:joinedRuns';
-const MIGRATED_KEY = 'geoquest:local:migrated';
+const CREATED_RUNS_KEY = 'quizter:local:createdRuns';
+const JOINED_RUNS_KEY = 'quizter:local:joinedRuns';
+const MIGRATED_KEY = 'quizter:local:migrated';
 
 /**
  * Säker localStorage-läsning

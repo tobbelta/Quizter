@@ -16,7 +16,7 @@ const isTestMode = () => {
 
   // Kontrollera localStorage för lokal utveckling
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('geoquest:paymentTestMode') === 'true';
+    return localStorage.getItem('quizter:paymentTestMode') === 'true';
   }
 
   return false;
@@ -159,9 +159,9 @@ export const getTestMode = isTestMode;
 export const setTestMode = (enabled) => {
   if (typeof window !== 'undefined') {
     if (enabled) {
-      localStorage.setItem('geoquest:paymentTestMode', 'true');
+      localStorage.setItem('quizter:paymentTestMode', 'true');
     } else {
-      localStorage.removeItem('geoquest:paymentTestMode');
+      localStorage.removeItem('quizter:paymentTestMode');
     }
   }
 };

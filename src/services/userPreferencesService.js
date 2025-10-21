@@ -2,7 +2,7 @@
  * Service för att hantera användarpreferenser som sparas lokalt på enheten
  */
 
-const PREFERENCES_KEY = 'geoquest:preferences';
+const PREFERENCES_KEY = 'quizter:preferences';
 
 class UserPreferencesService {
   /**

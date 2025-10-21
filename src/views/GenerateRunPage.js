@@ -119,7 +119,7 @@ const GenerateRunPage = () => {
     try {
       if (typeof navigator !== 'undefined' && navigator.share) {
         await navigator.share({
-          title: generatedRun.name || 'RouteQuest',
+          title: generatedRun.name || 'Quizter',
           text: 'Hang med pa min runda!',
           url: joinLink
         });
@@ -513,7 +513,7 @@ const GenerateRunPage = () => {
           <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-center shadow-lg">
             <h1 className="text-2xl font-semibold text-slate-100">Skapa en tipsrunda automatiskt</h1>
             <p className="mt-3 text-sm text-gray-300 sm:text-base">
-              Ange namn, svårighetsgrad och önskad längd. RouteQuest skapar en rutt och väljer frågor åt dig.
+              Ange namn, svårighetsgrad och önskad längd. Quizter skapar en rutt och väljer frågor åt dig.
             </p>
           </div>
 

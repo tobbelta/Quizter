@@ -50,7 +50,7 @@ const MyRunsPage = () => {
               // Rensa bort ogiltiga rundor från localStorage
               if (missingIds.length > 0) {
                 const validRuns = localRunsMeta.filter(r => !missingIds.includes(r.runId));
-                localStorage.setItem('geoquest:local:createdRuns', JSON.stringify(validRuns));
+                localStorage.setItem('quizter:local:createdRuns', JSON.stringify(validRuns));
               }
             }
           }
@@ -110,7 +110,7 @@ const MyRunsPage = () => {
       // Ta bort från localStorage
       const localRunsMeta = localStorageService.getCreatedRuns();
       const updatedLocalRuns = localRunsMeta.filter(r => !selectedRuns.has(r.runId));
-      localStorage.setItem('geoquest:local:createdRuns', JSON.stringify(updatedLocalRuns));
+      localStorage.setItem('quizter:local:createdRuns', JSON.stringify(updatedLocalRuns));
 
       // Uppdatera UI
       setMyRuns(prev => prev.filter(r => !selectedRuns.has(r.id)));
@@ -140,7 +140,7 @@ const MyRunsPage = () => {
       // Ta bort från localStorage
       const localRunsMeta = localStorageService.getCreatedRuns();
       const updatedLocalRuns = localRunsMeta.filter(r => r.runId !== runId);
-      localStorage.setItem('geoquest:local:createdRuns', JSON.stringify(updatedLocalRuns));
+      localStorage.setItem('quizter:local:createdRuns', JSON.stringify(updatedLocalRuns));
 
       // Uppdatera UI
       setMyRuns(prev => prev.filter(r => r.id !== runId));

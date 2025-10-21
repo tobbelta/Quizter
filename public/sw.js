@@ -1,9 +1,9 @@
-// Service Worker för RouteQuest
+// Service Worker för Quizter
 // Optimerat för mobila nätverk och offline-funktionalitet
 
-const CACHE_NAME = 'routequest-v1.0.0';
-const STATIC_CACHE = 'routequest-static-v1.0.0';
-const DYNAMIC_CACHE = 'routequest-dynamic-v1.0.0';
+const CACHE_NAME = 'quizter-v1.0.0';
+const STATIC_CACHE = 'quizter-static-v1.0.0';
+const DYNAMIC_CACHE = 'quizter-dynamic-v1.0.0';
 
 // Kritiska resurser som alltid ska cachas
 const STATIC_ASSETS = [
@@ -201,7 +201,7 @@ self.addEventListener('push', (event) => {
   console.log('Service Worker: Push event received');
 
   const options = {
-    body: event.data ? event.data.text() : 'RouteQuest notification',
+    body: event.data ? event.data.text() : 'Quizter notification',
     icon: '/logo192.png',
     badge: '/favicon.ico',
     vibrate: [200, 100, 200],
@@ -211,7 +211,7 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification('RouteQuest', options)
+    self.registration.showNotification('Quizter', options)
   );
 });
 

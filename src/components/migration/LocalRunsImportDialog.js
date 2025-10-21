@@ -30,7 +30,7 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
       if (runs.length === 0) {
         setStatus('Inga giltiga rundor hittades att importera.');
         // Rensa localStorage eftersom inga rundor finns
-        localStorage.setItem('geoquest:local:createdRuns', JSON.stringify([]));
+        localStorage.setItem('quizter:local:createdRuns', JSON.stringify([]));
         setTimeout(() => onComplete(true), 1500);
         return;
       }
@@ -54,7 +54,7 @@ const LocalRunsImportDialog = ({ localRunCount, onComplete, currentUser }) => {
 
       // Rensa localStorage efter lyckad import
       if (successCount > 0) {
-        localStorage.setItem('geoquest:local:createdRuns', JSON.stringify([]));
+        localStorage.setItem('quizter:local:createdRuns', JSON.stringify([]));
       }
 
       // Visa resultat

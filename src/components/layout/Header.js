@@ -2,7 +2,7 @@
  * Header-komponent med logotyp, dynamisk titel och hamburger-meny
  *
  * Props:
- * - title: Text som visas i mitten (default: "GeoQuest")
+ * - title: Text som visas i mitten (default: "Quizter")
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,7 +20,7 @@ import { VERSION, BUILD_DATE } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
 import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
 
-const Header = ({ title = 'RouteQuest', children }) => {
+const Header = ({ title = 'Quizter', children }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const { status: gpsStatus, coords, trackingEnabled, enableTracking, disableTracking } = useRunLocation();
@@ -43,7 +43,7 @@ const Header = ({ title = 'RouteQuest', children }) => {
   });
   const [language, setLanguage] = useState(() => {
     if (typeof window === 'undefined') return 'sv';
-    return localStorage.getItem('routequest:language') || 'sv';
+    return localStorage.getItem('quizter:language') || 'sv';
   });
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
@@ -71,7 +71,7 @@ const Header = ({ title = 'RouteQuest', children }) => {
     if (typeof window === 'undefined') return undefined;
 
     const handleStorage = (event) => {
-      if (!event.key || event.key === 'geoquest:preferences') {
+      if (!event.key || event.key === 'quizter:preferences') {
         setGuestAlias(userPreferencesService.getAlias());
       }
     };
@@ -151,7 +151,7 @@ const Header = ({ title = 'RouteQuest', children }) => {
   const handleLanguageChange = (lang) => {
     setLanguage(lang);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('routequest:language', lang);
+      localStorage.setItem('quizter:language', lang);
       // Skicka custom event så andra komponenter kan reagera
       window.dispatchEvent(new Event('languageChange'));
     }
@@ -214,7 +214,7 @@ const Header = ({ title = 'RouteQuest', children }) => {
           >
             <img
               src="/logo-compass.svg"
-              alt="RouteQuest"
+              alt="Quizter"
               className={`w-8 h-8 sm:w-9 sm:h-9 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
               style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}
             />
@@ -522,13 +522,13 @@ const Header = ({ title = 'RouteQuest', children }) => {
                     </>
                   )}
 
-                  {/* Om RouteQuest */}
+                  {/* Om Quizter */}
                   <div className="my-2 border-t border-slate-700" />
                   <button
                     onClick={() => { setIsMenuOpen(false); setShowAbout(true); }}
                     className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-gray-200"
                   >
-                    Om RouteQuest
+                    Om Quizter
                   </button>
 
                   {/* Version */}

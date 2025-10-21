@@ -94,7 +94,7 @@ const JoinRunPage = () => {
     if (typeof window === 'undefined') return undefined;
 
     const handleStorage = (event) => {
-      if (!event.key || event.key === 'geoquest:preferences') {
+      if (!event.key || event.key === 'quizter:preferences') {
         const storedAlias = userPreferencesService.getAlias() || '';
         setAlias(storedAlias);
         setAliasCommitted(Boolean(storedAlias.trim()));

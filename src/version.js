@@ -1,5 +1,5 @@
 /**
- * Versionshantering för GeoQuest
+ * Versionshantering för Quizter
  *
  * Använd Semantic Versioning (SemVer): MAJOR.MINOR.PATCH
  * - MAJOR: Inkompatibla API-ändringar
@@ -92,19 +92,19 @@ export const CHANGELOG = [
 export const checkLocalStorageVersion = () => {
   if (typeof window === 'undefined') return { needsMigration: false, oldVersion: null };
 
-  const storedVersion = localStorage.getItem('geoquest:version');
+  const storedVersion = localStorage.getItem('Quizter:version');
 
   if (!storedVersion) {
     // Första gången applikationen körs, sätt version
-    localStorage.setItem('geoquest:version', VERSION);
-    localStorage.setItem('geoquest:build_date', BUILD_DATE);
+    localStorage.setItem('Quizter:version', VERSION);
+    localStorage.setItem('Quizter:build_date', BUILD_DATE);
     return { needsMigration: false, oldVersion: null };
   }
 
   if (storedVersion !== VERSION) {
     console.info(`[Version] Uppdatering från ${storedVersion} till ${VERSION}`);
-    localStorage.setItem('geoquest:version', VERSION);
-    localStorage.setItem('geoquest:build_date', BUILD_DATE);
+    localStorage.setItem('Quizter:version', VERSION);
+    localStorage.setItem('Quizter:build_date', BUILD_DATE);
     return { needsMigration: true, oldVersion: storedVersion };
   }
 

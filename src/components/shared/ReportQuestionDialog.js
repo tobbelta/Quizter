@@ -27,7 +27,7 @@ const ReportQuestionDialog = ({ questionId, questionText, onClose, onReported })
 
     try {
       // Använd användarens alias om tillgängligt, annars 'anonymous'
-      const reportedBy = localStorage.getItem('geoquest:user:alias') || 'anonymous';
+      const reportedBy = localStorage.getItem('quizter:user:alias') || 'anonymous';
 
       await questionService.reportQuestion(questionId, reason.trim(), reportedBy);
 
