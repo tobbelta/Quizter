@@ -1,5 +1,39 @@
 /**
- * Hook som kapslar GPS-hantering och låter spelaren slå på/av spårning.
+ * useRunLocation Hook
+ * 
+ * SYFTE: Hanterar GPS-tracking med användarens val om de vill dela position
+ * 
+ * ANVÄNDNING:
+ * - PlayRunPage: Spåra position under route/distance-baserade rundor
+ * - GenerateRunPage: Visa GPS-status innan man skapar runda
+ * - GPSStatus component: Visa status-indikator i UI
+ * 
+ * FUNKTIONALITET:
+ * - watchPosition() för kontinuerlig positionsspårning
+ * - Sparar on/off-preferens i localStorage
+ * - Filtrerar bort små rörelser (<5m) för att minska onödiga uppdateringar
+ * - Hanterar permissions, errors och olika GPS-statusar
+ * - Fallback till Stockholm koordinater om GPS inte tillgängligt
+ * 
+ * GPS STATUSAR:
+ * - idle: Inte startad eller avstängd
+ * - pending: Väntar på första positionen
+ * - active: GPS fungerar och ger positions
+ * - denied: Användaren nekade permission
+ * - unavailable: GPS-hårdvara inte tillgänglig
+ * - timeout: GPS tog för lång tid att svara
+ * - unsupported: Browser stödjer inte Geolocation API
+ * 
+ * @returns {{
+ *   trackingEnabled: boolean,
+ *   status: string,
+ *   coords: {lat, lng, accuracy} | null,
+ *   error: GeolocationPositionError | null,
+ *   lastUpdated: Date | null,
+ *   enableTracking: function,
+ *   disableTracking: function,
+ *   getCurrentPosition: function
+ * }}
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FALLBACK_POSITION } from '../utils/constants';
