@@ -1,6 +1,6 @@
 {
   "name": "routequest",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "private": true,
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
