@@ -1,0 +1,258 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.geoquest.app"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="23"
+9        android:targetSdkVersion="35" />
+10
+11    <!-- GPS and Location Permissions -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:39:5-67
+12-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:39:22-64
+13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+13-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:40:5-79
+13-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:40:22-76
+14    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+14-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:41:5-79
+14-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:41:22-76
+15    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+15-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:42:5-81
+15-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:42:22-78
+16    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+16-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:43:5-85
+16-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:43:22-82
+17
+18    <!-- Background service permissions -->
+19    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+19-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:46:5-77
+19-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:46:22-74
+20    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+20-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:47:5-86
+20-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:47:22-83
+21
+22    <!-- Notification and vibration permissions -->
+23    <uses-permission android:name="android.permission.VIBRATE" />
+23-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:50:5-66
+23-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:50:22-63
+24    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+24-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:51:5-77
+24-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:51:22-74
+25    <uses-permission android:name="android.permission.WAKE_LOCK" />
+25-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:52:5-68
+25-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:52:22-65
+26
+27    <!-- Exact alarm permission for Android 12+ (required for time-based runs) -->
+28    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+28-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:55:5-79
+28-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:55:22-76
+29    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+29-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:56:5-74
+29-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:56:22-71
+30
+31    <uses-feature android:name="android.hardware.location.gps" />
+31-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:21:5-66
+31-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:21:19-63
+32
+33    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+33-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:7:5-81
+33-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:7:22-78
+34
+35    <permission
+35-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:22:5-24:47
+36        android:name="com.geoquest.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+36-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:23:9-81
+37        android:protectionLevel="signature" />
+37-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:24:9-44
+38
+39    <uses-permission android:name="com.geoquest.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+39-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:26:5-97
+39-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:26:22-94
+40
+41    <application
+41-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:4:5-36:19
+42        android:allowBackup="true"
+42-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:5:9-35
+43        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+43-->[androidx.core:core:1.15.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\90ac8b1cc9aa701417a400dab50b9483\transformed\core-1.15.0\AndroidManifest.xml:28:18-86
+44        android:debuggable="true"
+45        android:extractNativeLibs="false"
+46        android:icon="@mipmap/ic_launcher"
+46-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:6:9-43
+47        android:label="@string/app_name"
+47-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:7:9-41
+48        android:roundIcon="@mipmap/ic_launcher_round"
+48-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:8:9-54
+49        android:supportsRtl="true"
+49-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:9:9-35
+50        android:testOnly="true"
+51        android:theme="@style/AppTheme" >
+51-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:10:9-40
+52        <activity
+52-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:12:9-25:20
+53            android:name="com.geoquest.app.MainActivity"
+53-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:14:13-41
+54            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+54-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:13:13-129
+55            android:exported="true"
+55-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:18:13-36
+56            android:label="@string/title_activity_main"
+56-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:15:13-56
+57            android:launchMode="singleTask"
+57-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:17:13-44
+58            android:theme="@style/AppTheme.NoActionBarLaunch" >
+58-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:16:13-62
+59            <intent-filter>
+59-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:20:13-23:29
+60                <action android:name="android.intent.action.MAIN" />
+60-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:21:17-69
+60-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:21:25-66
+61
+62                <category android:name="android.intent.category.LAUNCHER" />
+62-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:22:17-77
+62-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:22:27-74
+63            </intent-filter>
+64        </activity>
+65
+66        <provider
+67            android:name="androidx.core.content.FileProvider"
+67-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:28:13-62
+68            android:authorities="com.geoquest.app.fileprovider"
+68-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:29:13-64
+69            android:exported="false"
+69-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:30:13-37
+70            android:grantUriPermissions="true" >
+70-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:31:13-47
+71            <meta-data
+71-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:32:13-34:64
+72                android:name="android.support.FILE_PROVIDER_PATHS"
+72-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:33:17-67
+73                android:resource="@xml/file_paths" />
+73-->C:\Geo\geoquest2\android\app\src\main\AndroidManifest.xml:34:17-51
+74        </provider>
+75
+76        <service
+76-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:24:9-28:56
+77            android:name="com.equimaps.capacitor_background_geolocation.BackgroundGeolocationService"
+77-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:25:13-102
+78            android:enabled="true"
+78-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:26:13-35
+79            android:exported="true"
+79-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:27:13-36
+80            android:foregroundServiceType="location" />
+80-->[:capacitor-community-background-geolocation] C:\Geo\geoquest2\node_modules\@capacitor-community\background-geolocation\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:28:13-53
+81
+82        <receiver android:name="com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher" />
+82-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:12:9-106
+82-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:12:19-103
+83        <receiver android:name="com.capacitorjs.plugins.localnotifications.NotificationDismissReceiver" />
+83-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:13:9-107
+83-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:13:19-104
+84        <receiver
+84-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:14:9-23:20
+85            android:name="com.capacitorjs.plugins.localnotifications.LocalNotificationRestoreReceiver"
+85-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:15:13-103
+86            android:directBootAware="true"
+86-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:16:13-43
+87            android:exported="false" >
+87-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:17:13-37
+88            <intent-filter>
+88-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:18:13-22:29
+89                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+89-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:19:17-86
+89-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:19:25-83
+90                <action android:name="android.intent.action.BOOT_COMPLETED" />
+90-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:20:17-79
+90-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:20:25-76
+91                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+91-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:21:17-82
+91-->[:capacitor-local-notifications] C:\Geo\geoquest2\node_modules\@capacitor\local-notifications\android\build\intermediates\merged_manifest\debug\processDebugManifest\AndroidManifest.xml:21:25-79
+92            </intent-filter>
+93        </receiver>
+94
+95        <activity
+95-->[com.google.android.gms:play-services-base:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\38d1b54ad8bbc858ffd7fc6e7a54b9a2\transformed\play-services-base-18.1.0\AndroidManifest.xml:20:9-22:45
+96            android:name="com.google.android.gms.common.api.GoogleApiActivity"
+96-->[com.google.android.gms:play-services-base:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\38d1b54ad8bbc858ffd7fc6e7a54b9a2\transformed\play-services-base-18.1.0\AndroidManifest.xml:20:19-85
+97            android:exported="false"
+97-->[com.google.android.gms:play-services-base:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\38d1b54ad8bbc858ffd7fc6e7a54b9a2\transformed\play-services-base-18.1.0\AndroidManifest.xml:22:19-43
+98            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+98-->[com.google.android.gms:play-services-base:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\38d1b54ad8bbc858ffd7fc6e7a54b9a2\transformed\play-services-base-18.1.0\AndroidManifest.xml:21:19-78
+99
+100        <meta-data
+100-->[com.google.android.gms:play-services-basement:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\1c7561b99eb96f144de747aed21b0d3f\transformed\play-services-basement-18.1.0\AndroidManifest.xml:21:9-23:69
+101            android:name="com.google.android.gms.version"
+101-->[com.google.android.gms:play-services-basement:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\1c7561b99eb96f144de747aed21b0d3f\transformed\play-services-basement-18.1.0\AndroidManifest.xml:22:13-58
+102            android:value="@integer/google_play_services_version" />
+102-->[com.google.android.gms:play-services-basement:18.1.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\1c7561b99eb96f144de747aed21b0d3f\transformed\play-services-basement-18.1.0\AndroidManifest.xml:23:13-66
+103
+104        <provider
+104-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:24:9-32:20
+105            android:name="androidx.startup.InitializationProvider"
+105-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:25:13-67
+106            android:authorities="com.geoquest.app.androidx-startup"
+106-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:26:13-68
+107            android:exported="false" >
+107-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:27:13-37
+108            <meta-data
+108-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+109                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+109-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:30:17-75
+110                android:value="androidx.startup" />
+110-->[androidx.emoji2:emoji2:1.3.0] C:\Users\vitdn\.gradle\caches\8.13\transforms\9486775e45f54e51d5c71ac476795f47\transformed\emoji2-1.3.0\AndroidManifest.xml:31:17-49
+111            <meta-data
+111-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\vitdn\.gradle\caches\8.13\transforms\12b15047bf3ef769769ae8dc9573485e\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:29:13-31:52
+112                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+112-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\vitdn\.gradle\caches\8.13\transforms\12b15047bf3ef769769ae8dc9573485e\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:30:17-78
+113                android:value="androidx.startup" />
+113-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\vitdn\.gradle\caches\8.13\transforms\12b15047bf3ef769769ae8dc9573485e\transformed\lifecycle-process-2.6.2\AndroidManifest.xml:31:17-49
+114            <meta-data
+114-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+115                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+116                android:value="androidx.startup" />
+116-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+117        </provider>
+118
+119        <receiver
+119-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+120            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+120-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+121            android:directBootAware="false"
+121-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+122            android:enabled="true"
+122-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+123            android:exported="true"
+123-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+124            android:permission="android.permission.DUMP" >
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+125            <intent-filter>
+125-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+126                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+126-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+126-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+127            </intent-filter>
+128            <intent-filter>
+128-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+129                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+129-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+129-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+130            </intent-filter>
+131            <intent-filter>
+131-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+132                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+132-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+132-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+133            </intent-filter>
+134            <intent-filter>
+134-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+135                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+135-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+135-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\vitdn\.gradle\caches\8.13\transforms\e1676f28944c003faa44ca32e6dc09db\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+136            </intent-filter>
+137        </receiver>
+138    </application>
+139
+140</manifest>

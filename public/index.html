@@ -16,27 +16,7 @@
 
     <!-- Performance & SEO -->
     <meta name="description" content="Skapa och gå interaktiva tipspromenader på begäran. GPS-baserade frågor, upptäck din stad, perfekt för familj och vänner. Installera appen gratis!" />
-    <meta name="keywords" content="tipspromenad, GPS-promenad, stadsvandring, utomhusaktivitet, familjeaktivitet, trivia, quiz, orientering, upptäck staden, interaktiv promenad, gåtur, motion, teambuilding, gratis app" />
     <meta name="author" content="RouteQuest Team" />
-
-    <!-- Cache Control - Force reload on updates -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-
-    <!-- Social Media / Open Graph -->
-    <meta property="og:title" content="RouteQuest - Skapa & Gå Tipspromenader på Begäran" />
-    <meta property="og:description" content="Utforska din stad med interaktiva tipspromenader! GPS-baserade frågor, tävla mot vänner och upptäck nya platser. Perfekt för familj, vänner och teambuilding. Installera gratis!" />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="%PUBLIC_URL%/logo512.png" />
-    <meta property="og:url" content="https://routequest.se" />
-    <meta property="og:site_name" content="RouteQuest" />
-
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="RouteQuest - Tipspromenader på Begäran" />
-    <meta name="twitter:description" content="Skapa och gå interaktiva tipspromenader. GPS, trivia och äventyr i din stad!" />
-    <meta name="twitter:image" content="%PUBLIC_URL%/logo512.png" />
 
     <!-- Icons & Manifest -->
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
@@ -45,85 +25,49 @@
     <!-- Resource hints for performance -->
     <link rel="preconnect" href="https://unpkg.com" />
     <link rel="preconnect" href="https://firestore.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-
-    <!-- Critical CSS loaded early -->
-    <link rel="preload" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-    <noscript><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" /></noscript>
-
-    <!-- Fonts optimized for mobile -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <title>RouteQuest - Skapa & Gå Tipspromenader</title>
 
-    <!-- Version check - MUST load first, with cache busting -->
-    <script>
-      // Ladda version-check med timestamp för att undvika cache
-      (function() {
-        const script = document.createElement('script');
-        script.src = '%PUBLIC_URL%/version-check.js?t=' + Date.now();
-        script.async = false; // Måste köras synkront FÖRST
-        document.head.appendChild(script);
-      })();
-    </script>
+    <!-- Version check - loads before app with cache busting -->
+    <script src="%PUBLIC_URL%/version-check.js?t=BUILD_TIME" async></script>
 
-    <!-- Cache busting and version logging -->
+    <!-- App version and cache management -->
     <script>
-      // App version
       const APP_VERSION = '0.8.1';
-      const BUILD_TIMESTAMP = Date.now();
+      
+      console.log('🚀 RouteQuest v' + APP_VERSION);
 
-      // Log version for debugging
-      console.log('%c🚀 RouteQuest v' + APP_VERSION, 'color: #06b6d4; font-size: 16px; font-weight: bold;');
-      console.log('%c⏰ Build: ' + new Date(BUILD_TIMESTAMP).toLocaleString(), 'color: #8b5cf6;');
-
-      // Aggressive cache clearing och version check
+      // Version check: Clear cache if version changed
       if (typeof window !== 'undefined' && window.localStorage) {
         const storedVersion = localStorage.getItem('routequest:version');
-        const needsReload = storedVersion && storedVersion !== APP_VERSION;
-
-        if (needsReload) {
-          console.log('%c🔄 Ny version upptäckt! Uppdaterar från ' + storedVersion + ' till ' + APP_VERSION, 'color: #10b981; font-weight: bold;');
-
-          // Sätt ny version FÖRST
+        
+        if (storedVersion && storedVersion !== APP_VERSION) {
+          console.log('🔄 Updating from ' + storedVersion + ' to ' + APP_VERSION);
           localStorage.setItem('routequest:version', APP_VERSION);
-          localStorage.setItem('routequest:build_timestamp', BUILD_TIMESTAMP);
-
-          // Rensa ALLT
-          // 1. Service Worker Caches
+          
+          // Clear Service Worker caches
           if ('caches' in window) {
-            caches.keys().then(function(names) {
-              names.forEach(function(name) {
-                caches.delete(name);
-              });
-            });
+            caches.keys().then(names => names.forEach(name => caches.delete(name)));
           }
-
-          // 2. Service Workers
+          
+          // Unregister Service Workers
           if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              registrations.forEach(function(registration) {
-                registration.unregister();
-              });
-            });
+            navigator.serviceWorker.getRegistrations().then(regs => 
+              regs.forEach(reg => reg.unregister())
+            );
           }
-
-          // 3. Tvinga hård omladdning DIREKT (utan sessionStorage check)
-          console.log('%c⚡ Tvingar hård omladdning för att rensa cache...', 'color: #fbbf24; font-weight: bold;');
+          
           window.location.reload(true);
-
-          // Stoppa all vidare körning
           throw new Error('Reloading for version update');
         } else if (!storedVersion) {
-          // Första gången - sätt version
           localStorage.setItem('routequest:version', APP_VERSION);
-          localStorage.setItem('routequest:build_timestamp', BUILD_TIMESTAMP);
         }
-
-        // Rensa gamla test-läge localStorage efter rebranding
-        localStorage.removeItem('geoquest:paymentTestMode');
       }
     </script>
 
