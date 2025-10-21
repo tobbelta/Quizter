@@ -701,3 +701,51 @@ export const buildDistanceBasedRun = async ({
 
   return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
 };
+
+/**
+ * Bygger en tidsbaserad runda där frågor triggas efter X minuter.
+ * Ingen förutbestämd rutt – fokus ligger på tidsintervall mellan frågor.
+ */
+export const buildTimeBasedRun = async ({
+  name,
+  audience = 'family',
+  difficulty = 'family',
+  minutesBetweenQuestions = 5,
+  questionCount = 8,
+  categories = [],
+  allowAnonymous = true,
+  language = 'sv'
+}, creator) => {
+  const questions = await pickQuestions({ audience, difficulty, questionCount, categories });
+  const joinCode = generateJoinCode();
+
+  const run = {
+    id: uuidv4(),
+    name: name || 'Tidsbaserad runda',
+    description: 'Frågor släpps automatiskt efter angivet tidsintervall.',
+    audience,
+    difficulty,
+    questionCount,
+    type: 'time-based',
+    minutesBetweenQuestions,
+    allowAnonymous,
+    allowRouteSelection: false,
+    language: language || 'sv',
+    joinCode,
+    qrSlug: joinCode.toLowerCase(),
+    checkpoints: [],
+    route: null,
+    startPoint: null,
+    questionIds: questions.map((question) => question.id)
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[RunFactory] Skapad time-based run:', {
+      id: run.id,
+      minutesBetweenQuestions: run.minutesBetweenQuestions,
+      questionCount: run.questionCount
+    });
+  }
+
+  return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
+};

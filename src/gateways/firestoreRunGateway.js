@@ -28,7 +28,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebaseClient';
-import { buildHostedRun, buildGeneratedRun, buildDistanceBasedRun } from '../services/runFactory';
+import { buildHostedRun, buildGeneratedRun, buildDistanceBasedRun, buildTimeBasedRun } from '../services/runFactory';
 import { FALLBACK_POSITION, PARTICIPANT_TIMEOUT_MS } from '../utils/constants';
 
 /**
@@ -71,17 +71,6 @@ const mapperaRundeDokument = (docSnap) => {
 
   const data = docSnap.data();
   const runData = { id: docSnap.id, ...data };
-
-  // Debug logging i development
-  if (process.env.NODE_ENV === 'development') {
-    console.debug('[FirestoreGateway] Mapped run:', {
-      id: runData.id,
-      type: runData.type,
-      hasRoute: !!runData.route,
-      routeLength: runData.route?.length || 0,
-      checkpointCount: runData.checkpoints?.length || 0
-    });
-  }
 
   return runData;
 };
@@ -246,10 +235,14 @@ export const firestoreRunGateway = {
       console.debug('[FirestoreGateway] generateRouteRun startar med payload:', payload);
     }
 
-    // Använd buildDistanceBasedRun om runType är 'distance-based'
-    const run = payload.runType === 'distance-based'
-      ? await buildDistanceBasedRun(payload, creator)
-      : await buildGeneratedRun(payload, creator);
+    let run;
+    if (payload.runType === 'distance-based') {
+      run = await buildDistanceBasedRun(payload, creator);
+    } else if (payload.runType === 'time-based') {
+      run = await buildTimeBasedRun(payload, creator);
+    } else {
+      run = await buildGeneratedRun(payload, creator);
+    }
 
     if (process.env.NODE_ENV !== 'production') {
       console.debug('[FirestoreGateway] build returnerade:', {
@@ -259,7 +252,8 @@ export const firestoreRunGateway = {
         routePointCount: run.route?.length || 0,
         hasCheckpoints: !!run?.checkpoints,
         checkpointCount: run.checkpoints?.length || 0,
-        distanceBetweenQuestions: run.distanceBetweenQuestions
+        distanceBetweenQuestions: run.distanceBetweenQuestions,
+        minutesBetweenQuestions: run.minutesBetweenQuestions
       });
     }
 

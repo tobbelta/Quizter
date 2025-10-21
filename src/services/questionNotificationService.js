@@ -1,119 +1,30 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
-const ACTION_TYPE_ID = 'QUESTION_ACTIONS';
-const SMALL_ICON_NAME = 'ic_notification_compass';
-
-let localNotificationsPlugin = null;
-let setupPromise = null;
-let actionListenerRegistered = false;
-
-const getLocalNotifications = () => {
-  if (!Capacitor.isNativePlatform()) {
-    return null;
-  }
-
-  if (!localNotificationsPlugin) {
-    try {
-      localNotificationsPlugin = registerPlugin('LocalNotifications');
-    } catch (error) {
-      console.warn('[QuestionNotification] Could not register LocalNotifications plugin:', error);
-      localNotificationsPlugin = null;
+/**
+ * Helper för att visa web-notifikation med eller utan service worker
+ */
+const showWebNotification = async (title, options) => {
+  try {
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, options);
+    } else {
+      // Fallback till vanliga Notification API
+      new Notification(title, options);
     }
+  } catch (error) {
+    console.warn('[QuestionNotification] Could not show notification:', error);
   }
-
-  return localNotificationsPlugin;
-};
-
-const serializeOptions = (options = []) => {
-  return options
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((opt) => (typeof opt === 'string' ? opt : String(opt)));
-};
-
-const ensureSetup = async () => {
-  if (!Capacitor.isNativePlatform()) {
-    return;
-  }
-
-  const plugin = getLocalNotifications();
-  if (!plugin) {
-    return;
-  }
-
-  if (!setupPromise) {
-    setupPromise = (async () => {
-      await plugin.requestPermissions().catch((error) => {
-        console.warn('[QuestionNotification] Could not request permissions:', error);
-      });
-
-      try {
-        await plugin.registerActionTypes({
-          types: [
-            {
-              id: ACTION_TYPE_ID,
-              actions: [
-                {
-                  id: 'answer',
-                  title: 'Svara',
-                  input: true,
-                  editable: true,
-                  buttonTitle: 'Skicka',
-                  placeholder: 'Ange alternativ (1-4 eller text)',
-                },
-                {
-                  id: 'open',
-                  title: 'Öppna i appen',
-                  foreground: true,
-                },
-              ],
-            },
-          ],
-        });
-      } catch (error) {
-        console.warn('[QuestionNotification] Could not register action types:', error);
-      }
-
-      if (!actionListenerRegistered) {
-        actionListenerRegistered = true;
-        plugin.addListener('localNotificationActionPerformed', (event) => {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('routequest:notificationAction', {
-                detail: event,
-              }),
-            );
-          }
-        });
-      }
-    })().catch((error) => {
-      console.warn('[QuestionNotification] Setup failed:', error);
-      setupPromise = null;
-    });
-  }
-
-  return setupPromise;
-};
-
-const buildBody = ({ questionText, order, total, distanceMeters, mode }) => {
-  const locationInfo =
-    mode === 'distance' && typeof distanceMeters === 'number'
-      ? `Du har gått ${Math.round(distanceMeters)} meter.`
-      : 'Du är nära nästa kontrollpunkt.';
-
-  const orderInfo =
-    typeof order === 'number' && typeof total === 'number'
-      ? `Fråga ${order}/${total}`
-      : 'Ny fråga väntar';
-
-  const questionLine = questionText ? `\n${questionText}` : '';
-
-  return `${orderInfo}\n${locationInfo}${questionLine}`;
 };
 
 export const ensureNotificationPermissions = async () => {
   if (Capacitor.isNativePlatform()) {
-    await ensureSetup();
+    try {
+      await LocalNotifications.requestPermissions();
+    } catch (error) {
+      console.warn('[QuestionNotification] Could not request native permissions:', error);
+    }
   } else if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'default') {
       try {
@@ -125,53 +36,128 @@ export const ensureNotificationPermissions = async () => {
   }
 };
 
-export const notifyQuestionAvailable = async ({
-  questionId = null,
-  questionTitle = 'Ny fråga väntar!',
-  questionText = '',
-  options = [],
-  order = null,
-  total = null,
-  distanceMeters = null,
-  mode = 'route',
-} = {}) => {
-  const cleanedOptions = serializeOptions(options);
-  const body = buildBody({ questionText, order, total, distanceMeters, mode });
+const generateNotificationId = (questionId) => {
+  if (!questionId && questionId !== 0) {
+    return Date.now();
+  }
 
-  const extraPayload = {
+  if (typeof questionId === 'number' && Number.isFinite(questionId)) {
+    return Math.abs(Math.trunc(questionId));
+  }
+
+  const source = String(questionId);
+  return Math.abs(
+    source.split('').reduce((hash, char) => ((hash << 5) - hash) + char.charCodeAt(0), 0)
+  );
+};
+
+const buildNotificationContent = (questionData = {}) => {
+  const {
     questionId,
-    options: cleanedOptions,
+    questionText,
+    questionOrder,
     order,
+    totalQuestions,
     total,
-    distanceMeters,
+    mode = 'route',
+    runId,
+    minutesBetweenQuestions,
+  } = questionData;
+
+  const resolvedOrder = order ?? questionOrder ?? 1;
+  const resolvedTotal = total ?? totalQuestions ?? 1;
+
+  let title;
+  switch (mode) {
+    case 'distance':
+      title = '📍 Ny fråga tillgänglig!';
+      break;
+    case 'time':
+      title = `⏱️ Fråga ${resolvedOrder} av ${resolvedTotal}`;
+      break;
+    default:
+      title = `🧭 Fråga ${resolvedOrder} av ${resolvedTotal}`;
+  }
+
+  let body = questionText
+    ? `${questionText.substring(0, 100)}${questionText.length > 100 ? '...' : ''}`
+    : 'En ny fråga väntar på dig!';
+
+  if (mode === 'time' && !questionText) {
+    body = 'Nedräkningen är klar – dags att svara!';
+  }
+
+  if (mode === 'time' && minutesBetweenQuestions) {
+    body = `${body} (Intervall: ${minutesBetweenQuestions} min)`;
+  }
+
+  const targetPath = runId ? `/run/${runId}/play` : '/';
+  const targetUrl = typeof window !== 'undefined' && window.location?.origin
+    ? `${window.location.origin}${targetPath}`
+    : targetPath;
+
+  return {
+    title,
+    body,
+    questionId,
+    runId,
     mode,
+    minutesBetweenQuestions,
+    targetUrl,
   };
+};
+
+export const notifyQuestionAvailable = async (questionData = {}, extraPayload = {}) => {
+  const {
+    title,
+    body,
+    questionId,
+    runId,
+    mode,
+    minutesBetweenQuestions,
+    targetUrl,
+  } = buildNotificationContent(questionData);
+
+  console.log('[QuestionNotification] 🔔 Sending notification for question:', questionId, 'mode:', mode);
 
   if (Capacitor.isNativePlatform()) {
-    const plugin = getLocalNotifications();
-    if (!plugin) {
-      return;
-    }
-
-    await ensureSetup();
-
     try {
-      const notificationId = Math.floor(Date.now() % 2147483647);
-      await plugin.schedule({
+      const permStatus = await LocalNotifications.checkPermissions();
+      if (permStatus.display !== 'granted') {
+        const requested = await LocalNotifications.requestPermissions();
+        if (requested.display !== 'granted') {
+          console.warn('[QuestionNotification] User denied notification permission');
+          return;
+        }
+      }
+
+      const numericId = generateNotificationId(questionId);
+
+      await LocalNotifications.schedule({
         notifications: [
           {
-            id: notificationId,
-            title: questionTitle,
+            id: numericId,
+            title,
             body,
-            smallIcon: SMALL_ICON_NAME,
+            schedule: {
+              at: new Date(Date.now() + 100),
+            },
             sound: 'question_alert.wav',
-            actionTypeId: ACTION_TYPE_ID,
-            extra: extraPayload,
+            actionTypeId: 'QUESTION_READY',
+            extra: {
+              questionId,
+              runId,
+              mode,
+              minutesBetweenQuestions,
+              ...extraPayload,
+            },
           },
         ],
       });
+
+      console.log('[QuestionNotification] ✅ Native notification scheduled immediately. ID:', numericId);
     } catch (error) {
-      console.warn('[QuestionNotification] Could not schedule native notification:', error);
+      console.error('[QuestionNotification] Could not schedule native notification:', error);
     }
   } else if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'default') {
@@ -183,31 +169,109 @@ export const notifyQuestionAvailable = async ({
     }
 
     if (Notification.permission === 'granted') {
-      try {
-        const notification = new Notification(questionTitle, {
-          body,
-          tag: `question-${questionId || Date.now()}`,
-          data: extraPayload,
-        });
+      await showWebNotification(title, {
+        body,
+        tag: `question-${questionId || Date.now()}`,
+        data: {
+          questionId,
+          runId,
+          mode,
+          minutesBetweenQuestions,
+          url: targetUrl,
+          ...extraPayload,
+        },
+      });
+    }
+  }
+};
 
-        notification.onclick = () => {
-          window.dispatchEvent(
-            new CustomEvent('routequest:webNotificationClicked', {
-              detail: extraPayload,
-            }),
-          );
-          window.focus();
-        };
-      } catch (error) {
-        console.warn('[QuestionNotification] Could not show web notification:', error);
+export const scheduleNativeQuestionNotification = async (questionData = {}, scheduleAt, extraPayload = {}) => {
+  if (!Capacitor.isNativePlatform() || !scheduleAt) {
+    return null;
+  }
+
+  const {
+    title,
+    body,
+    questionId,
+    runId,
+    mode,
+    minutesBetweenQuestions,
+  } = buildNotificationContent(questionData);
+
+  try {
+    const permStatus = await LocalNotifications.checkPermissions();
+    if (permStatus.display !== 'granted') {
+      const requested = await LocalNotifications.requestPermissions();
+      if (requested.display !== 'granted') {
+        console.warn('[QuestionNotification] User denied notification permission for scheduled notification');
+        return null;
       }
     }
+
+    const numericId = generateNotificationId(questionId || `${scheduleAt}`);
+
+    try {
+      await LocalNotifications.cancel({ notifications: [{ id: numericId }] });
+    } catch (cancelError) {
+      console.warn('[QuestionNotification] Could not cancel existing scheduled notification:', cancelError);
+    }
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: numericId,
+          title,
+          body,
+          schedule: {
+            at: new Date(scheduleAt),
+            allowWhileIdle: true,
+          },
+          sound: 'question_alert.wav',
+          actionTypeId: 'QUESTION_READY',
+          extra: {
+            questionId,
+            runId,
+            mode,
+            minutesBetweenQuestions,
+            scheduled: true,
+            ...extraPayload,
+          },
+        },
+      ],
+    });
+
+    console.log('[QuestionNotification] Scheduled native notification', numericId, 'for', new Date(scheduleAt).toISOString());
+    return numericId;
+  } catch (error) {
+    console.error('[QuestionNotification] Could not schedule native notification:', error);
+    return null;
+  }
+};
+
+export const cancelNativeNotification = async (identifier) => {
+  if (!Capacitor.isNativePlatform() || identifier === null || identifier === undefined) {
+    return;
+  }
+
+  const numericId = typeof identifier === 'number'
+    ? identifier
+    : generateNotificationId(identifier);
+
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: numericId }] });
+    console.log('[QuestionNotification] Cancelled native notification', numericId);
+  } catch (error) {
+    console.warn('[QuestionNotification] Could not cancel native notification:', error);
   }
 };
 
 const questionNotificationService = {
   ensureNotificationPermissions,
   notifyQuestionAvailable,
+  scheduleNativeQuestionNotification,
+  cancelNativeNotification,
 };
 
 export default questionNotificationService;
+

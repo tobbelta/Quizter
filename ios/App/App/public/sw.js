@@ -217,9 +217,99 @@ self.addEventListener('push', (event) => {
 
 // Notification click handler
 self.addEventListener('notificationclick', (event) => {
+  console.log('Service Worker: Notification clicked');
+  console.log('Service Worker: Notification data:', event.notification.data);
   event.notification.close();
 
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url || '/')
-  );
+  event.waitUntil(handleNotificationClick(event));
 });
+
+async function handleNotificationClick(event) {
+  const notificationData = event.notification.data || {};
+  const runId = notificationData.runId;
+  let rawTarget = notificationData.url;
+
+  if (!rawTarget && runId) {
+    rawTarget = `/play/${runId}`;
+  }
+
+  if (!rawTarget) {
+    rawTarget = '/';
+  }
+  console.log('Service Worker: Target URL from notification:', rawTarget);
+  console.log('Service Worker: Notification runId:', runId);
+
+  try {
+    const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    console.log('Service Worker: Found clients:', clientList.length);
+
+    // Först: hitta en klient som redan är på EXAKT samma run
+    if (runId) {
+      for (const client of clientList) {
+        console.log('Service Worker: Checking client:', client.url);
+        const clientUrl = new URL(client.url);
+
+        // Om klienten är på EXAKT samma run (kolla både pathname och eventuell /run/ variant)
+        const isOnSameRun = 
+          clientUrl.pathname === `/play/${runId}` || 
+          clientUrl.pathname === `/run/${runId}/play`;
+          
+        if (isOnSameRun && 'focus' in client) {
+          console.log('Service Worker: ✅ Found exact match, just showing question (NO NAVIGATION)');
+          await client.focus();
+          
+          if ('postMessage' in client) {
+            client.postMessage({
+              type: 'SHOW_QUESTION',
+              data: notificationData
+            });
+          }
+          return;
+        }
+      }
+    }
+
+    // Andra: hitta en klient från samma origin (men fel sida)
+    for (const client of clientList) {
+      const clientUrl = new URL(client.url);
+
+      if (clientUrl.origin === self.location.origin && 'focus' in client) {
+        console.log('Service Worker: Found same-origin client, navigating to', rawTarget);
+        await client.focus();
+
+        // Bygg URL korrekt - rawTarget börjar redan med /
+        const targetUrl = new URL(rawTarget, self.location.origin);
+        targetUrl.searchParams.set('fromNotification', 'true');
+
+        // Navigera till rätt sida
+        if ('postMessage' in client) {
+          client.postMessage({
+            type: 'NAVIGATE_TO',
+            url: targetUrl.href,
+            data: notificationData
+          });
+        }
+        return;
+      }
+    }
+
+    // Sist: öppna nytt fönster
+    console.log('Service Worker: No matching client, opening new window');
+    const targetUrl = new URL(rawTarget, self.location.origin);
+    targetUrl.searchParams.set('fromNotification', 'true');
+    
+    if (clients.openWindow) {
+      return clients.openWindow(targetUrl.href);
+    }
+  } catch (error) {
+    console.error('Service Worker: Error handling notification click', error);
+  }
+
+  // Fallback
+  if (clients.openWindow) {
+    const targetUrl = new URL(rawTarget, self.location.origin);
+    targetUrl.searchParams.set('fromNotification', 'true');
+    console.log('Service Worker: Opening new window', targetUrl.href);
+    return clients.openWindow(targetUrl.href);
+  }
+}

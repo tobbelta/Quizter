@@ -22,12 +22,13 @@ import FullscreenMap from '../components/shared/FullscreenMap';
 
 const defaultForm = {
   name: '',
-  runType: 'route-based', // 'route-based' eller 'distance-based'
+  runType: 'route-based', // 'route-based', 'distance-based' eller 'time-based'
   difficulty: 'family',
   categories: [],
   lengthMeters: 3000,
   questionCount: 9,
   distanceBetweenQuestions: 500, // För distance-based
+  minutesBetweenQuestions: 5, // För time-based
   preferGreenAreas: false,
   allowRouteSelection: false,
 };
@@ -70,6 +71,9 @@ const GenerateRunPage = () => {
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 100000));
+  const [notificationPermission, setNotificationPermission] = useState(() => 
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+  );
 
   const joinLink = React.useMemo(() => (
     generatedRun ? buildJoinLink(generatedRun.joinCode) : ''
@@ -164,6 +168,72 @@ const GenerateRunPage = () => {
   }, []);
 
 
+  // Funktioner för att be om tillstånd
+  const requestGeolocation = React.useCallback(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          console.log('[GenerateRunPage] Geolocation granted:', position);
+          // Tillståndet kommer automatiskt att uppdateras via useRunLocation
+        },
+        (error) => {
+          console.error('[GenerateRunPage] Geolocation denied:', error);
+          setError('Platåtkomst nekades. Tillåt platsåtkomst i webbläsarinställningarna.');
+        }
+      );
+    } else {
+      setError('Din enhet stödjer inte geolocation.');
+    }
+  }, []);
+
+  const requestNotifications = React.useCallback(async () => {
+    if (!('Notification' in window)) {
+      setError('Din enhet stödjer inte notifieringar.');
+      return;
+    }
+
+    // Kolla om vi är i incognito-läge (Chrome blockerar notifications i incognito)
+    if (typeof navigator.storage !== 'undefined') {
+      try {
+        const estimate = await navigator.storage.estimate();
+        if (estimate.quota < 120000000) { // Incognito har typiskt mycket mindre quota
+          setError('Notifieringar fungerar inte i inkognito-läge. Öppna sidan i vanligt läge för att aktivera notifieringar.');
+          return;
+        }
+      } catch (e) {
+        // Ignorera om storage API inte finns
+      }
+    }
+
+    try {
+      console.log('[GenerateRunPage] Requesting notification permission...');
+      const permission = await Notification.requestPermission();
+      console.log('[GenerateRunPage] Notification permission result:', permission);
+      
+      setNotificationPermission(permission);
+      
+      if (permission === 'granted') {
+        console.log('[GenerateRunPage] Notification permission granted');
+        // Visa kort bekräftelse
+        try {
+          new Notification('Notifieringar aktiverade! 🎉', {
+            body: 'Du kommer nu få påminnelser när frågor är tillgängliga.',
+            icon: '/android-chrome-192x192.png'
+          });
+        } catch (notifError) {
+          console.warn('[GenerateRunPage] Could not show notification:', notifError);
+        }
+      } else if (permission === 'denied') {
+        setError('Notifieringar nekades. Du kan ändra detta i webbläsarinställningarna.');
+      } else {
+        console.log('[GenerateRunPage] Notification permission:', permission);
+      }
+    } catch (error) {
+      console.error('[GenerateRunPage] Could not request notification permission:', error);
+      setError('Kunde inte be om notifieringstillstånd. Kontrollera att du inte är i inkognito-läge.');
+    }
+  }, []);
+
   // Användarens GPS-position (om tillgänglig)
   // OBS: coords från useRunLocation har redan lat/lng format (inte latitude/longitude)
   const userPosition = React.useMemo(() => {
@@ -200,6 +270,22 @@ const GenerateRunPage = () => {
       prevTrackingEnabledRef.current = trackingEnabled;
     }
   }, [coords, gpsStatus, trackingEnabled, userPosition]);
+
+  // Kolla om geolocation faktiskt är tillgängligt (godkänt och aktivt)
+  const isGeolocationAvailable = React.useMemo(() => {
+    // Geolocation är tillgängligt om:
+    // 1. Tracking är enabled OCH
+    // 2. Vi har coords ELLER status är 'active' eller 'pending' (inte 'denied', 'idle', etc)
+    return trackingEnabled && (coords !== null || gpsStatus === 'active' || gpsStatus === 'pending');
+  }, [trackingEnabled, coords, gpsStatus]);
+
+  // Auto-switch to time-based if geolocation is not enabled
+  React.useEffect(() => {
+    if (!isGeolocationAvailable && (form.runType === 'route-based' || form.runType === 'distance-based')) {
+      console.log('[GenerateRunPage] Geolocation not enabled, switching to time-based');
+      setForm(prev => ({ ...prev, runType: 'time-based' }));
+    }
+  }, [isGeolocationAvailable, form.runType]);
 
   const handleRegenerate = async () => {
     setError('');
@@ -391,21 +477,27 @@ const GenerateRunPage = () => {
         runType: form.runType
       };
 
-      const payload = form.runType === 'distance-based'
-        ? {
-            ...basePayload,
-            distanceBetweenQuestions: Number(form.distanceBetweenQuestions)
-          }
-        : {
-            ...basePayload,
-            lengthMeters: Number(form.lengthMeters),
-            allowRouteSelection: form.allowRouteSelection,
-            origin: originPosition,
-            seed,
-            preferGreenAreas: form.preferGreenAreas
-          };
-
-      const run = await generateRun(payload, creatorIdentity);
+      let payload;
+      if (form.runType === 'distance-based') {
+        payload = {
+          ...basePayload,
+          distanceBetweenQuestions: Number(form.distanceBetweenQuestions)
+        };
+      } else if (form.runType === 'time-based') {
+        payload = {
+          ...basePayload,
+          minutesBetweenQuestions: Number(form.minutesBetweenQuestions)
+        };
+      } else {
+        payload = {
+          ...basePayload,
+          lengthMeters: Number(form.lengthMeters),
+          allowRouteSelection: form.allowRouteSelection,
+          origin: originPosition,
+          seed,
+          preferGreenAreas: form.preferGreenAreas
+        };
+      }      const run = await generateRun(payload, creatorIdentity);
 
       if (run) {
         setGeneratedRun(run);
@@ -573,34 +665,105 @@ const GenerateRunPage = () => {
 
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-purple-200">Typ av runda</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, runType: 'route-based' })}
-                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                  onClick={() => isGeolocationAvailable && setForm({ ...form, runType: 'route-based' })}
+                  disabled={!isGeolocationAvailable}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors relative ${
                     form.runType === 'route-based'
                       ? 'bg-purple-500 text-black'
-                      : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                      : isGeolocationAvailable
+                        ? 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                        : 'border border-slate-600 bg-slate-800/50 text-slate-400 cursor-not-allowed'
                   }`}
+                  title={!isGeolocationAvailable ? 'Kräver geolocation' : ''}
                 >
-                  📍 Rutt-baserad
+                  Rutt-baserad
+                  {!isGeolocationAvailable && <span className="ml-2">🔒</span>}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, runType: 'distance-based' })}
-                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                  onClick={() => isGeolocationAvailable && setForm({ ...form, runType: 'distance-based' })}
+                  disabled={!isGeolocationAvailable}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors relative ${
                     form.runType === 'distance-based'
+                      ? 'bg-purple-500 text-black'
+                      : isGeolocationAvailable
+                        ? 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                        : 'border border-slate-600 bg-slate-800/50 text-slate-400 cursor-not-allowed'
+                  }`}
+                  title={!isGeolocationAvailable ? 'Kräver geolocation' : ''}
+                >
+                  Distans-baserad
+                  {!isGeolocationAvailable && <span className="ml-2">🔒</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, runType: 'time-based' })}
+                  className={`rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
+                    form.runType === 'time-based'
                       ? 'bg-purple-500 text-black'
                       : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
                   }`}
                 >
-                  🚶 Distans-baserad
+                  Tids-baserad
                 </button>
               </div>
+              
+              {/* Hints baserat på runType och permissions */}
+              {!isGeolocationAvailable && (form.runType === 'route-based' || form.runType === 'distance-based') && (
+                <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3 mt-2">
+                  <div className="flex items-start gap-3">
+                    <span className="text-yellow-500 text-lg">⚠️</span>
+                    <div className="flex-1">
+                      <p className="text-sm text-yellow-200 font-medium">Geolocation krävs</p>
+                      <p className="text-xs text-yellow-300/80 mt-1 mb-2">
+                        Rutt-baserade och distans-baserade rundor kräver att du godkänner platsåtkomst.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={requestGeolocation}
+                        className="rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black px-3 py-1.5 text-xs font-semibold transition-colors"
+                      >
+                        Aktivera geolocation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Notifikations-tips för alla run-typer */}
+              <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-3 mt-2">
+                <div className="flex items-start gap-3">
+                  <span className="text-blue-400 text-lg">💡</span>
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-200 font-medium">Tips: Aktivera notifieringar</p>
+                    <p className="text-xs text-blue-300/80 mt-1 mb-2">
+                      Rundor fungerar bäst med notifieringar aktiverade. Du kommer få påminnelser när frågor är tillgängliga.
+                    </p>
+                    {notificationPermission !== 'granted' && (
+                      <button
+                        type="button"
+                        onClick={requestNotifications}
+                        className="rounded-lg bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs font-semibold transition-colors"
+                      >
+                        Aktivera notifieringar
+                      </button>
+                    )}
+                    {notificationPermission === 'granted' && (
+                      <p className="text-xs text-green-400 font-medium">✓ Notifieringar är aktiverade</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
               <p className="text-xs text-gray-400">
-                {form.runType === 'route-based' 
+                {form.runType === 'route-based'
                   ? 'Förutbestämd rutt på kartan med frågor på specifika platser.'
-                  : 'Gå fritt - frågor triggas automatiskt när du gått tillräckligt långt.'}
+                  : form.runType === 'distance-based'
+                    ? 'Gå fritt – frågor triggas automatiskt när du gått tillräckligt långt.'
+                    : 'Frågor triggas automatiskt efter ett valt tidsintervall.'}
               </p>
             </div>
 
@@ -641,7 +804,7 @@ const GenerateRunPage = () => {
                       className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                         isSelected
                           ? 'bg-purple-500 text-black'
-                          : 'border border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                          : 'border border-slate-600 bg-slate-800 text-slate-100 hover-border-purple-400'
                       }`}
                     >
                       {cat.label}
@@ -719,6 +882,26 @@ const GenerateRunPage = () => {
               </>
             )}
 
+            {/* Tids-baserad: Visa intervall mellan frågor */}
+            {form.runType === 'time-based' && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold text-purple-200">Minuter mellan frågor</label>
+                  <input
+                    type="number"
+                    name="minutesBetweenQuestions"
+                    min={1}
+                    max={180}
+                    value={form.minutesBetweenQuestions}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                  />
+                  <p className="text-xs text-gray-400">
+                    Ange hur många minuter som ska gå innan nästa fråga låses upp automatiskt.
+                  </p>
+                </div>
+              </>
+            )}
             {/* Distans-baserad: Visa distans mellan frågor */}
             {form.runType === 'distance-based' && (
               <>
@@ -910,6 +1093,9 @@ const GenerateRunPage = () => {
 };
 
 export default GenerateRunPage;
+
+
+
 
 
 

@@ -176,6 +176,7 @@ const MyRunsPage = () => {
       case 'generated': return 'Auto-genererad';
       case 'route-based': return 'Rutt-baserad';
       case 'distance-based': return 'Distans-baserad';
+      case 'time-based': return 'Tids-baserad';
       default: return type || 'Okänd';
     }
   };
@@ -312,9 +313,11 @@ const MyRunsPage = () => {
                     <span>
                       {run.type === 'distance-based' 
                         ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
-                        : run.lengthMeters 
-                          ? `${Math.round(run.lengthMeters/1000)} km` 
-                          : 'Okänd'
+                        : run.type === 'time-based'
+                          ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
+                          : run.lengthMeters 
+                            ? `${Math.round(run.lengthMeters/1000)} km`
+                            : 'Okänd'
                       }
                     </span>
                   </div>
