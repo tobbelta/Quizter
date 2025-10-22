@@ -1,6 +1,7 @@
 {
   "name": "quizter",
   "version": "0.10.2",
+  "homepage": "https://quizter.online/",
   "private": true,
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
