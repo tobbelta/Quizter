@@ -1,6 +1,6 @@
 {
-  "short_name": "RouteQuest",
-  "name": "RouteQuest - Skapa & Spela Tipspromenader",
+  "short_name": "Quizter",
+  "name": "Quizter - Skapa & Spela Tipspromenader",
   "description": "Skapa och gå interaktiva tipspromenader på begäran. Utforska din stad med GPS-baserade frågor och upptäck platser medan du tävlar mot vänner. Perfekt för familjeaktiviteter, teambuilding och utomhusäventyr.",
   "start_url": "/?utm_source=pwa",
   "display": "standalone",

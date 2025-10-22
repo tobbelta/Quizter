@@ -1,6 +1,6 @@
 {
-	"appId": "com.geoquest.app",
-	"appName": "GeoQuest",
+	"appId": "com.quizter.app",
+	"appName": "Quizter",
 	"webDir": "build",
 	"server": {
 		"androidScheme": "https"
