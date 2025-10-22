@@ -1,4 +1,4 @@
-package com.geoquest.app;
+package com.quizter.app;
 
 import android.os.Bundle;
 import android.view.View;
