@@ -35,6 +35,16 @@ firebase-debug.log
 .vscode
 .idea
 
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/*/build/
+android/local.properties
+*.iml
+.gradle
+.idea
+
 # Markdown-filer (tillåt viktiga dokumentationsfiler)
 *.md
 !README.md
