@@ -174,6 +174,9 @@ const MyRunsPage = () => {
     switch (type) {
       case 'hosted': return 'Administrerad';
       case 'generated': return 'Auto-genererad';
+      case 'route-based': return 'Rutt-baserad';
+      case 'distance-based': return 'Distans-baserad';
+      case 'time-based': return 'Tids-baserad';
       default: return type || 'Okänd';
     }
   };
@@ -307,7 +310,16 @@ const MyRunsPage = () => {
                   </div>
                   <div className="flex justify-between">
                     <span>Längd:</span>
-                    <span>{run.lengthMeters ? `${Math.round(run.lengthMeters/1000)} km` : 'Okänd'}</span>
+                    <span>
+                      {run.type === 'distance-based' 
+                        ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
+                        : run.type === 'time-based'
+                          ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
+                          : run.lengthMeters 
+                            ? `${Math.round(run.lengthMeters/1000)} km`
+                            : 'Okänd'
+                      }
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Kod:</span>

@@ -3,6 +3,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
 import { BackgroundTaskProvider } from './context/BackgroundTaskContext';
@@ -334,6 +335,69 @@ const SuperUserFeatures = () => {
 };
 
 function App() {
+  // Konfigurera status bar för native appar
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      import('@capacitor/status-bar').then(({ StatusBar }) => {
+        StatusBar.setBackgroundColor({ color: '#0d1117' }).catch(() => {});
+        StatusBar.setStyle({ style: 'DARK' }).catch(() => {});
+        StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+      }).catch(() => console.log('StatusBar plugin not available'));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const PERMISSION_FLAG = 'routequest:permissionPrompted';
+
+    const promptPermissions = async () => {
+      try {
+        if (window.localStorage?.getItem(PERMISSION_FLAG) === 'true') {
+          return;
+        }
+
+        if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            () => {},
+            () => {},
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        }
+
+        if (Capacitor.isNativePlatform()) {
+          try {
+            const notifModule = await import('@capacitor/local-notifications');
+            const LocalNotifications = notifModule.LocalNotifications || notifModule.default?.LocalNotifications || notifModule;
+            if (LocalNotifications?.checkPermissions && LocalNotifications?.requestPermissions) {
+              const permission = await LocalNotifications.checkPermissions();
+              if (permission.display !== 'granted') {
+                const result = await LocalNotifications.requestPermissions();
+                if (result.display !== 'granted') {
+                  console.warn('[Permissions] Notifications still not granted after request');
+                }
+              }
+            } else {
+              console.warn('[Permissions] LocalNotifications plugin saknas eller är inkompatibel');
+            }
+          } catch (error) {
+            console.warn('[Permissions] Kunde inte hantera native-notiser', error);
+          }
+        } else if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission().catch(() => {});
+        }
+
+        window.localStorage?.setItem(PERMISSION_FLAG, 'true');
+      } catch (error) {
+        console.warn('[Permissions] Kunde inte begära behörigheter', error);
+      }
+    };
+
+    promptPermissions();
+  }, []);
+
   return (
     <AuthProvider>
       <ToastProvider>

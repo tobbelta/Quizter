@@ -166,7 +166,13 @@ const SuperUserAllRunsPage = () => {
                         <span className="font-semibold">Skapare:</span> {run.createdByName || 'Anonym'}
                       </div>
                       <div>
-                        <span className="font-semibold">Längd:</span> {run.lengthMeters}m
+                        <span className="font-semibold">Längd:</span> {
+                          run.type === 'distance-based' 
+                            ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
+                            : run.type === 'time-based'
+                              ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
+                              : `${run.lengthMeters || 0}m`
+                        }
                       </div>
                       <div>
                         <span className="font-semibold">Frågor:</span> {run.questionCount || run.checkpoints?.length || 0}

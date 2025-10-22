@@ -707,3 +707,99 @@ export const buildGeneratedRun = async ({
 
   return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
 };
+
+/**
+ * Bygger en distans-baserad runda där frågor triggas baserat på GPS-avstånd.
+ * Ingen förutbestämd rutt - spelaren går fritt och får frågor när de gått X meter.
+ */
+export const buildDistanceBasedRun = async ({
+  name,
+  audience = 'family',
+  difficulty = 'family',
+  distanceBetweenQuestions = 500, // meter mellan varje fråga
+  questionCount = 8,
+  categories = [],
+  allowAnonymous = true,
+  language = 'sv'
+}, creator) => {
+  const questions = await pickQuestions({ audience, difficulty, questionCount, categories });
+  const joinCode = generateJoinCode();
+
+  const run = {
+    id: uuidv4(),
+    name: name || 'Distansbaserad runda',
+    description: 'Gå fritt - frågor triggas automatiskt var X:e meter',
+    audience,
+    difficulty,
+    questionCount,
+    type: 'distance-based', // Ny rundtyp
+    distanceBetweenQuestions, // Meter mellan frågor istället för lengthMeters
+    allowAnonymous,
+    allowRouteSelection: false, // Ingen rutt att välja
+    language: language || 'sv',
+    joinCode,
+    qrSlug: joinCode.toLowerCase(),
+    checkpoints: [], // Tom - inga förutbestämda checkpoints
+    route: null, // Ingen förutbestämd rutt
+    startPoint: null, // Startar där spelaren är
+    questionIds: questions.map((question) => question.id)
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[RunFactory] Skapad distance-based run:', {
+      id: run.id,
+      distanceBetweenQuestions: run.distanceBetweenQuestions,
+      questionCount: run.questionCount
+    });
+  }
+
+  return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
+};
+
+/**
+ * Bygger en tidsbaserad runda där frågor triggas efter X minuter.
+ * Ingen förutbestämd rutt – fokus ligger på tidsintervall mellan frågor.
+ */
+export const buildTimeBasedRun = async ({
+  name,
+  audience = 'family',
+  difficulty = 'family',
+  minutesBetweenQuestions = 5,
+  questionCount = 8,
+  categories = [],
+  allowAnonymous = true,
+  language = 'sv'
+}, creator) => {
+  const questions = await pickQuestions({ audience, difficulty, questionCount, categories });
+  const joinCode = generateJoinCode();
+
+  const run = {
+    id: uuidv4(),
+    name: name || 'Tidsbaserad runda',
+    description: 'Frågor släpps automatiskt efter angivet tidsintervall.',
+    audience,
+    difficulty,
+    questionCount,
+    type: 'time-based',
+    minutesBetweenQuestions,
+    allowAnonymous,
+    allowRouteSelection: false,
+    language: language || 'sv',
+    joinCode,
+    qrSlug: joinCode.toLowerCase(),
+    checkpoints: [],
+    route: null,
+    startPoint: null,
+    questionIds: questions.map((question) => question.id)
+  };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[RunFactory] Skapad time-based run:', {
+      id: run.id,
+      minutesBetweenQuestions: run.minutesBetweenQuestions,
+      questionCount: run.questionCount
+    });
+  }
+
+  return stampBaseRun(run, creator || { id: name || 'Auto', name: name || 'Auto-generator' });
+};

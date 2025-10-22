@@ -4,7 +4,7 @@
  * Props:
  * - title: Text som visas i mitten (default: "Quizter")
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { localStorageService } from '../../services/localStorageService';
@@ -15,6 +15,7 @@ import useRunLocation from '../../hooks/useRunLocation';
 import AboutDialog from '../shared/AboutDialog';
 import MessagesDropdown from '../shared/MessagesDropdown';
 import MessageDialog from '../shared/MessageDialog';
+import { Capacitor } from '@capacitor/core';
 
 import { VERSION, BUILD_DATE } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
@@ -24,6 +25,7 @@ const Header = ({ title = 'Quizter', children }) => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, isSuperUser, logout } = useAuth();
   const { status: gpsStatus, coords, trackingEnabled, enableTracking, disableTracking } = useRunLocation();
+  const headerRef = useRef(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
@@ -46,6 +48,45 @@ const Header = ({ title = 'Quizter', children }) => {
     return localStorage.getItem('quizter:language') || 'sv';
   });
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const knownMessageIdsRef = useRef(new Set());
+  const notificationPermissionRequestedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const updateHeaderHeight = () => {
+      if (!headerRef.current) return;
+      const height = headerRef.current.getBoundingClientRect().height;
+      document.documentElement.style.setProperty('--app-header-height', `${height}px`);
+    };
+
+    updateHeaderHeight();
+
+    const handleResize = () => updateHeaderHeight();
+    window.addEventListener('resize', handleResize);
+    const visualViewport = window.visualViewport;
+    if (visualViewport) {
+      visualViewport.addEventListener('resize', handleResize);
+    }
+
+    let observer;
+    if (typeof ResizeObserver !== 'undefined' && headerRef.current) {
+      observer = new ResizeObserver(() => updateHeaderHeight());
+      observer.observe(headerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (visualViewport) {
+        visualViewport.removeEventListener('resize', handleResize);
+      }
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, []);
 
   const handleRemoveAlias = useCallback(() => {
     try {
@@ -56,6 +97,77 @@ const Header = ({ title = 'Quizter', children }) => {
     }
     setGuestAlias('');
     setIsMenuOpen(false);
+  }, []);
+
+  const notifyAboutMessage = useCallback(async (message) => {
+    const title = message?.title || 'Nytt meddelande';
+    const body = message?.body || message?.message || 'Du har fått ett nytt meddelande.';
+
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const notifModule = await import('@capacitor/local-notifications');
+        const LocalNotifications = notifModule.LocalNotifications || notifModule.default?.LocalNotifications;
+        if (!LocalNotifications) {
+          console.warn('[Header] LocalNotifications plugin saknas');
+        } else {
+          const permission = await LocalNotifications.checkPermissions();
+          if (permission.display !== 'granted') {
+            const request = await LocalNotifications.requestPermissions();
+            if (request.display !== 'granted') {
+              return;
+            }
+          }
+
+          await LocalNotifications.schedule({
+            notifications: [
+              {
+                id: Date.now() % 2147483647,
+                title,
+                body,
+                extra: {
+                  messageId: message?.id || null,
+                  messageType: message?.type || 'info',
+                },
+              },
+            ],
+          });
+        }
+      } else if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'default' && !notificationPermissionRequestedRef.current) {
+          notificationPermissionRequestedRef.current = true;
+          await Notification.requestPermission();
+        }
+
+        if (Notification.permission === 'granted') {
+          try {
+            // Använd service worker om tillgänglig
+            if ('serviceWorker' in navigator) {
+              const registration = await navigator.serviceWorker.ready;
+              await registration.showNotification(title, {
+                body,
+                tag: `message-${message?.id || Date.now()}`,
+                data: { messageId: message?.id || null },
+              });
+            } else {
+              // Fallback till vanlig Notification
+              new Notification(title, {
+                body,
+                tag: `message-${message?.id || Date.now()}`,
+                data: { messageId: message?.id || null },
+              });
+            }
+          } catch (err) {
+            console.warn('[Header] Kunde inte skapa web-notifikation:', err);
+          }
+        }
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([120, 60, 120]);
+      }
+    } catch (error) {
+      console.warn('[Header] Kunde inte visa meddelandenotifikation:', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -113,6 +225,48 @@ const Header = ({ title = 'Quizter', children }) => {
       isMounted = false;
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const deviceId = analyticsService.getDeviceId();
+    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
+
+    if (!deviceId && !userId) {
+      setUnreadMessageCount(0);
+      return undefined;
+    }
+
+    knownMessageIdsRef.current = new Set();
+    let initialSync = true;
+
+    const unsubscribe = messageService.subscribeToMessages(userId, deviceId, async (messages) => {
+      const unread = messages.filter((m) => !m.read && !m.deleted).length;
+      setUnreadMessageCount(unread);
+
+      const newMessages = messages.filter((m) => !knownMessageIdsRef.current.has(m.id));
+      messages.forEach((m) => knownMessageIdsRef.current.add(m.id));
+
+      if (initialSync) {
+        initialSync = false;
+        return;
+      }
+
+      const latestUnread = newMessages.find((m) => !m.read && !m.deleted);
+      if (latestUnread) {
+        await notifyAboutMessage(latestUnread);
+      }
+    });
+
+    return () => {
+      knownMessageIdsRef.current.clear();
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [currentUser, notifyAboutMessage]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -201,12 +355,16 @@ const Header = ({ title = 'Quizter', children }) => {
 
   return (
     <>
-    <header className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50">
+    <header
+      ref={headerRef}
+      className="bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 fixed top-0 left-0 right-0 z-50"
+      style={{ paddingTop: 'var(--safe-area-inset-top, 0px)' }}
+    >
       
 
-      <div className="mx-auto w-full max-w-6xl px-3 py-2 grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:gap-3">
+      <div className="mx-auto w-full max-w-6xl px-2 sm:px-3 py-1.5 sm:py-2 grid grid-cols-[auto_1fr_auto] items-center gap-1 sm:gap-2 md:gap-3">
         {/* Vänster: Logotyp med GPS-status */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <button
             onClick={() => navigate('/')}
             className="hover:opacity-80 transition-opacity"
@@ -233,9 +391,13 @@ const Header = ({ title = 'Quizter', children }) => {
           )}
         </div>
 
-        {/* Höger: Custom children eller Hamburger-meny */}
-        <div className="relative flex justify-end items-center gap-2">
-          {children}
+        {/* Höger: extra-actions + Hamburger-meny */}
+        <div className="relative flex justify-end items-center gap-1 sm:gap-2">
+          {children && (
+            <div className="flex items-center gap-1 sm:gap-1.5 mr-0.5 sm:mr-1 flex-shrink-0">
+              {children}
+            </div>
+          )}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors relative"
@@ -246,8 +408,8 @@ const Header = ({ title = 'Quizter', children }) => {
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'opacity-0' : ''}`} />
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
             </div>
-            {/* Badge för bakgrundsjobb, meddelanden eller lokala rundor */}
-            {taskUnreadCount > 0 ? (
+            {/* Badge för bakgrundsjobb (endast superuser), meddelanden eller lokala rundor */}
+            {isSuperUser && taskUnreadCount > 0 ? (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full text-xs font-bold text-black flex items-center justify-center animate-pulse">
                 {taskUnreadCount}
               </span>
@@ -255,7 +417,7 @@ const Header = ({ title = 'Quizter', children }) => {
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs font-bold text-white flex items-center justify-center animate-pulse">
                 {unreadMessageCount}
               </span>
-            ) : hasActiveTrackedTasks ? (
+            ) : isSuperUser && hasActiveTrackedTasks ? (
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping" />
             ) : hasLocalRuns ? (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-cyan-500 rounded-full text-xs font-bold text-black flex items-center justify-center">
@@ -279,8 +441,14 @@ const Header = ({ title = 'Quizter', children }) => {
         />
 
         {/* Meny */}
-        <div className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] max-h-[calc(100vh-6rem)] overflow-hidden">
-          <div className="max-h-[calc(100vh-7rem)] overflow-y-auto">
+        <div
+          className="fixed top-[4.5rem] right-4 w-64 bg-slate-900 rounded-lg border border-slate-700 shadow-xl z-[70] overflow-hidden"
+          style={{ maxHeight: 'calc(var(--app-viewport-100, 100vh) - 6rem)' }}
+        >
+          <div
+            className="overflow-y-auto"
+            style={{ maxHeight: 'calc(var(--app-viewport-100, 100vh) - 7rem)' }}
+          >
 
                 {/* Användarinfo - visa bara för riktigt inloggade */}
                 {isAuthenticated && !currentUser?.isAnonymous && (
@@ -330,21 +498,25 @@ const Header = ({ title = 'Quizter', children }) => {
                       </span>
                     )}
                   </button>
-                  <button
-                    onClick={() => { setIsMenuOpen(false); setShowTasks(true); }}
-                    className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
-                  >
-                    <span className="text-gray-200">Bakgrundsjobb</span>
-                    {taskUnreadCount > 0 ? (
-                      <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
-                        {taskUnreadCount}
-                      </span>
-                    ) : hasActiveTrackedTasks ? (
-                      <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded text-[11px] font-semibold">
-                        Pågår
-                      </span>
-                    ) : null}
-                  </button>
+
+                  {/* Bakgrundsjobb - endast för superusers */}
+                  {isSuperUser && (
+                    <button
+                      onClick={() => { setIsMenuOpen(false); setShowTasks(true); }}
+                      className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
+                    >
+                      <span className="text-gray-200">Bakgrundsjobb</span>
+                      {taskUnreadCount > 0 ? (
+                        <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
+                          {taskUnreadCount}
+                        </span>
+                      ) : hasActiveTrackedTasks ? (
+                        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded text-[11px] font-semibold">
+                          Pågår
+                        </span>
+                      ) : null}
+                    </button>
+                  )}
 
                   {/* Mina rundor */}
                   <button
@@ -573,8 +745,8 @@ const Header = ({ title = 'Quizter', children }) => {
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
 
-    {/* Background task dropdown */}
-    {showTasks && (
+    {/* Background task dropdown - endast för superusers */}
+    {showTasks && isSuperUser && (
       <>
         <div
           className="fixed inset-0 z-[60]"
@@ -626,3 +798,6 @@ const Header = ({ title = 'Quizter', children }) => {
 };
 
 export default Header;
+
+
+

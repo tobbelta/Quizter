@@ -27,8 +27,14 @@ service cloud.firestore {
              // Validera lengthMeters om det finns
              (!('lengthMeters' in data.keys()) ||
               (data.lengthMeters is int && data.lengthMeters >= 500 && data.lengthMeters <= 10000)) &&
+             // Validera distanceBetweenQuestions om det finns (för distance-based runs)
+             (!('distanceBetweenQuestions' in data.keys()) ||
+              (data.distanceBetweenQuestions is int && data.distanceBetweenQuestions >= 10 && data.distanceBetweenQuestions <= 5000)) &&
+             // Validera minutesBetweenQuestions om det finns (för time-based runs)
+             (!('minutesBetweenQuestions' in data.keys()) ||
+              (data.minutesBetweenQuestions is int && data.minutesBetweenQuestions >= 1 && data.minutesBetweenQuestions <= 180)) &&
              // Validera type om det finns
-             (!('type' in data.keys()) || data.type in ['hosted', 'generated']) &&
+             (!('type' in data.keys()) || data.type in ['hosted', 'generated', 'route-based', 'distance-based', 'time-based']) &&
              // Validera difficulty om det finns
              (!('difficulty' in data.keys()) || data.difficulty in ['kid', 'family', 'adult']) &&
              // Validera audience om det finns

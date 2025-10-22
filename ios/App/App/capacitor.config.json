@@ -1,6 +1,22 @@
 {
-	"appId": "com.routequest.app",
-	"appName": "RouteQuest",
+	"appId": "com.geoquest.app",
+	"appName": "GeoQuest",
 	"webDir": "build",
-	"packageClassList": []
+	"server": {
+		"androidScheme": "https"
+	},
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_notification_compass",
+			"iconColor": "#488AFF",
+			"sound": "question_alert.wav"
+		}
+	},
+	"packageClassList": [
+		"BackgroundGeolocation",
+		"AppPlugin",
+		"HapticsPlugin",
+		"LocalNotificationsPlugin",
+		"StatusBarPlugin"
+	]
 }

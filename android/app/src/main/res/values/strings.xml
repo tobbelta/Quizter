@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GeoQuest</string>
+    <string name="title_activity_main">GeoQuest</string>
+    <string name="package_name">com.geoquest.app</string>
+    <string name="custom_url_scheme">com.geoquest.app</string>
+</resources>

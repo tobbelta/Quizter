@@ -22,8 +22,21 @@ const MESSAGE_LIMIT = 25;
  */
 export const sendMessage = async (messageData) => {
   try {
+    const {
+      targetType = 'all',
+      targetId = null,
+    } = messageData;
+
+    const targetFields = {};
+    if (targetType === 'user' && targetId) {
+      targetFields.userId = targetId;
+    } else if (targetType === 'device' && targetId) {
+      targetFields.deviceId = targetId;
+    }
+
     const message = {
       ...messageData,
+      ...targetFields,
       createdAt: serverTimestamp(),
       read: false,
       deleted: false
@@ -73,6 +86,17 @@ export const getMessages = async (userId = null, deviceId = null) => {
         ))
       );
     }
+
+    // Hämta globala meddelanden (targetType === 'all')
+    queries.push(
+      getDocs(query(
+        messagesRef,
+        where('targetType', '==', 'all'),
+        where('deleted', '==', false),
+        orderBy('createdAt', 'desc'),
+        limit(MESSAGE_LIMIT)
+      ))
+    );
 
     const snapshots = await Promise.all(queries);
     const messages = [];
@@ -180,6 +204,32 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
     );
     unsubscribers.push(unsubDevice);
   }
+
+  // Lyssna på globala meddelanden
+  const unsubGlobal = onSnapshot(
+    query(
+      messagesRef,
+      where('targetType', '==', 'all'),
+      where('deleted', '==', false),
+      orderBy('createdAt', 'desc'),
+      limit(MESSAGE_LIMIT)
+    ),
+    (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const message = { id: change.doc.id, ...change.doc.data() };
+        if (change.type === 'removed' || message.deleted) {
+          messagesMap.delete(change.doc.id);
+        } else {
+          messagesMap.set(change.doc.id, message);
+        }
+      });
+      updateMessages();
+    },
+    (error) => {
+      console.error('Error in global messages subscription:', error);
+    }
+  );
+  unsubscribers.push(unsubGlobal);
 
   // Returnera en funktion som avbryter alla subscriptions
   return () => {
