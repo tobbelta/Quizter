@@ -371,7 +371,7 @@ const Header = ({ title = 'Quizter', children }) => {
             aria-label="Gå till startsidan"
           >
             <img
-              src="/logo-compass.svg"
+              src="/logoQ.svg"
               alt="Quizter"
               className={`w-8 h-8 sm:w-9 sm:h-9 flex-shrink-0 transition-all ${gpsIndicator.color} ${gpsIndicator.spin ? 'animate-spin' : ''}`}
               style={gpsIndicator.spin ? { animationDuration: '2s' } : {}}

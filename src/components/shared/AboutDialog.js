@@ -45,7 +45,7 @@ const AboutDialog = ({ isOpen, onClose }) => {
           {/* Header */}
           <div className="bg-slate-900 border-b border-slate-700 p-6 flex items-center justify-between rounded-t-xl">
             <div className="flex items-center gap-3">
-              <img src="/logo-compass.svg" alt="Quizter" className="w-10 h-10" />
+              <img src="/logoQ.svg" alt="Quizter" className="w-10 h-10" />
               <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
                 Om Quizter
               </h2>

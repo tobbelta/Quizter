@@ -10,7 +10,7 @@
  * 
  * FUNKTIONALITET:
  * - Genererar QR-kod från en sträng (t.ex. join-länk)
- * - Lägger till Quizter compass-logotyp i mitten (25% av QR-storleken)
+ * - Lägger till Quizters Q-logotyp i mitten (25% av QR-storleken)
  * - Hög felkorrigering (Level H) för att logotyp ska fungera
  * - Returnerar data URL för <img src={dataUrl}>
  * 
@@ -58,7 +58,7 @@ const useQRCode = (value, size) => {
         // Rita Quizter-logotyp över QR-koden
         const context = canvas.getContext('2d');
         const logoImg = new Image();
-        logoImg.src = '/logo-compass.svg'; // Compass-logotypen från public/
+        logoImg.src = '/logoQ.svg'; // Q-logotypen från public/
         
         logoImg.onload = () => {
           if (cancelled) return;

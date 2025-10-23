@@ -76,7 +76,7 @@ const InstallPrompt = () => {
 
           <div className="flex items-start gap-3 pr-6">
             <div className="flex-shrink-0">
-              <img src="/logo-compass.svg" alt="Quizter" className="w-12 h-12" />
+              <img src="/logoQ.svg" alt="Quizter" className="w-12 h-12" />
             </div>
             <div className="flex-1">
               <h3 className="text-white font-bold text-lg mb-1">Installera Quizter!</h3>
@@ -111,7 +111,7 @@ const InstallPrompt = () => {
 
         <div className="flex items-start gap-3 pr-6">
           <div className="flex-shrink-0">
-            <img src="/logo-compass.svg" alt="Quizter" className="w-12 h-12" />
+            <img src="/logoQ.svg" alt="Quizter" className="w-12 h-12" />
           </div>
           <div className="flex-1">
             <h3 className="text-white font-bold text-lg mb-1">Installera Quizter!</h3>
