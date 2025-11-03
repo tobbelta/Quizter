@@ -1,0 +1,27 @@
+name = "quizter"
+compatibility_date = "2024-07-25"
+
+# ============================================================================
+# CLOUDFLARE PAGES CONFIGURATION
+# This section tells Wrangler how to build and deploy your React application
+# as a Cloudflare Pages site.
+# ============================================================================
+
+[pages_build]
+# The command to build your React app.
+build_command = "npm run build"
+# The directory where your built static files are placed.
+build_output_dir = "build"
+# The directory containing your serverless functions.
+functions_dir = "functions"
+
+# ============================================================================
+# D1 DATABASE BINDING
+# This makes your D1 database available to your serverless functions.
+# You can access it in your code via `env.DB`.
+# ============================================================================
+[[d1_databases]]
+binding = "DB" # The name to use in your code (env.DB)
+database_name = "quizter-db"
+database_id = "8b90c5aa-c172-469f-b852-3662b7a717bf"
+

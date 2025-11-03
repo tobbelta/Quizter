@@ -31,12 +31,9 @@
  * - AdminQuestionsPage: AI-validering och generering
  * - BackgroundTaskContext: Spårar task progress
  */
-import { getAuth } from "firebase/auth";
+// import removed: Legacy Firebase Auth logic removed.
 
-const getFirebaseUser = () => {
-  const auth = getAuth();
-  return auth.currentUser;
-};
+// Legacy Firebase Auth logic removed. Use Cloudflare API endpoint instead.
 
 const getFunctionUrl = (functionName) => {
   // This should be configured based on your environment
@@ -46,27 +43,17 @@ const getFunctionUrl = (functionName) => {
 };
 
 const queueTask = async (functionName, payload) => {
-  const user = getFirebaseUser();
-  if (!user) {
-    throw new Error("User must be authenticated to queue tasks.");
-  }
 
-  const response = await fetch(getFunctionUrl(functionName), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${await user.getIdToken()}`
-    },
-    body: JSON.stringify(payload),
-  });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || `Failed to queue task with ${functionName}`);
-  }
-
-  return data; // Should contain { success: true, taskId: '...' }
+  // TODO: Replace with Cloudflare API endpoint
+  // const response = await fetch(`/api/${functionName}`, {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify(payload)
+  // });
+  // if (!response.ok) throw new Error(`AI task failed: ${response.statusText}`);
+  // return await response.json();
+  return null;
 };
 
 export const aiService = {

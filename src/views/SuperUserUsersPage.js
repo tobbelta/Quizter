@@ -4,8 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { getFirebaseDb } from '../firebaseClient';
+// ...existing code...
 import Header from '../components/layout/Header';
 import MessageDialog from '../components/shared/MessageDialog';
 
@@ -27,15 +26,9 @@ const SuperUserUsersPage = () => {
     const loadUsers = async () => {
       try {
         setIsLoading(true);
-        const db = getFirebaseDb();
-        const usersCollection = collection(db, 'users');
-        const snapshot = await getDocs(usersCollection);
-
-        const usersData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
+        const response = await fetch('/api/users');
+        if (!response.ok) throw new Error('Kunde inte hämta användare');
+        const usersData = await response.json();
         setUsers(usersData || []);
       } catch (error) {
         console.error('Kunde inte ladda användare:', error);
@@ -44,7 +37,6 @@ const SuperUserUsersPage = () => {
         setIsLoading(false);
       }
     };
-
     loadUsers();
   }, [isSuperUser, navigate]);
 
@@ -84,12 +76,10 @@ const SuperUserUsersPage = () => {
     }
 
     try {
-      const db = getFirebaseDb();
       const deletePromises = Array.from(selectedUsers).map(userId =>
-        deleteDoc(doc(db, 'users', userId))
+        fetch(`/api/users/${userId}`, { method: 'DELETE' })
       );
       await Promise.all(deletePromises);
-
       setUsers(prev => prev.filter(u => !selectedUsers.has(u.id)));
       setSelectedUsers(new Set());
     } catch (error) {

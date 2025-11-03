@@ -1,20 +1,8 @@
 /**
  * Firestore helpers for background task queue monitoring.
  */
-import {
-  collection,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from 'firebase/firestore';
-import { db } from '../firebaseClient';
-
-const COLLECTION = 'backgroundTasks';
+// Legacy Firestore/Firebase logic removed. Use Cloudflare API endpoint instead.
 const DEFAULT_LIMIT = 100;
-const backgroundTasksRef = collection(db, COLLECTION);
 
 const toDate = (value) => {
   if (!value) return null;
@@ -56,89 +44,8 @@ const sortTasks = (tasks) => {
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
-const subscribeToQuery = (q, callback, { limit: limitCount } = {}) => {
-  const progressCache = new Map();
-
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const tasks = sortTasks(snapshot.docs.map((doc) => {
-        const task = mapTask(doc);
-        const { progress, status, id } = task;
-
-        if (!progress || typeof progress.completed !== 'number') {
-          if (FINAL_STATUSES.has(status)) {
-            progressCache.delete(id);
-          }
-          return task;
-        }
-
-        const cached = progressCache.get(id);
-        const currentCompleted = Number(progress.completed) || 0;
-        const currentTotal = Number(progress.total) || 0;
-        const shouldResetCache = status === 'queued' || status === 'pending';
-
-        if (shouldResetCache || !cached) {
-          progressCache.set(id, { completed: currentCompleted, total: currentTotal });
-          if (FINAL_STATUSES.has(status)) {
-            progressCache.delete(id);
-          }
-          return task;
-        }
-
-        let nextCompleted = currentCompleted;
-        let nextTotal = currentTotal;
-
-        if (status === 'processing' && currentCompleted < cached.completed) {
-          nextCompleted = cached.completed;
-          nextTotal = Math.max(cached.total ?? 0, currentTotal);
-        }
-
-        progressCache.set(id, { completed: nextCompleted, total: Math.max(nextTotal, cached.total ?? 0) });
-
-        if (FINAL_STATUSES.has(status)) {
-          progressCache.delete(id);
-        }
-
-        if (nextCompleted === currentCompleted && nextTotal === currentTotal) {
-          return task;
-        }
-
-        return {
-          ...task,
-          progress: {
-            ...progress,
-            completed: nextCompleted,
-            total: nextTotal,
-          },
-        };
-      }));
-
-      const limitedTasks =
-        typeof limitCount === 'number' ? tasks.slice(0, limitCount) : tasks;
-
-      callback(limitedTasks);
-    },
-    (error) => {
-      console.error('[backgroundTaskService] Realtime subscription failed:', error);
-      callback([], error);
-    },
-  );
-};
-
-export const backgroundTaskService = {
-  async fetchUserTasks(userId, options = {}) {
-    if (!userId) {
-      return [];
-    }
-    const taskLimit = options.limit ?? DEFAULT_LIMIT;
-    const q = query(
-      backgroundTasksRef,
-      where('userId', '==', userId),
-    );
-    const snapshot = await getDocs(q);
-    return sortTasks(snapshot.docs.map(mapTask)).slice(0, taskLimit);
-  },
+// Helper functions above the service object
+// subscribeToQuery is now removed (Firestore logic gone)
 
   /**
    * Subscribe to all background tasks created by the specified user.
@@ -147,30 +54,28 @@ export const backgroundTaskService = {
    * @param {{limit?: number}} [options]
    * @returns {() => void}
    */
-  subscribeToUserTasks(userId, callback, options = {}) {
+export const backgroundTaskService = {
+  subscribeToUserTasks: function(userId, callback, options = {}) {
     if (!userId) {
       callback([]);
       return () => {};
     }
-
-    const taskLimit = options.limit ?? DEFAULT_LIMIT;
-    const q = query(
-      backgroundTasksRef,
-      where('userId', '==', userId),
-    );
-
-    return subscribeToQuery(q, callback, { limit: taskLimit });
+    // TODO: Replace with Cloudflare API endpoint
+    // Example:
+    // fetch(`/api/backgroundTasks?userId=${userId}&limit=${options.limit ?? DEFAULT_LIMIT}`)
+    //   .then(res => res.json())
+    //   .then(tasks => callback(tasks));
+    callback([]);
+    return () => {};
   },
 
-  async fetchAllTasks(options = {}) {
-    const taskLimit = options.limit ?? DEFAULT_LIMIT;
-    const q = query(
-      backgroundTasksRef,
-      orderBy('createdAt', 'desc'),
-      limit(taskLimit),
-    );
-    const snapshot = await getDocs(q);
-    return sortTasks(snapshot.docs.map(mapTask));
+  fetchAllTasks: async function(options = {}) {
+    // TODO: Replace with Cloudflare API endpoint
+    // Example:
+    // const response = await fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`);
+    // const tasks = await response.json();
+    // return sortTasks(tasks);
+    return [];
   },
 
   /**
@@ -179,15 +84,15 @@ export const backgroundTaskService = {
    * @param {{limit?: number}} [options]
    * @returns {() => void}
    */
-  subscribeToAllTasks(callback, options = {}) {
-    const taskLimit = options.limit ?? DEFAULT_LIMIT;
-    const q = query(
-      backgroundTasksRef,
-      orderBy('createdAt', 'desc'),
-      limit(taskLimit),
-    );
-
-    return subscribeToQuery(q, callback);
-  },
+  subscribeToAllTasks: function(callback, options = {}) {
+    // TODO: Replace with Cloudflare API endpoint
+    // Example:
+    // fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`)
+    //   .then(res => res.json())
+    //   .then(tasks => callback(tasks));
+    callback([]);
+    return () => {};
+  }
 };
+
 

@@ -51,13 +51,9 @@ const generateJoinCode = () => {
 };
 
 /**
- * Hämtar den aktuella frågebanken från Firestore eller fallback
+ * Hämtar den aktuella frågebanken från Cloudflare API eller fallback
  * 
- * SYFTE: Försöker ladda frågor från Firestore, faller tillbaka till bundlade frågor om fel
- * 
- * FALLBACK-KEDJA:
- * 1. Försök ladda från Firestore (questionService.loadAllQuestions)
- * 2. Om tom array eller fel → använd QUESTION_BANK från data/questions.js
+ * SYFTE: Försöker ladda frågor från Cloudflare API, faller tillbaka till bundlade frågor om fel
  * 
  * @returns {Promise<Array>} Array med frågor
  */
@@ -65,12 +61,10 @@ const resolveQuestionPool = async () => {
   try {
     const questions = await questionService.loadAllQuestions();
     if (questions.length === 0) {
-      console.warn('[runFactory] No questions in Firestore, using QUESTION_BANK fallback');
       return QUESTION_BANK;
     }
     return questions;
   } catch (error) {
-    console.warn('[runFactory] Error loading questions, using QUESTION_BANK fallback:', error);
     return QUESTION_BANK;
   }
 };

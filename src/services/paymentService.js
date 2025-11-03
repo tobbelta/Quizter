@@ -49,11 +49,10 @@ export const createPaymentIntent = async ({ runId, participantId, amount = 500 }
   }
 
   try {
-    // I riktigt läge: anropa Firebase Function för att skapa PaymentIntent
-    const projectId = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-    const functionUrl = `https://europe-west1-${projectId}.cloudfunctions.net/createPaymentIntent`;
+  // I riktigt läge: anropa API för att skapa PaymentIntent
+  const functionUrl = '/api/createPaymentIntent';
 
-    const response = await fetch(functionUrl, {
+  const response = await fetch(functionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

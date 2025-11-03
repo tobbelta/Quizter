@@ -3,8 +3,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { getFirebaseDb } from '../firebaseClient';
+// ...removed legacy Firestore imports...
+// ...existing code...
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import { aiService } from '../services/aiService';
@@ -716,7 +716,7 @@ const AdminQuestionsPage = () => {
   const [isBatchRegeneratingEmojis, setIsBatchRegeneratingEmojis] = useState(false);
   const [isBatchValidatingAI, setIsBatchValidatingAI] = useState(false);
   const [validatingQuestions, setValidatingQuestions] = useState(new Set());
-  const [regeneratingEmojis, setRegeneratingEmojis] = useState(new Set());
+  const [regeneratingEmojis] = useState(new Set());
   const [batchValidatingAll, setBatchValidatingAll] = useState(false);
   const [individualValidationTasks, setIndividualValidationTasks] = useState(new Map()); // Map: taskId -> questionId
   const [showAIDialog, setShowAIDialog] = useState(false);
@@ -780,76 +780,8 @@ const AdminQuestionsPage = () => {
   useEffect(() => {
     if (!isSuperUser) return;
 
-    const db = getFirebaseDb();
-    
-    const unsubscribe = onSnapshot(
-      query(
-        collection(db, 'backgroundTasks'),
-        where('taskType', 'in', ['validation', 'batchvalidation', 'regenerateemoji', 'batchregenerateemojis']),
-        where('status', 'in', ['processing', 'queued', 'pending'])
-      ),
-      (snapshot) => {
-        const activeTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // Collect all question IDs being validated
-        const allValidatingQuestions = new Set();
-        const allRegeneratingEmojis = new Set();
-        let hasBatchValidation = false;
-        
-        activeTasks.forEach(task => {
-          if (task.taskType === 'batchvalidation') {
-            hasBatchValidation = true;
-            // For batch validation, add all questions in the batch
-            if (task.payload?.questions) {
-              task.payload.questions.forEach(q => {
-                if (q.id) allValidatingQuestions.add(q.id);
-              });
-            }
-            // Also check progress for question IDs
-            if (task.progress?.questionIds) {
-              task.progress.questionIds.forEach(id => allValidatingQuestions.add(id));
-            }
-          } else if (task.taskType === 'validation') {
-            // For individual validation, check if we have the mapping
-            const questionId = individualValidationTasks.get(task.id);
-            if (questionId) {
-              allValidatingQuestions.add(questionId);
-            }
-          } else if (task.taskType === 'batchregenerateemojis') {
-            // For batch emoji regeneration, add all questions in the batch
-            if (task.payload?.questionIds) {
-              task.payload.questionIds.forEach(id => allRegeneratingEmojis.add(id));
-            }
-          } else if (task.taskType === 'regenerateemoji') {
-            // For individual emoji regeneration
-            if (task.payload?.questionId) {
-              allRegeneratingEmojis.add(task.payload.questionId);
-            }
-          }
-        });
-        
-        setValidatingQuestions(allValidatingQuestions);
-        setRegeneratingEmojis(allRegeneratingEmojis);
-        setBatchValidatingAll(hasBatchValidation);
-        
-        // Clean up completed individual validation tasks
-        const activeTaskIds = new Set(activeTasks.map(t => t.id));
-        setIndividualValidationTasks(prevMap => {
-          const newMap = new Map();
-          for (const [taskId, questionId] of prevMap.entries()) {
-            if (activeTaskIds.has(taskId)) {
-              newMap.set(taskId, questionId);
-            }
-          }
-          return newMap;
-        });
-      },
-      (error) => {
-        console.error('Error listening to background tasks:', error);
-      }
-    );
-
-    return unsubscribe;
+  // TODO: Replace legacy backgroundTasks subscription with API polling or local state updates
+    // For now, skip this logic. All background task state should be managed via API or local state.
   }, [isSuperUser, individualValidationTasks]);
 
   // Hämta AI-status när AI-dialogen öppnas
@@ -863,16 +795,11 @@ const AdminQuestionsPage = () => {
   const fetchAIStatus = async () => {
     setLoadingAiStatus(true);
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
+      const response = await fetch('/api/getAIStatus');
       const data = await response.json();
-
-      // Använd providers från response
       setAiStatus(data.providers);
-
-      // Om ingen provider är tillgänglig, välj första tillgängliga istället för random
       const anyAvailable = Object.values(data.providers).some(p => p.available);
       if (!anyAvailable) {
-        // Ingen provider tillgänglig, behåll random eller välj första
         if (data.providers.gemini?.available) {
           setAiProvider('gemini');
         } else if (data.providers.anthropic?.available) {
@@ -881,7 +808,6 @@ const AdminQuestionsPage = () => {
           setAiProvider('openai');
         }
       }
-      // Annars behåll 'random' som är standard
     } catch (error) {
       console.error('Failed to fetch AI status:', error);
       setAiStatus({

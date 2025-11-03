@@ -1,12 +1,14 @@
+// Stub: Replace with API-based subscription if needed
+export const subscribeToMessages = (userId = null, deviceId = null, callback) => {
+  return () => {};
+};
 /**
  * Message Service - Hanterar meddelanden från admin till användare
  */
-import { getFirebaseDb } from '../firebaseClient';
-import { collection, addDoc, getDocs, query, where, orderBy, limit, updateDoc, doc, serverTimestamp, deleteDoc, onSnapshot } from 'firebase/firestore';
+// import { getFirebaseDb } from '../firebaseClient'; // Removed legacy Firebase import
+// All legacy Firestore imports and usage removed. Replace with API calls as needed.
 
-const db = getFirebaseDb();
-
-const MESSAGE_LIMIT = 25;
+// ...existing code...
 
 /**
  * Skicka meddelande från admin
@@ -21,33 +23,8 @@ const MESSAGE_LIMIT = 25;
  * @returns {Promise<string>} Meddelande-ID
  */
 export const sendMessage = async (messageData) => {
-  try {
-    const {
-      targetType = 'all',
-      targetId = null,
-    } = messageData;
-
-    const targetFields = {};
-    if (targetType === 'user' && targetId) {
-      targetFields.userId = targetId;
-    } else if (targetType === 'device' && targetId) {
-      targetFields.deviceId = targetId;
-    }
-
-    const message = {
-      ...messageData,
-      ...targetFields,
-      createdAt: serverTimestamp(),
-      read: false,
-      deleted: false
-    };
-
-    const docRef = await addDoc(collection(db, 'messages'), message);
-    return docRef.id;
-  } catch (error) {
-    console.error('Error sending message:', error);
-    throw error;
-  }
+  // Stub: Replace with API call to send message
+  return { success: false, error: 'MessageService disabled - use API endpoint' };
 };
 
 /**
@@ -57,184 +34,8 @@ export const sendMessage = async (messageData) => {
  * @returns {Promise<Array>} Array med meddelanden
  */
 export const getMessages = async (userId = null, deviceId = null) => {
-  try {
-    const messagesRef = collection(db, 'messages');
-    let queries = [];
-
-    // Hämta användarspecifika meddelanden
-    if (userId) {
-      queries.push(
-        getDocs(query(
-          messagesRef,
-          where('userId', '==', userId),
-          where('deleted', '==', false),
-          orderBy('createdAt', 'desc'),
-          limit(MESSAGE_LIMIT)
-        ))
-      );
-    }
-
-    // Hämta enhetsspecifika meddelanden
-    if (deviceId) {
-      queries.push(
-        getDocs(query(
-          messagesRef,
-          where('deviceId', '==', deviceId),
-          where('deleted', '==', false),
-          orderBy('createdAt', 'desc'),
-          limit(MESSAGE_LIMIT)
-        ))
-      );
-    }
-
-    // Hämta globala meddelanden (targetType === 'all')
-    queries.push(
-      getDocs(query(
-        messagesRef,
-        where('targetType', '==', 'all'),
-        where('deleted', '==', false),
-        orderBy('createdAt', 'desc'),
-        limit(MESSAGE_LIMIT)
-      ))
-    );
-
-    const snapshots = await Promise.all(queries);
-    const messages = [];
-
-    snapshots.forEach(snapshot => {
-      snapshot.docs.forEach(doc => {
-        messages.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-    });
-
-    // Sortera efter skapad-datum, nyaste först
-    messages.sort((a, b) => {
-      if (!a.createdAt || !b.createdAt) return 0;
-      return b.createdAt.toDate() - a.createdAt.toDate();
-    });
-
-    // Ta bort duplicates (om samma meddelande matchar flera queries)
-    const uniqueMessages = Array.from(
-      new Map(messages.map(m => [m.id, m])).values()
-    );
-
-    return uniqueMessages;
-  } catch (error) {
-    console.error('Error fetching messages:', error);
-    return [];
-  }
-};
-
-/**
- * Lyssna på meddelanden i realtid för en användare eller enhet
- * @param {string} userId - Användar-ID (optional)
- * @param {string} deviceId - Device-ID (optional)
- * @param {Function} callback - Callback-funktion som anropas med meddelanden
- * @returns {Function} Unsubscribe-funktion
- */
-export const subscribeToMessages = (userId = null, deviceId = null, callback) => {
-  const messagesRef = collection(db, 'messages');
-  const unsubscribers = [];
-  const messagesMap = new Map();
-
-  const updateMessages = () => {
-    const messages = Array.from(messagesMap.values());
-    messages.sort((a, b) => {
-      if (!a.createdAt || !b.createdAt) return 0;
-      return b.createdAt.toDate() - a.createdAt.toDate();
-    });
-    callback(messages);
-  };
-
-  // Lyssna på användarspecifika meddelanden
-  if (userId) {
-    const unsubUser = onSnapshot(
-      query(
-        messagesRef,
-        where('userId', '==', userId),
-        where('deleted', '==', false),
-        orderBy('createdAt', 'desc'),
-        limit(MESSAGE_LIMIT)
-      ),
-      (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const message = { id: change.doc.id, ...change.doc.data() };
-          if (change.type === 'removed' || message.deleted) {
-            messagesMap.delete(change.doc.id);
-          } else {
-            messagesMap.set(change.doc.id, message);
-          }
-        });
-        updateMessages();
-      },
-      (error) => {
-        console.error('Error in user messages subscription:', error);
-      }
-    );
-    unsubscribers.push(unsubUser);
-  }
-
-  // Lyssna på enhetsspecifika meddelanden
-  if (deviceId) {
-    const unsubDevice = onSnapshot(
-      query(
-        messagesRef,
-        where('deviceId', '==', deviceId),
-        where('deleted', '==', false),
-        orderBy('createdAt', 'desc'),
-        limit(MESSAGE_LIMIT)
-      ),
-      (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const message = { id: change.doc.id, ...change.doc.data() };
-          if (change.type === 'removed' || message.deleted) {
-            messagesMap.delete(change.doc.id);
-          } else {
-            messagesMap.set(change.doc.id, message);
-          }
-        });
-        updateMessages();
-      },
-      (error) => {
-        console.error('Error in device messages subscription:', error);
-      }
-    );
-    unsubscribers.push(unsubDevice);
-  }
-
-  // Lyssna på globala meddelanden
-  const unsubGlobal = onSnapshot(
-    query(
-      messagesRef,
-      where('targetType', '==', 'all'),
-      where('deleted', '==', false),
-      orderBy('createdAt', 'desc'),
-      limit(MESSAGE_LIMIT)
-    ),
-    (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        const message = { id: change.doc.id, ...change.doc.data() };
-        if (change.type === 'removed' || message.deleted) {
-          messagesMap.delete(change.doc.id);
-        } else {
-          messagesMap.set(change.doc.id, message);
-        }
-      });
-      updateMessages();
-    },
-    (error) => {
-      console.error('Error in global messages subscription:', error);
-    }
-  );
-  unsubscribers.push(unsubGlobal);
-
-  // Returnera en funktion som avbryter alla subscriptions
-  return () => {
-    unsubscribers.forEach(unsub => unsub());
-  };
+  // Stub: Replace with API call to fetch messages
+  return [];
 };
 
 /**
@@ -242,15 +43,8 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
  * @param {string} messageId - Meddelande-ID
  */
 export const markAsRead = async (messageId) => {
-  try {
-    const messageRef = doc(db, 'messages', messageId);
-    await updateDoc(messageRef, {
-      read: true,
-      readAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Error marking message as read:', error);
-  }
+  // Stub: Replace with API call to mark message as read
+  return { success: false, error: 'MessageService disabled - use API endpoint' };
 };
 
 /**
@@ -258,15 +52,8 @@ export const markAsRead = async (messageId) => {
  * @param {string} messageId - Meddelande-ID
  */
 export const deleteMessage = async (messageId) => {
-  try {
-    const messageRef = doc(db, 'messages', messageId);
-    await updateDoc(messageRef, {
-      deleted: true,
-      deletedAt: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Error deleting message:', error);
-  }
+  // Stub: Replace with API call to delete message
+  return { success: false, error: 'MessageService disabled - use API endpoint' };
 };
 
 /**
@@ -274,11 +61,8 @@ export const deleteMessage = async (messageId) => {
  * @param {string} messageId - Meddelande-ID
  */
 export const permanentDeleteMessage = async (messageId) => {
-  try {
-    await deleteDoc(doc(db, 'messages', messageId));
-  } catch (error) {
-    console.error('Error permanently deleting message:', error);
-  }
+  // Stub: Replace with API call to permanently delete message
+  return { success: false, error: 'MessageService disabled - use API endpoint' };
 };
 
 /**
@@ -286,19 +70,8 @@ export const permanentDeleteMessage = async (messageId) => {
  * @returns {Promise<Array>} Array med alla meddelanden
  */
 export const getAllMessages = async () => {
-  try {
-    const snapshot = await getDocs(
-      query(collection(db, 'messages'), orderBy('createdAt', 'desc'))
-    );
-
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-  } catch (error) {
-    console.error('Error fetching all messages:', error);
-    return [];
-  }
+  // Stub: Replace with API call to fetch all messages
+  return [];
 };
 
 /**
@@ -308,13 +81,8 @@ export const getAllMessages = async () => {
  * @returns {Promise<number>} Antal olästa meddelanden
  */
 export const getUnreadCount = async (userId = null, deviceId = null) => {
-  try {
-    const messages = await getMessages(userId, deviceId);
-    return messages.filter(m => !m.read).length;
-  } catch (error) {
-    console.error('Error getting unread count:', error);
-    return 0;
-  }
+  // Stub: Replace with API call to get unread count
+  return 0;
 };
 
 export const messageService = {

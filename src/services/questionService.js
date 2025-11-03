@@ -1,7 +1,7 @@
 /**
  * QUESTION SERVICE
  * 
- * SYFTE: Central tjänst för att hantera frågebanken med Firestore-synkronisering
+ * SYFTE: Central tjänst för att hantera frågebanken med Cloudflare API-synkronisering
  * 
  * FUNKTIONALITET:
  * - CRUD-operationer för frågor (skapa, läsa, uppdatera, radera)
@@ -30,7 +30,7 @@
  * ANVÄNDNING:
  * - AdminQuestionsPage: CRUD-operations
  * - runFactory: Hämta frågor för run-skapande
- * - questionRepository: Abstraherar Firestore-operations
+ * - questionRepository: Abstraherar API-operations
  */
 import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
@@ -38,7 +38,7 @@ import { questionRepository } from '../repositories/questionRepository';
 import { aiService } from './aiService';
 import { validateQuestion, validateQuestions, findDuplicates } from './questionValidationService';
 
-let cachedQuestions = []; // Lokal cache med frågor från Firestore
+let cachedQuestions = []; // Lokal cache med frågor från API
 let cachedQuestionMap = new Map();
 let isInitialized = false;
 let loadPromise = null;
@@ -70,7 +70,7 @@ const hydrateCache = async () => {
     notify();
     return cachedQuestions;
   } catch (error) {
-    console.error('[questionService] Kunde inte ladda frågor från Firestore:', error);
+    console.error('[questionService] Kunde inte ladda frågor från API:', error);
     cachedQuestionMap = new Map();
     cachedQuestions = [];
     isInitialized = true;
@@ -279,7 +279,6 @@ const addQuestions = async (questions) => {
     await questionRepository.addManyQuestions(questionsToImport);
     await reloadCache();
 
-
     const validCount = questionsToImport.filter(q => !structurallyInvalidIds.has(q.id)).length;
     const invalidCount = structurallyInvalidIds.size;
 
@@ -290,7 +289,7 @@ const addQuestions = async (questions) => {
       total: incomingWithIds.length
     };
   } catch (error) {
-    console.error("Kunde inte spara nya frågor till Firestore:", error);
+    console.error("Kunde inte spara nya frågor till API:", error);
     throw error;
   }
 };
@@ -556,7 +555,7 @@ export const questionService = {
   markAsValidated: async (questionId, validationData, skipNotify = false) => {
     await ensureCache();
     try {
-      // Rensa undefined-värden från validationData (Firestore tillåter inte undefined)
+  // Rensa undefined-värden från validationData (API tillåter inte undefined)
       const cleanValidationData = JSON.parse(JSON.stringify(validationData));
 
       await questionRepository.updateQuestion(questionId, {
@@ -585,7 +584,7 @@ export const questionService = {
   markAsInvalid: async (questionId, validationData, skipNotify = false) => {
     await ensureCache();
     try {
-      // Rensa undefined-värden från validationData (Firestore tillåter inte undefined)
+  // Rensa undefined-värden från validationData (API tillåter inte undefined)
       const cleanValidationData = validationData
         ? JSON.parse(JSON.stringify(validationData))
         : validationData;
@@ -612,12 +611,12 @@ export const questionService = {
     }
   },
 
-  // Batch-validera flera frågor (optimerad för att minimera Firestore-anrop)
+  // Batch-validera flera frågor (optimerad för att minimera API-anrop)
   markManyAsValidated: async (validationUpdates) => {
     await ensureCache();
     try {
       // validationUpdates är en array av { questionId, validationData, valid: true/false }
-      const firestoreUpdates = validationUpdates.map(update => ({
+      const apiUpdates = validationUpdates.map(update => ({
         questionId: update.questionId,
         updateData: {
           aiValidated: update.valid,
@@ -626,9 +625,9 @@ export const questionService = {
         }
       }));
 
-      await questionRepository.updateManyQuestions(firestoreUpdates);
+      await questionRepository.updateManyQuestions(apiUpdates);
 
-      firestoreUpdates.forEach(({ questionId, updateData }) => {
+      apiUpdates.forEach(({ questionId, updateData }) => {
         updateCachedQuestion(questionId, (current) => ({
           ...current,
           ...updateData

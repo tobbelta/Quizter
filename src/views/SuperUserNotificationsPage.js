@@ -4,11 +4,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
-import { getFirebaseDb } from '../firebaseClient';
+// ...existing code...
+// ...existing code...
 import Header from '../components/layout/Header';
 
-const db = getFirebaseDb();
+// ...existing code...
 
 const SuperUserNotificationsPage = () => {
   const navigate = useNavigate();
@@ -23,32 +23,26 @@ const SuperUserNotificationsPage = () => {
       return;
     }
 
-    // Lyssna på notifikationer i realtid
-    const notificationsQuery = query(
-      collection(db, 'notifications'),
-      where('targetAudience', '==', 'superusers'),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
-      const notifs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setNotifications(notifs);
-      setIsLoading(false);
-    }, (error) => {
-      console.error('Kunde inte ladda notifikationer:', error);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    // Hämta notifikationer via API
+    const loadNotifications = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/notifications?targetAudience=superusers');
+        if (!response.ok) throw new Error('Kunde inte hämta notifikationer');
+        const notifs = await response.json();
+        setNotifications(notifs);
+      } catch (error) {
+        setNotifications([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadNotifications();
   }, [isSuperUser, navigate]);
 
   const markAsRead = async (notificationId) => {
     try {
-      const notifRef = doc(db, 'notifications', notificationId);
-      await updateDoc(notifRef, { read: true });
+      await fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' });
     } catch (error) {
       console.error('Kunde inte markera som läst:', error);
     }
@@ -57,7 +51,7 @@ const SuperUserNotificationsPage = () => {
   const markAllAsRead = async () => {
     const unreadNotifs = notifications.filter(n => !n.read);
     const promises = unreadNotifs.map(n =>
-      updateDoc(doc(db, 'notifications', n.id), { read: true })
+      fetch(`/api/notifications/${n.id}/read`, { method: 'POST' })
     );
     try {
       await Promise.all(promises);
@@ -76,8 +70,8 @@ const SuperUserNotificationsPage = () => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const formatTimestamp = (timestamp) => {
-    if (!timestamp?.toDate) return 'N/A';
-    const date = timestamp.toDate();
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);

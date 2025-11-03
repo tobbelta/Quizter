@@ -1,10 +1,10 @@
 /**
  * SuperUser Error Logs Page
- * Visar felloggar och debug-information från Firestore
+ * Visar felloggar och debug-information från API
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { db } from '../firebaseClient';
-import { collection, query, orderBy, limit, getDocs, doc, writeBatch, onSnapshot } from 'firebase/firestore';
+// ...existing code...
+// ...existing code...
 import PageLayout from '../components/layout/PageLayout';
 import MessageDialog from '../components/shared/MessageDialog';
 
@@ -24,24 +24,13 @@ const SuperUserErrorLogsPage = () => {
   const loadLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const logsRef = collection(db, 'errorLogs');
-      // Hämta fler loggar för att ha tillräckligt för filtrering
-      const fetchLimit = 500;
-      const q = query(logsRef, orderBy('timestamp', 'desc'), limit(fetchLimit));
-
-      const snapshot = await getDocs(q);
-      const logsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate(),
-      }));
-
+      const response = await fetch('/api/errorLogs');
+      if (!response.ok) throw new Error('Kunde inte hämta felloggar');
+      const logsData = await response.json();
       setAllLogs(logsData);
-
       // Extrahera unika enheter
       const devices = [...new Set(logsData.map(log => log.deviceId).filter(Boolean))];
       setAvailableDevices(devices);
-
     } catch (error) {
       console.error('Failed to load logs:', error);
     } finally {
@@ -51,36 +40,9 @@ const SuperUserErrorLogsPage = () => {
 
   // Sätt upp realtid-lyssning för nya loggar
   useEffect(() => {
-    if (!isLive) return; // Om live mode är av, lyssna inte
-
-    const logsRef = collection(db, 'errorLogs');
-    const fetchLimit = 500;
-    const q = query(logsRef, orderBy('timestamp', 'desc'), limit(fetchLimit));
-
-    // Lyssna på förändringar i realtid
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const logsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate(),
-      }));
-
-      setAllLogs(logsData);
-
-      // Uppdatera enheter
-      const devices = [...new Set(logsData.map(log => log.deviceId).filter(Boolean))];
-      setAvailableDevices(devices);
-
-      // Första gången sätter vi loading till false
-      setLoading(false);
-    }, (error) => {
-      console.error('Error listening to logs:', error);
-      setLoading(false);
-    });
-
-    // Cleanup: avsluta prenumeration när komponenten unmountas
-    return () => unsubscribe();
-  }, [isLive]);
+    if (!isLive) return;
+    loadLogs();
+  }, [isLive, loadLogs]);
 
   // Filtrera loggar baserat på filter och deviceFilter
   useEffect(() => {
@@ -135,20 +97,13 @@ const SuperUserErrorLogsPage = () => {
 
     setDeleting(true);
     try {
-      // Ta bort i batchar om fler än 500 (Firestore batch limit)
+  // Ta bort i batchar om fler än 500 (API batch limit)
       const logIds = Array.from(selectedLogs);
       const batchSize = 500;
 
       for (let i = 0; i < logIds.length; i += batchSize) {
-        const batch = writeBatch(db);
         const batchIds = logIds.slice(i, i + batchSize);
-
-        batchIds.forEach(logId => {
-          const logRef = doc(db, 'errorLogs', logId);
-          batch.delete(logRef);
-        });
-
-        await batch.commit();
+        await Promise.all(batchIds.map(logId => fetch(`/api/errorLogs/${logId}`, { method: 'DELETE' })));
       }
 
       // Uppdatera lokala states
@@ -191,23 +146,13 @@ const SuperUserErrorLogsPage = () => {
     setDeleting(true);
     try {
       // Hämta ALLA loggar (inte bara de filtrerade)
-      const logsRef = collection(db, 'errorLogs');
-      const allLogsQuery = query(logsRef, orderBy('timestamp', 'desc'));
-      const snapshot = await getDocs(allLogsQuery);
-
-      const logIds = snapshot.docs.map(doc => doc.id);
+      const response = await fetch('/api/errorLogs');
+      if (!response.ok) throw new Error('Kunde inte hämta felloggar');
+      const logIds = (await response.json()).map(log => log.id);
       const batchSize = 500;
-
       for (let i = 0; i < logIds.length; i += batchSize) {
-        const batch = writeBatch(db);
         const batchIds = logIds.slice(i, i + batchSize);
-
-        batchIds.forEach(logId => {
-          const logRef = doc(db, 'errorLogs', logId);
-          batch.delete(logRef);
-        });
-
-        await batch.commit();
+        await Promise.all(batchIds.map(logId => fetch(`/api/errorLogs/${logId}`, { method: 'DELETE' })));
       }
 
       // Ladda om loggar

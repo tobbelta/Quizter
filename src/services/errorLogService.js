@@ -2,13 +2,12 @@
  * Error logging service
  * Loggar JavaScript-fel och viktiga händelser till Firestore för debugging
  */
-import { db } from '../firebaseClient';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+// Legacy Firestore/Firebase error logging removed. Use Cloudflare API endpoint instead.
 import { analyticsService } from './analyticsService';
 
 class ErrorLogService {
   constructor() {
-    this.logsCollection = collection(db, 'errorLogs');
+  // this.logsCollection = null; // Firestore removed
     this.breadcrumbs = []; // Håller koll på användarens senaste handlingar
     this.maxBreadcrumbs = 20; // Spara max 20 senaste händelser
     this.setupGlobalErrorHandler();
@@ -80,34 +79,36 @@ class ErrorLogService {
       // Extrahera detaljerad information från stack trace
       const stackInfo = this.parseStackTrace(errorData.stack);
 
-      await addDoc(this.logsCollection, {
-        ...errorData,
-        deviceId,
-        userAgent,
-        url: typeof window !== 'undefined' ? window.location.href : 'unknown',
-        pathname: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
-        timestamp: serverTimestamp(),
-        level: 'error',
-        // Lägg till parsad stack info
-        stackInfo,
-        // Browser/Device info
-        browserInfo: {
-          platform: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
-          language: typeof navigator !== 'undefined' ? navigator.language : 'unknown',
-          screenResolution: typeof window !== 'undefined'
-            ? `${window.screen.width}x${window.screen.height}`
-            : 'unknown',
-          viewport: typeof window !== 'undefined'
-            ? `${window.innerWidth}x${window.innerHeight}`
-            : 'unknown',
-        },
-        // Lägg till breadcrumbs för att visa vad användaren gjorde innan felet
-        breadcrumbs: [...this.breadcrumbs],
-      });
+      // TODO: Replace with Cloudflare API endpoint
+      // await fetch('/api/errorLogs', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     ...errorData,
+      //     deviceId,
+      //     userAgent,
+      //     url: typeof window !== 'undefined' ? window.location.href : 'unknown',
+      //     pathname: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+      //     timestamp: Date.now(),
+      //     level: 'error',
+      //     stackInfo,
+      //     browserInfo: {
+      //       platform: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
+      //       language: typeof navigator !== 'undefined' ? navigator.language : 'unknown',
+      //       screenResolution: typeof window !== 'undefined'
+      //         ? `${window.screen.width}x${window.screen.height}`
+      //         : 'unknown',
+      //       viewport: typeof window !== 'undefined'
+      //         ? `${window.innerWidth}x${window.innerHeight}`
+      //         : 'unknown',
+      //     },
+      //     breadcrumbs: [...this.breadcrumbs],
+      //   })
+      // });
 
       console.error('🔴 Error logged:', errorData);
     } catch (err) {
-      console.error('Failed to log error to Firestore:', err);
+      console.error('Failed to log error:', err);
     }
   }
 
@@ -158,18 +159,22 @@ class ErrorLogService {
   async logGPSDebug(debugData) {
     try {
       const deviceId = analyticsService.getDeviceId();
-
-      await addDoc(this.logsCollection, {
-        type: 'gps_debug',
-        ...debugData,
-        deviceId,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-        url: typeof window !== 'undefined' ? window.location.href : 'unknown',
-        timestamp: serverTimestamp(),
-        level: 'debug',
-      });
+      // TODO: Replace with Cloudflare API endpoint
+      // await fetch('/api/errorLogs', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     type: 'gps_debug',
+      //     ...debugData,
+      //     deviceId,
+      //     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+      //     url: typeof window !== 'undefined' ? window.location.href : 'unknown',
+      //     timestamp: Date.now(),
+      //     level: 'debug',
+      //   })
+      // });
     } catch (err) {
-      console.error('Failed to log GPS debug to Firestore:', err);
+      console.error('Failed to log GPS debug:', err);
     }
   }
 
@@ -179,17 +184,21 @@ class ErrorLogService {
   async logRouteGeneration(routeData) {
     try {
       const deviceId = analyticsService.getDeviceId();
-
-      await addDoc(this.logsCollection, {
-        type: 'route_generation',
-        ...routeData,
-        deviceId,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-        timestamp: serverTimestamp(),
-        level: 'info',
-      });
+      // TODO: Replace with Cloudflare API endpoint
+      // await fetch('/api/errorLogs', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     type: 'route_generation',
+      //     ...routeData,
+      //     deviceId,
+      //     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+      //     timestamp: Date.now(),
+      //     level: 'info',
+      //   })
+      // });
     } catch (err) {
-      console.error('Failed to log route generation to Firestore:', err);
+      console.error('Failed to log route generation:', err);
     }
   }
 
@@ -199,19 +208,23 @@ class ErrorLogService {
   async logInfo(message, data = {}) {
     try {
       const deviceId = analyticsService.getDeviceId();
-
-      await addDoc(this.logsCollection, {
-        type: 'info',
-        message,
-        data,
-        deviceId,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-        url: typeof window !== 'undefined' ? window.location.href : 'unknown',
-        timestamp: serverTimestamp(),
-        level: 'info',
-      });
+      // TODO: Replace with Cloudflare API endpoint
+      // await fetch('/api/errorLogs', {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     type: 'info',
+      //     message,
+      //     data,
+      //     deviceId,
+      //     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+      //     url: typeof window !== 'undefined' ? window.location.href : 'unknown',
+      //     timestamp: Date.now(),
+      //     level: 'info',
+      //   })
+      // });
     } catch (err) {
-      console.error('Failed to log info to Firestore:', err);
+      console.error('Failed to log info:', err);
     }
   }
 }

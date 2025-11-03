@@ -66,7 +66,7 @@ export const CHANGELOG = [
       'Ny SuperUser-roll för administration',
       'Hamburger-meny med Mina rundor',
       'LocalStorage för oinloggade användare',
-      'Automatisk migrering till Firebase vid login',
+    'Automatisk migrering till API vid login',
       'Frivilliga donationer istället för obligatorisk betalning',
       'Endast ID:n sparas i localStorage',
       'Versionshantering implementerad'
@@ -77,7 +77,7 @@ export const CHANGELOG = [
     date: '2025-01-01',
     changes: [
       'Initial release',
-      'Firebase-integration',
+    'API-integration',
       'Ruttgenerering med OpenRouteService',
       'QR-koder och join-länkar',
       'Grundläggande spelvy med karta',

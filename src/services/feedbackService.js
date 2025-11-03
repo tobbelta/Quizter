@@ -1,10 +1,7 @@
 /**
  * Feedback Service - Hanterar feedback från användare
  */
-import { getFirebaseDb } from '../firebaseClient';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-
-const db = getFirebaseDb();
+// Legacy Firebase/Firestore feedback logic removed. Use Cloudflare API endpoint instead.
 
 /**
  * Skicka feedback från användare
@@ -24,7 +21,7 @@ export const submitFeedback = async (feedbackData, userId = null, deviceId = nul
       ...feedbackData,
       userId,
       deviceId,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
       read: false,
       resolved: false,
       userAgent: navigator.userAgent,
@@ -32,8 +29,14 @@ export const submitFeedback = async (feedbackData, userId = null, deviceId = nul
       language: navigator.language
     };
 
-    const docRef = await addDoc(collection(db, 'feedback'), feedback);
-    return docRef.id;
+    // TODO: Replace with Cloudflare API endpoint
+    // const response = await fetch('/api/feedback', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(feedback)
+    // });
+    // return (await response.json()).id;
+    return null;
   } catch (error) {
     console.error('Error submitting feedback:', error);
     throw error;

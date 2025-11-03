@@ -1,10 +1,7 @@
 /**
  * Analytics Service - Hanterar besöksstatistik och användarspårning
  */
-import { getFirebaseDb } from '../firebaseClient';
-import { collection, addDoc, getDocs, query, where, orderBy, limit, serverTimestamp, updateDoc } from 'firebase/firestore';
-
-const db = getFirebaseDb();
+// Legacy Firebase/Firestore analytics logic removed. Use Cloudflare API endpoint instead.
 
 /**
  * Detekterar enhetstyp baserat på user agent
@@ -96,8 +93,8 @@ export const logVisit = async (eventType, metadata = {}) => {
 
     const visitData = {
       deviceId,
-      eventType, // 'page_view', 'create_run', 'join_run', 'complete_run', 'donation', etc.
-      timestamp: serverTimestamp(),
+      eventType,
+      timestamp: Date.now(),
       deviceType: getDeviceType(),
       os: getOS(),
       browser: getBrowser(),
@@ -111,7 +108,12 @@ export const logVisit = async (eventType, metadata = {}) => {
       }).filter(([_, v]) => v !== undefined))
     };
 
-    await addDoc(collection(db, 'analytics'), visitData);
+    // TODO: Replace with Cloudflare API endpoint
+    // await fetch('/api/analytics', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(visitData)
+    // });
   } catch (error) {
     console.error('Error logging visit:', error);
   }
@@ -122,21 +124,10 @@ export const logVisit = async (eventType, metadata = {}) => {
  */
 export const getAnalytics = async (filters = {}) => {
   try {
-    let q = query(collection(db, 'analytics'), orderBy('timestamp', 'desc'));
-
-    if (filters.eventType) {
-      q = query(q, where('eventType', '==', filters.eventType));
-    }
-
-    if (filters.limit) {
-      q = query(q, limit(filters.limit));
-    }
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // TODO: Replace with Cloudflare API endpoint
+    // const response = await fetch('/api/analytics');
+    // return await response.json();
+    return [];
   } catch (error) {
     console.error('Error fetching analytics:', error);
     return [];
@@ -148,17 +139,10 @@ export const getAnalytics = async (filters = {}) => {
  */
 export const getDeviceStats = async (deviceId) => {
   try {
-    const q = query(
-      collection(db, 'analytics'),
-      where('deviceId', '==', deviceId),
-      orderBy('timestamp', 'desc')
-    );
-
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // TODO: Replace with Cloudflare API endpoint
+    // const response = await fetch(`/api/analytics?deviceId=${deviceId}`);
+    // return await response.json();
+    return [];
   } catch (error) {
     console.error('Error fetching device stats:', error);
     return [];
@@ -173,20 +157,12 @@ export const linkDeviceToUser = async (userId) => {
     const deviceId = getDeviceId();
     if (!deviceId) return;
 
-    // Uppdatera alla befintliga analytics events för denna enhet
-    const q = query(
-      collection(db, 'analytics'),
-      where('deviceId', '==', deviceId)
-    );
-
-    const snapshot = await getDocs(q);
-    const updatePromises = snapshot.docs.map(doc =>
-      updateDoc(doc.ref, { userId })
-    );
-
-    await Promise.all(updatePromises);
-
-    // Logga kopplingen
+    // TODO: Replace with Cloudflare API endpoint
+    // await fetch(`/api/analytics/linkDeviceToUser`, {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ deviceId, userId })
+    // });
     await logVisit('device_linked', { userId });
   } catch (error) {
     console.error('Error linking device to user:', error);

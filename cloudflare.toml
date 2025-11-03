@@ -1,0 +1,21 @@
+# Cloudflare Pages configuration for Quizter
+name = "quizter"
+compatibility_date = "2025-10-31"
+
+[build]
+command = "npm run build"
+
+[build.environment]
+NODE_VERSION = "18"
+
+[deploy]
+project = "quizter"
+
+[functions]
+directory = "functions/api"
+
+[site]
+bucket = "public"
+
+[env.production]
+# Lägg till eventuella miljövariabler här

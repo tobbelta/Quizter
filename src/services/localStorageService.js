@@ -1,7 +1,7 @@
 /**
  * LocalStorageService - Hanterar lokala rundor och spel för oinloggade användare
  *
- * ENDAST ID:n sparas lokalt - all rundata finns i Firebase-databasen.
+ * ENDAST ID:n sparas lokalt - all rundata finns i backend-databasen.
  *
  * Datastruktur:
  * - quizter:local:createdRuns - Endast ID:n för rundor som användaren skapat
@@ -41,7 +41,7 @@ const safeSet = (key, value) => {
 
 /**
  * Lägger till en skapad runda i localStorage
- * Sparar endast runId - all data finns i Firebase
+ * Sparar endast runId - all data finns i backend
  */
 export const addCreatedRun = (runData) => {
   const runs = safeGet(CREATED_RUNS_KEY) || [];
@@ -69,7 +69,7 @@ export const addCreatedRun = (runData) => {
 
 /**
  * Lägger till en deltagande runda i localStorage
- * Sparar endast runId + participantId - all data finns i Firebase
+ * Sparar endast runId + participantId - all data finns i backend
  */
 export const addJoinedRun = (runData, participantData) => {
   const runs = safeGet(JOINED_RUNS_KEY) || [];

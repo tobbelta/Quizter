@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
-import { auth } from '../firebaseClient';
+// ...existing code...
 
 const AIProviderSettingsPage = () => {
   const { isSuperUser } = useAuth();
@@ -51,11 +51,9 @@ const AIProviderSettingsPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getProviderSettings');
+      const response = await fetch('/api/getProviderSettings');
       const data = await response.json();
-
       if (response.ok) {
-        // Merga med default-värden för att säkerställa att alla purposes finns
         setSettings(prev => ({
           ...prev,
           ...data.settings
@@ -84,25 +82,15 @@ const AIProviderSettingsPage = () => {
     setSaving(true);
     setError(null);
     setSuccess(null);
-
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error('Du måste vara inloggad');
-      }
-      const idToken = await user.getIdToken();
-
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/updateProviderSettings', {
+      const response = await fetch('/api/updateProviderSettings', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ settings })
       });
-
       const data = await response.json();
-
       if (response.ok) {
         setSuccess('✅ Inställningar sparade!');
         setTimeout(() => setSuccess(null), 5000);

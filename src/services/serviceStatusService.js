@@ -67,7 +67,7 @@ class ServiceStatusService {
     }
 
     const services = {
-      // Firebase kollas inte - om Firebase är nere fungerar inget alls
+  // API kollas inte - om API är nere fungerar inget alls
       stripe: await this.checkStripe(),
       openrouteservice: await this.checkOpenRouteService(),
       anthropic: await this.checkAnthropic(),
@@ -83,7 +83,7 @@ class ServiceStatusService {
 
 
   /**
-   * Kollar Stripe status via Firebase Function
+  * Kollar Stripe status via API
    */
   async checkStripe() {
     try {
@@ -91,7 +91,7 @@ class ServiceStatusService {
         setTimeout(() => reject(new Error('Timeout')), 5000)
       );
 
-      const checkPromise = fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getStripeStatus');
+  const checkPromise = fetch('/api/getStripeStatus');
 
       const response = await Promise.race([checkPromise, timeoutPromise]);
       const data = await response.json();
@@ -147,7 +147,7 @@ class ServiceStatusService {
   }
 
   /**
-   * Kollar OpenAI/Anthropic AI status via Firebase Function
+  * Kollar OpenAI/Anthropic AI status via API
    */
   async checkAnthropic() {
     try {
@@ -155,7 +155,7 @@ class ServiceStatusService {
         setTimeout(() => reject(new Error('Timeout')), 5000)
       );
 
-      const checkPromise = fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/getAIStatus');
+  const checkPromise = fetch('/api/getAIStatus');
 
       const response = await Promise.race([checkPromise, timeoutPromise]);
       const data = await response.json();
@@ -245,7 +245,6 @@ class ServiceStatusService {
    */
   getServiceDisplayName(serviceName) {
     const names = {
-      firebase: 'Firebase (databas)',
       stripe: 'Stripe (betalningar)',
       openrouteservice: 'OpenRouteService (kartor)',
       anthropic: 'AI-tjänster (frågegenerering)',

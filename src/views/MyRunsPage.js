@@ -26,7 +26,7 @@ const MyRunsPage = () => {
       try {
         let runs = [];
 
-        // Om användaren är inloggad, hämta rundor från Firestore
+  // Om användaren är inloggad, hämta rundor från API
         if (isAuthenticated && currentUser) {
           const allRuns = await runRepository.listRuns();
           runs = allRuns.filter(run =>
@@ -43,11 +43,7 @@ const MyRunsPage = () => {
 
             // Om färre rundor hittades än förväntat, rensa localStorage
             if (runs.length < localRunIds.length) {
-              console.warn('[MyRunsPage] Varning: Hittade bara', runs.length, 'av', localRunIds.length, 'rundor i Firestore');
               const missingIds = localRunIds.filter(id => !runs.some(r => r.id === id));
-              console.warn('[MyRunsPage] Saknade rundor:', missingIds);
-
-              // Rensa bort ogiltiga rundor från localStorage
               if (missingIds.length > 0) {
                 const validRuns = localRunsMeta.filter(r => !missingIds.includes(r.runId));
                 localStorage.setItem('quizter:local:createdRuns', JSON.stringify(validRuns));
@@ -99,7 +95,7 @@ const MyRunsPage = () => {
     }
 
     try {
-      // Ta bort från Firestore om användaren är inloggad
+      // Ta bort från API om användaren är inloggad
       if (isAuthenticated) {
         const deletePromises = Array.from(selectedRuns).map(runId =>
           runRepository.deleteRun(runId)
@@ -132,7 +128,7 @@ const MyRunsPage = () => {
     }
 
     try {
-      // Ta bort från Firestore om användaren är inloggad
+      // Ta bort från API om användaren är inloggad
       if (isAuthenticated) {
         await runRepository.deleteRun(runId);
       }

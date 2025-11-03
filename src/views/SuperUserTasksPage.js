@@ -4,7 +4,7 @@ import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
 import { useAuth } from '../context/AuthContext';
-import { getFirebaseAuth } from '../firebaseClient';
+// ...existing code...
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -154,14 +154,11 @@ const SuperUserTasksPage = () => {
     if (!window.confirm('Vill du städa hängande bakgrundsjobb (äldre än 30 minuter)?')) {
       return;
     }
-
     setCleanupLoading(true);
     setCleanupResult(null);
-
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/cleanupStuckTasks');
+      const response = await fetch('/api/cleanupStuckTasks');
       const data = await response.json();
-
       if (response.ok) {
         setCleanupResult({
           success: true,
@@ -181,7 +178,6 @@ const SuperUserTasksPage = () => {
     } finally {
       setCleanupLoading(false);
       await refreshAllTasks();
-      // Töm resultatet efter 5 sekunder
       setTimeout(() => setCleanupResult(null), 5000);
     }
   };
@@ -190,14 +186,11 @@ const SuperUserTasksPage = () => {
     if (!window.confirm('Vill du ta bort alla gamla klara och misslyckade jobb (äldre än 24 timmar)?\n\nDetta går INTE att ångra!')) {
       return;
     }
-
     setDeleteLoading(true);
     setDeleteResult(null);
-
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/deleteOldTasks');
+      const response = await fetch('/api/deleteOldTasks');
       const data = await response.json();
-
       if (response.ok) {
         setDeleteResult({
           success: true,
@@ -217,7 +210,6 @@ const SuperUserTasksPage = () => {
     } finally {
       setDeleteLoading(false);
       await refreshAllTasks();
-      // Töm resultatet efter 5 sekunder
       setTimeout(() => setDeleteResult(null), 5000);
     }
   };
@@ -246,15 +238,13 @@ const SuperUserTasksPage = () => {
     if (!window.confirm('Vill du stoppa detta jobb?')) {
       return;
     }
-
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/stopTask', {
+      const response = await fetch('/api/stopTask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId })
       });
       const data = await response.json();
-
       if (response.ok) {
         setDialogConfig({
           isOpen: true,
@@ -286,15 +276,13 @@ const SuperUserTasksPage = () => {
     if (!window.confirm('Vill du radera detta jobb permanent?\n\nDetta går INTE att ångra!')) {
       return;
     }
-
     try {
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/deleteTask', {
+      const response = await fetch('/api/deleteTask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId })
       });
       const data = await response.json();
-
       if (response.ok) {
         setDialogConfig({
           isOpen: true,
@@ -333,21 +321,18 @@ const SuperUserTasksPage = () => {
       });
       return;
     }
-
     if (!window.confirm(`Vill du stoppa ${selectedTasks.size} valda jobb?`)) {
       return;
     }
-
     setBulkActionLoading(true);
     try {
       const taskIds = Array.from(selectedTasks);
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/bulkStopTasks', {
+      const response = await fetch('/api/bulkStopTasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskIds })
       });
       const data = await response.json();
-
       if (response.ok) {
         setDialogConfig({
           isOpen: true,
@@ -387,21 +372,18 @@ const SuperUserTasksPage = () => {
       });
       return;
     }
-
     if (!window.confirm(`⚠️ VARNING: Vill du radera ${selectedTasks.size} valda jobb permanent?\n\nDetta går INTE att ångra!`)) {
       return;
     }
-
     setBulkActionLoading(true);
     try {
       const taskIds = Array.from(selectedTasks);
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/bulkDeleteTasks', {
+      const response = await fetch('/api/bulkDeleteTasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskIds })
       });
       const data = await response.json();
-
       if (response.ok) {
         setDialogConfig({
           isOpen: true,
@@ -432,33 +414,22 @@ const SuperUserTasksPage = () => {
   };
 
   const handleMigration = async () => {
-    if (!window.confirm('⚠️ Vill du köra om AI-kategorisering på alla befintliga frågor med striktare svårighetsnivåer?\n\nDetta kommer att:\n- Uppdatera ageGroups för alla frågor\n- Använd striktare kriterier för barn/ungdom/vuxen\n- Köras som en bakgrundsuppgift\n\nFortse tt?')) {
+    if (!window.confirm('⚠️ Vill du köra om AI-kategorisering på alla befintliga frågor med striktare svårighetsnivåer?\n\nDetta kommer att:\n- Uppdatera ageGroups för alla frågor\n- Använd striktare kriterier för barn/ungdom/vuxen\n- Köras som en bakgrundsuppgift\n\nFortsätt?')) {
       return;
     }
-
     setMigrationLoading(true);
     try {
       if (!currentUser) {
         throw new Error('Du måste vara inloggad för att köra migration');
       }
-
-      // Hämta Firebase user för att få ID token
-      const auth = getFirebaseAuth();
-      const firebaseUser = auth.currentUser;
-      if (!firebaseUser) {
-        throw new Error('Kunde inte hitta Firebase-användare');
-      }
-
-      const idToken = await firebaseUser.getIdToken();
-      const response = await fetch('https://europe-west1-geoquest2-7e45c.cloudfunctions.net/queueMigration', {
+      // Om du behöver auth, hämta från din nuvarande auth-lösning
+      const response = await fetch('/api/queueMigration', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
+          'Content-Type': 'application/json'
         }
       });
       const data = await response.json();
-
       if (response.ok) {
         setDialogConfig({
           isOpen: true,

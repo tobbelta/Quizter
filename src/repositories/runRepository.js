@@ -1,20 +1,10 @@
-/**
- * Firebase Firestore repository för alla run-operationer.
- */
-import { hasFirebaseConfig } from '../firebaseClient';
-import firestoreRunGateway from '../gateways/firestoreRunGateway';
-
-/**
- * Kontrollerar att Firebase är konfigurerat korrekt.
- */
-if (!hasFirebaseConfig()) {
-  throw new Error('Firebase måste vara konfigurerat. Kontrollera att alla REACT_APP_FIREBASE_* variabler är satta i .env');
-}
-
-/**
- * Använder alltid Firebase Firestore för data-operationer.
- */
-export const runRepository = firestoreRunGateway;
-export const isFirestoreEnabled = true;
-
+// Stub: Legacy Firestore run repository is now disabled. All logic moved to Cloudflare API endpoints.
+export const runRepository = {
+  listRuns: async () => [],
+  getRun: async () => null,
+  createRun: async () => { throw new Error('Legacy runRepository disabled'); },
+  updateRun: async () => { throw new Error('Legacy runRepository disabled'); },
+  deleteRun: async () => { throw new Error('Legacy runRepository disabled'); },
+  subscribeToRuns: () => () => {},
+};
 export default runRepository;
