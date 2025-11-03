@@ -34,6 +34,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: quizter
-          directory: public
+          directory: build
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '3'

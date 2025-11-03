@@ -7,13 +7,9 @@ compatibility_date = "2024-07-25"
 # as a Cloudflare Pages site.
 # ============================================================================
 
-[pages_build]
-# The command to build your React app.
-build_command = "npm run build"
-# The directory where your built static files are placed.
-build_output_dir = "build"
-# The directory containing your serverless functions.
-functions_dir = "functions"
+# The directory where your built static files are placed (required by Pages).
+# React Scripts builds to 'build/' by default
+pages_build_output_dir = "build"
 
 # ============================================================================
 # D1 DATABASE BINDING
