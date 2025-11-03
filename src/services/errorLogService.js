@@ -1,9 +1,9 @@
 /**
  * Error logging service
- * Loggar JavaScript-fel och viktiga händelser till Firestore för debugging
+ * Loggar JavaScript-fel och viktiga händelser för debugging (via Cloudflare API)
  */
-// Legacy Firestore/Firebase error logging removed. Use Cloudflare API endpoint instead.
-import { analyticsService } from './analyticsService';
+// Legacy Firebase/Firestore error logging removed. Use Cloudflare API endpoint instead.
+// import { analyticsService } from './analyticsService';
 
 class ErrorLogService {
   constructor() {
@@ -73,13 +73,10 @@ class ErrorLogService {
    */
   async logError(errorData) {
     try {
-      const deviceId = analyticsService.getDeviceId();
-      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
-
-      // Extrahera detaljerad information från stack trace
-      const stackInfo = this.parseStackTrace(errorData.stack);
-
       // TODO: Replace with Cloudflare API endpoint
+      // const deviceId = analyticsService.getDeviceId();
+      // const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
+      // const stackInfo = this.parseStackTrace(errorData.stack);
       // await fetch('/api/errorLogs', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -158,8 +155,8 @@ class ErrorLogService {
    */
   async logGPSDebug(debugData) {
     try {
-      const deviceId = analyticsService.getDeviceId();
       // TODO: Replace with Cloudflare API endpoint
+      // const deviceId = analyticsService.getDeviceId();
       // await fetch('/api/errorLogs', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -183,8 +180,8 @@ class ErrorLogService {
    */
   async logRouteGeneration(routeData) {
     try {
-      const deviceId = analyticsService.getDeviceId();
       // TODO: Replace with Cloudflare API endpoint
+      // const deviceId = analyticsService.getDeviceId();
       // await fetch('/api/errorLogs', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -207,8 +204,8 @@ class ErrorLogService {
    */
   async logInfo(message, data = {}) {
     try {
-      const deviceId = analyticsService.getDeviceId();
       // TODO: Replace with Cloudflare API endpoint
+      // const deviceId = analyticsService.getDeviceId();
       // await fetch('/api/errorLogs', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },

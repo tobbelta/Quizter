@@ -16,31 +16,27 @@
  * @returns {Promise<string>} Feedback-ID
  */
 export const submitFeedback = async (feedbackData, userId = null, deviceId = null) => {
-  try {
-    const feedback = {
-      ...feedbackData,
-      userId,
-      deviceId,
-      createdAt: Date.now(),
-      read: false,
-      resolved: false,
-      userAgent: navigator.userAgent,
-      screenSize: `${window.screen.width}x${window.screen.height}`,
-      language: navigator.language
-    };
-
-    // TODO: Replace with Cloudflare API endpoint
-    // const response = await fetch('/api/feedback', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(feedback)
-    // });
-    // return (await response.json()).id;
-    return null;
-  } catch (error) {
-    console.error('Error submitting feedback:', error);
-    throw error;
-  }
+  // TODO: Replace with Cloudflare API endpoint
+  // const feedback = {
+  //   ...feedbackData,
+  //   userId,
+  //   deviceId,
+  //   createdAt: Date.now(),
+  //   read: false,
+  //   resolved: false,
+  //   userAgent: navigator.userAgent,
+  //   screenSize: `${window.screen.width}x${window.screen.height}`,
+  //   language: navigator.language
+  // };
+  // const response = await fetch('/api/feedback', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json' },
+  //   body: JSON.stringify(feedback)
+  // });
+  // return (await response.json()).id;
+  
+  console.warn('Feedback submission not yet implemented with Cloudflare API');
+  return null;
 };
 
 export const feedbackService = {

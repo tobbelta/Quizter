@@ -2,47 +2,13 @@
  * Firestore helpers for background task queue monitoring.
  */
 // Legacy Firestore/Firebase logic removed. Use Cloudflare API endpoint instead.
-const DEFAULT_LIMIT = 100;
 
-const toDate = (value) => {
-  if (!value) return null;
-  if (value.toDate) {
-    return value.toDate();
-  }
-  if (typeof value === 'number') {
-    return new Date(value);
-  }
-  if (typeof value === 'string') {
-    return new Date(value);
-  }
-  return null;
-};
-
-const mapTask = (doc) => {
-  const data = doc.data() || {};
-  
-  return {
-    id: doc.id,
-    ...data,
-    createdAt: toDate(data.createdAt),
-    startedAt: toDate(data.startedAt),
-    finishedAt: toDate(data.finishedAt),
-    updatedAt: toDate(data.updatedAt),
-  };
-};
-
-const sortTasks = (tasks) => {
-  return [...tasks].sort((a, b) => {
-    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
-    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-    if (aTime !== bTime) {
-      return bTime - aTime;
-    }
-    return a.id.localeCompare(b.id);
-  });
-};
-
-const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+// Helper functions removed (no longer needed without Firestore)
+// const DEFAULT_LIMIT = 100;
+// const toDate = (value) => { ... }
+// const mapTask = (doc) => { ... }
+// const sortTasks = (tasks) => { ... }
+// const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 // Helper functions above the service object
 // subscribeToQuery is now removed (Firestore logic gone)

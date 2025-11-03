@@ -35,12 +35,11 @@
 
 // Legacy Firebase Auth logic removed. Use Cloudflare API endpoint instead.
 
-const getFunctionUrl = (functionName) => {
-  // This should be configured based on your environment
-  const projectId = "geoquest2-7e45c";
-  const region = "europe-west1";
-  return `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
-};
+// const getFunctionUrl = (functionName) => {
+//   const projectId = "geoquest2-7e45c";
+//   const region = "europe-west1";
+//   return `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
+// };
 
 const queueTask = async (functionName, payload) => {
 

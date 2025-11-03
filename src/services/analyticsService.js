@@ -3,68 +3,11 @@
  */
 // Legacy Firebase/Firestore analytics logic removed. Use Cloudflare API endpoint instead.
 
-/**
- * Detekterar enhetstyp baserat på user agent
- */
-const getDeviceType = () => {
-  if (typeof window === 'undefined') return 'unknown';
-
-  const ua = navigator.userAgent.toLowerCase();
-
-  if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) {
-    return 'tablet';
-  }
-  if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) {
-    return 'mobile';
-  }
-  return 'desktop';
-};
-
-/**
- * Detekterar operativsystem
- */
-const getOS = () => {
-  if (typeof window === 'undefined') return 'unknown';
-
-  const ua = navigator.userAgent;
-
-  if (/Windows/.test(ua)) return 'Windows';
-  if (/Mac OS X/.test(ua)) return 'macOS';
-  if (/Linux/.test(ua)) return 'Linux';
-  if (/Android/.test(ua)) return 'Android';
-  if (/iOS|iPhone|iPad|iPod/.test(ua)) return 'iOS';
-
-  return 'unknown';
-};
-
-/**
- * Detekterar webbläsare
- */
-const getBrowser = () => {
-  if (typeof window === 'undefined') return 'unknown';
-
-  const ua = navigator.userAgent;
-
-  if (/Edg/.test(ua)) return 'Edge';
-  if (/Chrome/.test(ua) && !/Edg/.test(ua)) return 'Chrome';
-  if (/Safari/.test(ua) && !/Chrome/.test(ua)) return 'Safari';
-  if (/Firefox/.test(ua)) return 'Firefox';
-  if (/MSIE|Trident/.test(ua)) return 'Internet Explorer';
-
-  return 'unknown';
-};
-
-/**
- * Hämtar timezone
- */
-const getTimezone = () => {
-  if (typeof window === 'undefined') return 'unknown';
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return 'unknown';
-  }
-};
+// Helper functions commented out (not used without API implementation)
+// const getDeviceType = () => { ... }
+// const getOS = () => { ... }
+// const getBrowser = () => { ... }
+// const getTimezone = () => { ... }
 
 /**
  * Genererar eller hämtar unikt device ID från localStorage
@@ -91,24 +34,23 @@ export const logVisit = async (eventType, metadata = {}) => {
     const deviceId = getDeviceId();
     if (!deviceId) return;
 
-    const visitData = {
-      deviceId,
-      eventType,
-      timestamp: Date.now(),
-      deviceType: getDeviceType(),
-      os: getOS(),
-      browser: getBrowser(),
-      timezone: getTimezone(),
-      metadata: Object.fromEntries(Object.entries({
-        ...metadata,
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        screenResolution: `${window.screen.width}x${window.screen.height}`,
-        path: window.location.pathname
-      }).filter(([_, v]) => v !== undefined))
-    };
-
     // TODO: Replace with Cloudflare API endpoint
+    // const visitData = {
+    //   deviceId,
+    //   eventType,
+    //   timestamp: Date.now(),
+    //   deviceType: getDeviceType(),
+    //   os: getOS(),
+    //   browser: getBrowser(),
+    //   timezone: getTimezone(),
+    //   metadata: Object.fromEntries(Object.entries({
+    //     ...metadata,
+    //     userAgent: navigator.userAgent,
+    //     language: navigator.language,
+    //     screenResolution: `${window.screen.width}x${window.screen.height}`,
+    //     path: window.location.pathname
+    //   }).filter(([_, v]) => v !== undefined))
+    // };
     // await fetch('/api/analytics', {
     //   method: 'POST',
     //   headers: { 'Content-Type': 'application/json' },
@@ -123,30 +65,24 @@ export const logVisit = async (eventType, metadata = {}) => {
  * Hämtar besöksstatistik för admin
  */
 export const getAnalytics = async (filters = {}) => {
-  try {
-    // TODO: Replace with Cloudflare API endpoint
-    // const response = await fetch('/api/analytics');
-    // return await response.json();
-    return [];
-  } catch (error) {
-    console.error('Error fetching analytics:', error);
-    return [];
-  }
+  // TODO: Replace with Cloudflare API endpoint
+  // const response = await fetch('/api/analytics');
+  // return await response.json();
+  
+  console.warn('Analytics retrieval not yet implemented with Cloudflare API');
+  return [];
 };
 
 /**
  * Hämtar statistik för en specifik enhet
  */
-export const getDeviceStats = async (deviceId) => {
-  try {
-    // TODO: Replace with Cloudflare API endpoint
-    // const response = await fetch(`/api/analytics?deviceId=${deviceId}`);
-    // return await response.json();
-    return [];
-  } catch (error) {
-    console.error('Error fetching device stats:', error);
-    return [];
-  }
+export const getDeviceStats = async () => {
+  // TODO: Replace with Cloudflare API endpoint
+  // const response = await fetch(`/api/analytics?deviceId=${deviceId}`);
+  // return await response.json();
+  
+  console.warn('Device stats retrieval not yet implemented with Cloudflare API');
+  return [];
 };
 
 /**
