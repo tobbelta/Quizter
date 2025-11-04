@@ -12,6 +12,13 @@ compatibility_date = "2024-07-25"
 pages_build_output_dir = "build"
 
 # ============================================================================
+# ENVIRONMENT VARIABLES
+# These are available to your Cloudflare Pages Functions via env.*
+# ============================================================================
+[vars]
+SUPERUSER_EMAIL = "admin@admin.se"
+
+# ============================================================================
 # D1 DATABASE BINDING
 # This makes your D1 database available to your serverless functions.
 # You can access it in your code via `env.DB`.
