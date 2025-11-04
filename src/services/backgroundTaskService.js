@@ -36,14 +36,81 @@ export const backgroundTaskService = {
     }
   },
 
+  /**
+   * Subscribe to a single task using Server-Sent Events (SSE)
+   * @param {string} taskId - The task ID to subscribe to
+   * @param {(task: object) => void} onUpdate - Callback for task updates
+   * @param {(task: object) => void} onComplete - Callback when task completes
+   * @param {(error: string) => void} onError - Callback for errors
+   * @returns {() => void} Cleanup function
+   */
+  subscribeToTask: function(taskId, onUpdate, onComplete, onError) {
+    let eventSource;
+    
+    try {
+      // Create EventSource for SSE
+      eventSource = new EventSource(`/api/subscribeToTask?taskId=${encodeURIComponent(taskId)}`);
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          switch (data.type) {
+            case 'update':
+              onUpdate && onUpdate(data.task);
+              break;
+            
+            case 'complete':
+              onComplete && onComplete(data.task);
+              eventSource.close();
+              break;
+            
+            case 'error':
+            case 'timeout':
+              onError && onError(data.error || 'Unknown error');
+              eventSource.close();
+              break;
+          }
+        } catch (error) {
+          console.error('[subscribeToTask] Error parsing event:', error);
+          onError && onError('Failed to parse server event');
+        }
+      };
+      
+      eventSource.onerror = (error) => {
+        console.error('[subscribeToTask] EventSource error:', error);
+        onError && onError('Connection to task server failed');
+        eventSource.close();
+      };
+      
+    } catch (error) {
+      console.error('[subscribeToTask] Failed to create EventSource:', error);
+      onError && onError('Failed to subscribe to task');
+    }
+    
+    // Return cleanup function
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  },
+
   subscribeToUserTasks: function(userId, callback, options = {}) {
     if (!userId) {
       callback([]);
       return () => {};
     }
     
-    // Poll every 2 seconds for task updates
-    const poll = async () => {
+    // Initial fetch
+    this.fetchUserTasks(userId).then(callback).catch(error => {
+      console.error('[backgroundTaskService] Initial fetch error:', error);
+      callback([], error);
+    });
+    
+    // For multiple tasks, we still need to poll or use WebSockets
+    // For now, keep polling for the overview but individual tasks use SSE
+    const intervalId = setInterval(async () => {
       try {
         const tasks = await this.fetchUserTasks(userId);
         callback(tasks);
@@ -51,13 +118,7 @@ export const backgroundTaskService = {
         console.error('[backgroundTaskService] Poll error:', error);
         callback([], error);
       }
-    };
-    
-    // Initial fetch
-    poll();
-    
-    // Set up polling interval
-    const intervalId = setInterval(poll, 2000);
+    }, 5000); // Poll every 5 seconds for the list
     
     // Return cleanup function
     return () => clearInterval(intervalId);
