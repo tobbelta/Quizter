@@ -61,10 +61,19 @@ export async function onRequestPost(context) {
       });
     }
     
+    // Save generated questions to D1 database
+    const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
+      category,
+      difficulty,
+      provider,
+      model: getModelName(provider)
+    });
+    
     return new Response(JSON.stringify({ 
       success: true,
-      taskId: `task_${Date.now()}`, // Placeholder task ID
-      questions: generatedQuestions
+      taskId: `task_${Date.now()}`,
+      questions: savedQuestions,
+      count: savedQuestions.length
     }), {
       status: 200,
       headers: { 
@@ -241,4 +250,72 @@ Returnera JSON i följande format:
     }
   ]
 }`;
+}
+
+// Get model name for each provider
+function getModelName(provider) {
+  const models = {
+    'openai': 'gpt-4o-mini',
+    'gemini': 'gemini-1.5-flash',
+    'anthropic': 'claude-3-5-sonnet-20241022',
+    'mistral': 'mistral-small-latest'
+  };
+  return models[provider.toLowerCase()] || 'unknown';
+}
+
+// Save questions to D1 database
+async function saveQuestionsToDatabase(db, questions, metadata) {
+  const { category, difficulty, provider, model } = metadata;
+  const savedQuestions = [];
+  
+  for (const q of questions) {
+    const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const now = new Date().toISOString();
+    
+    try {
+      await db.prepare(`
+        INSERT INTO questions (
+          id, question, options, correctOption, explanation, emoji,
+          category, difficulty, createdAt, updatedAt, createdBy,
+          aiGenerated, validated, provider, model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        id,
+        q.question,
+        JSON.stringify(q.options),
+        q.correctOption,
+        q.explanation || '',
+        q.emoji || '❓',
+        category,
+        difficulty,
+        now,
+        now,
+        'ai-system',
+        1, // aiGenerated = true
+        0, // validated = false
+        provider,
+        model
+      ).run();
+      
+      savedQuestions.push({
+        id,
+        ...q,
+        category,
+        difficulty,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: 'ai-system',
+        aiGenerated: true,
+        validated: false,
+        provider,
+        model
+      });
+    } catch (error) {
+      console.error('[generateAIQuestions] Error saving question:', error);
+      // Continue with other questions even if one fails
+    }
+  }
+  
+  console.log(`[generateAIQuestions] Saved ${savedQuestions.length}/${questions.length} questions to database`);
+  return savedQuestions;
 }
