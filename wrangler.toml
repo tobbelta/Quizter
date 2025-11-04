@@ -14,15 +14,18 @@ pages_build_output_dir = "build"
 # ============================================================================
 # ENVIRONMENT VARIABLES
 # These are available to your Cloudflare Pages Functions via env.*
+# Note: API keys are stored as encrypted Secrets (not visible here)
 # ============================================================================
 [vars]
 SUPERUSER_EMAIL = "admin@admin.se"
-OPENAI_API_KEY = "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"
-GEMINI_API_KEY = "AIzaSyB2Xz-socgo7zlXrbZMo-67KRem7Z_A4MI"
-ANTHROPIC_API_KEY = "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"
-MISTRAL_API_KEY = "ncHC2FPhN4izKkBwWCZ6nBEFzNPHSgvp"
 REACT_APP_OPENROUTE_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImEzN2RiYzM2MjdlZDRjMzVhNjE4MTI3ZTU2MTcwMjVjIiwiaCI6Im11cm11cjY0In0="
 REACT_APP_STRIPE_PUBLISHABLE_KEY = "pk_live_51SCkJSCO02VZleLGS20eWjUQl0cAhGoZaQA5wfxS9ShhQJZmTm8Os02jPlP9c2fehToeLz369r0pjAixP98N6FAy00DFPn5jNh"
+
+# API Keys are stored as encrypted Secrets in Cloudflare (added via wrangler CLI):
+# - OPENAI_API_KEY (secret)
+# - GEMINI_API_KEY (secret)
+# - ANTHROPIC_API_KEY (secret)
+# - MISTRAL_API_KEY (secret)
 
 # ============================================================================
 # D1 DATABASE BINDING
