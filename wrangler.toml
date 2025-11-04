@@ -31,9 +31,22 @@ REACT_APP_STRIPE_PUBLISHABLE_KEY = "pk_live_51SCkJSCO02VZleLGS20eWjUQl0cAhGoZaQA
 # D1 DATABASE BINDING
 # This makes your D1 database available to your serverless functions.
 # You can access it in your code via `env.DB`.
+# 
+# IMPORTANT: Preview branches share the same database as production!
+# To use a separate preview database:
+# 1. Go to Cloudflare Dashboard > Pages > quizter > Settings > Functions
+# 2. Add D1 binding for preview environment:
+#    - Variable name: DB
+#    - D1 Database: quizter-db-preview (f0c0f1b9-9955-4f99-bd49-965249967fec)
 # ============================================================================
+
+# Production database
 [[d1_databases]]
-binding = "DB" # The name to use in your code (env.DB)
+binding = "DB"
 database_name = "quizter-db"
 database_id = "8b90c5aa-c172-469f-b852-3662b7a717bf"
+
+# Preview database (f0c0f1b9-9955-4f99-bd49-965249967fec)
+# Configure via Cloudflare Dashboard > Settings > Functions > D1 database bindings
+
 
