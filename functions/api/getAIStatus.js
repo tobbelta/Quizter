@@ -6,6 +6,13 @@
 export async function onRequestGet(context) {
   const { env } = context;
   
+  // Debug logging
+  console.log('Environment variables check:');
+  console.log('OPENAI_API_KEY:', env.OPENAI_API_KEY ? 'SET' : 'NOT SET');
+  console.log('GEMINI_API_KEY:', env.GEMINI_API_KEY ? 'SET' : 'NOT SET');
+  console.log('ANTHROPIC_API_KEY:', env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET');
+  console.log('MISTRAL_API_KEY:', env.MISTRAL_API_KEY ? 'SET' : 'NOT SET');
+  
   const status = {
     openai: {
       configured: Boolean(env.OPENAI_API_KEY),
