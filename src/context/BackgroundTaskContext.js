@@ -249,8 +249,17 @@ const handleTaskSnapshot = useCallback((tasks) => {
 const refreshUserTasks = useCallback(async () => {
   if (!currentUser || currentUser.isAnonymous) return;
   try {
-    const tasks = await backgroundTaskService.fetchUserTasks(currentUser.uid);
-    handleTaskSnapshot(tasks);
+    const tasks = await backgroundTaskService.fetchUserTasks(currentUser.email || currentUser.uid);
+    
+    // Transform to match expected format
+    const transformedTasks = tasks.map(task => ({
+      ...task,
+      createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+      updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+      completedAt: task.completedAt ? new Date(task.completedAt) : null,
+    }));
+    
+    handleTaskSnapshot(transformedTasks);
   } catch (error) {
     console.error('[BackgroundTaskContext] Failed to fetch user background tasks:', error);
   }
@@ -259,9 +268,23 @@ const refreshUserTasks = useCallback(async () => {
 const refreshAllTasks = useCallback(async () => {
   if (!isSuperUser) return;
   try {
-    const tasks = await backgroundTaskService.fetchAllTasks();
+    // Fetch all tasks without userId filter (superuser view)
+    const response = await fetch('/api/getBackgroundTasks');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const data = await response.json();
+    const tasks = data.tasks || [];
+    
+    // Transform to match expected format
+    const transformedTasks = tasks.map(task => ({
+      ...task,
+      createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+      updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+      completedAt: task.completedAt ? new Date(task.completedAt) : null,
+    }));
+    
     if (!isMountedRef.current) return;
-    setAllTasks(tasks);
+    setAllTasks(transformedTasks);
   } catch (error) {
     console.error('[BackgroundTaskContext] Failed to fetch global background tasks:', error);
   }
@@ -307,7 +330,7 @@ const refreshAllTasks = useCallback(async () => {
     initializedRef.current = false;
 
     const unsubscribe = backgroundTaskService.subscribeToUserTasks(
-      currentUser.uid,
+      currentUser.email || currentUser.uid,
       (tasks, error) => {
         if (!isMountedRef.current) {
           return;
@@ -316,7 +339,14 @@ const refreshAllTasks = useCallback(async () => {
           console.error('[BackgroundTaskContext] Realtime user-task subscription failed:', error);
           return;
         }
-        handleTaskSnapshot(tasks);
+        // Transform to match expected format
+        const transformedTasks = tasks.map(task => ({
+          ...task,
+          createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+          updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+          completedAt: task.completedAt ? new Date(task.completedAt) : null,
+        }));
+        handleTaskSnapshot(transformedTasks);
       },
     );
 
@@ -343,7 +373,14 @@ const refreshAllTasks = useCallback(async () => {
         console.error('[BackgroundTaskContext] Realtime all-task subscription failed:', error);
         return;
       }
-      setAllTasks(tasks);
+      // Transform to match expected format
+      const transformedTasks = tasks.map(task => ({
+        ...task,
+        createdAt: task.createdAt ? new Date(task.createdAt) : new Date(),
+        updatedAt: task.updatedAt ? new Date(task.updatedAt) : new Date(),
+        completedAt: task.completedAt ? new Date(task.completedAt) : null,
+      }));
+      setAllTasks(transformedTasks);
     });
 
     return () => {

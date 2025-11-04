@@ -125,12 +125,16 @@ export const backgroundTaskService = {
   },
 
   fetchAllTasks: async function(options = {}) {
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // const response = await fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`);
-    // const tasks = await response.json();
-    // return sortTasks(tasks);
-    return [];
+    try {
+      const response = await fetch('/api/getBackgroundTasks');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      return data.tasks || [];
+    } catch (error) {
+      console.error('[backgroundTaskService] fetchAllTasks error:', error);
+      return [];
+    }
   },
 
   /**
@@ -140,13 +144,25 @@ export const backgroundTaskService = {
    * @returns {() => void}
    */
   subscribeToAllTasks: function(callback, options = {}) {
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`)
-    //   .then(res => res.json())
-    //   .then(tasks => callback(tasks));
-    callback([]);
-    return () => {};
+    // Initial fetch
+    this.fetchAllTasks().then(callback).catch(error => {
+      console.error('[backgroundTaskService] Initial fetch all tasks error:', error);
+      callback([], error);
+    });
+    
+    // Poll every 3 seconds for all tasks (superuser view)
+    const intervalId = setInterval(async () => {
+      try {
+        const tasks = await this.fetchAllTasks();
+        callback(tasks);
+      } catch (error) {
+        console.error('[backgroundTaskService] Poll all tasks error:', error);
+        callback([], error);
+      }
+    }, 3000);
+    
+    // Return cleanup function
+    return () => clearInterval(intervalId);
   }
 };
 
