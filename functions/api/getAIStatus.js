@@ -13,30 +13,30 @@ export async function onRequestGet(context) {
   console.log('ANTHROPIC_API_KEY:', env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET');
   console.log('MISTRAL_API_KEY:', env.MISTRAL_API_KEY ? 'SET' : 'NOT SET');
   
-  const status = {
+  const providers = {
     openai: {
-      configured: Boolean(env.OPENAI_API_KEY),
-      name: 'OpenAI',
+      available: Boolean(env.OPENAI_API_KEY),
+      message: env.OPENAI_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
       models: ['gpt-4o-mini', 'gpt-4o']
     },
     gemini: {
-      configured: Boolean(env.GEMINI_API_KEY),
-      name: 'Google Gemini',
+      available: Boolean(env.GEMINI_API_KEY),
+      message: env.GEMINI_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
       models: ['gemini-1.5-flash', 'gemini-1.5-pro']
     },
     anthropic: {
-      configured: Boolean(env.ANTHROPIC_API_KEY),
-      name: 'Anthropic Claude',
+      available: Boolean(env.ANTHROPIC_API_KEY),
+      message: env.ANTHROPIC_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
       models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022']
     },
     mistral: {
-      configured: Boolean(env.MISTRAL_API_KEY),
-      name: 'Mistral AI',
+      available: Boolean(env.MISTRAL_API_KEY),
+      message: env.MISTRAL_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
       models: ['mistral-small-latest', 'mistral-large-latest']
     }
   };
   
-  return new Response(JSON.stringify(status), {
+  return new Response(JSON.stringify({ providers }), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
