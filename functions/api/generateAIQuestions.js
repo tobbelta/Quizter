@@ -37,6 +37,10 @@ export async function onRequestPost(context) {
         apiKey = env.ANTHROPIC_API_KEY;
         generatedQuestions = await generateWithAnthropic(apiKey, { amount, category, ageGroup, difficulty });
         break;
+      case 'mistral':
+        apiKey = env.MISTRAL_API_KEY;
+        generatedQuestions = await generateWithMistral(apiKey, { amount, category, ageGroup, difficulty });
+        break;
       default:
         return new Response(JSON.stringify({ 
           success: false, 
@@ -173,6 +177,38 @@ async function generateWithAnthropic(apiKey, params) {
   
   const data = await response.json();
   const content = JSON.parse(data.content[0].text);
+  return content.questions || [];
+}
+
+// Mistral implementation
+async function generateWithMistral(apiKey, params) {
+  const { amount, category, ageGroup, difficulty } = params;
+  
+  const prompt = buildPrompt(category, ageGroup, difficulty, amount);
+  
+  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'mistral-small-latest',
+      messages: [
+        { role: 'system', content: 'Du är en expert på att skapa pedagogiska quizfrågor på svenska.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+      response_format: { type: 'json_object' }
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Mistral API error: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  const content = JSON.parse(data.choices[0].message.content);
   return content.questions || [];
 }
 
