@@ -9,16 +9,21 @@ export async function onRequestPost(context) {
   try {
     const { amount, category, ageGroup, difficulty, provider } = await request.json();
     
-    // Validate input
-    if (!amount || !category || !difficulty || !provider) {
+    console.log('[generateAIQuestions] Request:', { amount, category, ageGroup, difficulty, provider });
+    
+    // Validate input - difficulty is optional, defaults to 'medium'
+    if (!amount || !category || !provider) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'Missing required parameters' 
+        error: 'Missing required parameters: amount, category, and provider are required' 
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
+    
+    // Use default difficulty if not provided
+    const effectiveDifficulty = difficulty || 'medium';
     
     // Get API key based on provider
     let apiKey;
@@ -27,19 +32,19 @@ export async function onRequestPost(context) {
     switch (provider.toLowerCase()) {
       case 'openai':
         apiKey = env.OPENAI_API_KEY;
-        generatedQuestions = await generateWithOpenAI(apiKey, { amount, category, ageGroup, difficulty });
+        generatedQuestions = await generateWithOpenAI(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
         break;
       case 'gemini':
         apiKey = env.GEMINI_API_KEY;
-        generatedQuestions = await generateWithGemini(apiKey, { amount, category, ageGroup, difficulty });
+        generatedQuestions = await generateWithGemini(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
         break;
       case 'anthropic':
         apiKey = env.ANTHROPIC_API_KEY;
-        generatedQuestions = await generateWithAnthropic(apiKey, { amount, category, ageGroup, difficulty });
+        generatedQuestions = await generateWithAnthropic(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
         break;
       case 'mistral':
         apiKey = env.MISTRAL_API_KEY;
-        generatedQuestions = await generateWithMistral(apiKey, { amount, category, ageGroup, difficulty });
+        generatedQuestions = await generateWithMistral(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
         break;
       default:
         return new Response(JSON.stringify({ 
@@ -64,7 +69,7 @@ export async function onRequestPost(context) {
     // Save generated questions to D1 database
     const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
       category,
-      difficulty,
+      difficulty: effectiveDifficulty,
       provider,
       model: getModelName(provider)
     });
@@ -316,4 +321,16 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
   
   console.log(`[generateAIQuestions] Saved ${savedQuestions.length}/${questions.length} questions to database`);
   return savedQuestions;
+}
+
+// Handle CORS preflight
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, x-user-email',
+    },
+  });
 }
