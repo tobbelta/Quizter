@@ -25,11 +25,34 @@ export async function onRequestPost(context) {
     // Use default difficulty if not provided
     const effectiveDifficulty = difficulty || 'medium';
     
+    // Handle 'random' provider by picking one randomly
+    let effectiveProvider = provider.toLowerCase();
+    if (effectiveProvider === 'random') {
+      const availableProviders = [];
+      if (env.OPENAI_API_KEY) availableProviders.push('openai');
+      if (env.GEMINI_API_KEY) availableProviders.push('gemini');
+      if (env.ANTHROPIC_API_KEY) availableProviders.push('anthropic');
+      if (env.MISTRAL_API_KEY) availableProviders.push('mistral');
+      
+      if (availableProviders.length === 0) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'No AI providers are configured' 
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      effectiveProvider = availableProviders[Math.floor(Math.random() * availableProviders.length)];
+      console.log(`[generateAIQuestions] Random provider selected: ${effectiveProvider}`);
+    }
+    
     // Get API key based on provider
     let apiKey;
     let generatedQuestions = [];
     
-    switch (provider.toLowerCase()) {
+    switch (effectiveProvider) {
       case 'openai':
         apiKey = env.OPENAI_API_KEY;
         generatedQuestions = await generateWithOpenAI(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
@@ -49,7 +72,7 @@ export async function onRequestPost(context) {
       default:
         return new Response(JSON.stringify({ 
           success: false, 
-          error: `Unknown provider: ${provider}` 
+          error: `Unknown provider: ${effectiveProvider}` 
         }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
@@ -59,7 +82,7 @@ export async function onRequestPost(context) {
     if (!apiKey) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: `API key not configured for provider: ${provider}` 
+        error: `API key not configured for provider: ${effectiveProvider}` 
       }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' }
@@ -70,8 +93,8 @@ export async function onRequestPost(context) {
     const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
       category,
       difficulty: effectiveDifficulty,
-      provider,
-      model: getModelName(provider)
+      provider: effectiveProvider,
+      model: getModelName(effectiveProvider)
     });
     
     return new Response(JSON.stringify({ 
