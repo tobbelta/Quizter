@@ -11,7 +11,7 @@ export async function onRequestGet(context) {
 
     // Query all questions from D1 database
     const { results } = await env.DB.prepare(
-      `SELECT * FROM questions ORDER BY createdAt DESC`
+      `SELECT * FROM questions ORDER BY created_at DESC`
     ).all();
 
     console.log(`[listQuestions] Found ${results.length} questions`);
@@ -19,19 +19,19 @@ export async function onRequestGet(context) {
     // Transform database format to match frontend expectations
     const questions = results.map(row => ({
       id: row.id,
-      question: row.question,
-      options: JSON.parse(row.options || '[]'),
-      correctOption: row.correctOption,
-      explanation: row.explanation || '',
-      emoji: row.emoji || '❓',
-      category: row.category || 'Allmän',
+      question: row.question_sv || row.question,
+      options: JSON.parse(row.options_sv || row.options || '[]'),
+      correctOption: row.correct_option || row.correctOption,
+      explanation: row.explanation_sv || row.explanation || '',
+      emoji: row.illustration_emoji || row.emoji || '❓',
+      category: row.categories || row.category || 'Allmän',
       difficulty: row.difficulty || 'medium',
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      createdBy: row.createdBy || 'system',
-      aiGenerated: row.aiGenerated === 1 || row.aiGenerated === true,
+      createdAt: row.created_at || row.createdAt,
+      updatedAt: row.updated_at || row.updatedAt,
+      createdBy: row.created_by || row.createdBy || 'system',
+      aiGenerated: row.ai_generation_provider ? true : (row.aiGenerated === 1 || row.aiGenerated === true),
       validated: row.validated === 1 || row.validated === true,
-      provider: row.provider || null,
+      provider: row.ai_generation_provider || row.provider || null,
       model: row.model || null,
     }));
 

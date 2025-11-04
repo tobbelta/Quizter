@@ -270,15 +270,15 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
   
   for (const q of questions) {
     const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const now = new Date().toISOString();
+    const now = Date.now();
     
     try {
       await db.prepare(`
         INSERT INTO questions (
-          id, question, options, correctOption, explanation, emoji,
-          category, difficulty, createdAt, updatedAt, createdBy,
-          aiGenerated, validated, provider, model
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, question_sv, options_sv, correct_option, explanation_sv, illustration_emoji,
+          categories, difficulty, created_at, updated_at, created_by,
+          ai_generation_provider, validated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
         q.question,
@@ -291,10 +291,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         now,
         now,
         'ai-system',
-        1, // aiGenerated = true
-        0, // validated = false
         provider,
-        model
+        false
       ).run();
       
       savedQuestions.push({
@@ -302,8 +300,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         ...q,
         category,
         difficulty,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: new Date(now).toISOString(),
+        updatedAt: new Date(now).toISOString(),
         createdBy: 'ai-system',
         aiGenerated: true,
         validated: false,
