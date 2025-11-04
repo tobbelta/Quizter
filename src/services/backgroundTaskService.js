@@ -21,18 +21,46 @@
    * @returns {() => void}
    */
 export const backgroundTaskService = {
+  fetchUserTasks: async function(userId) {
+    if (!userId) return [];
+    
+    try {
+      const response = await fetch(`/api/getBackgroundTasks?userId=${encodeURIComponent(userId)}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      return data.tasks || [];
+    } catch (error) {
+      console.error('[backgroundTaskService] fetchUserTasks error:', error);
+      return [];
+    }
+  },
+
   subscribeToUserTasks: function(userId, callback, options = {}) {
     if (!userId) {
       callback([]);
       return () => {};
     }
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // fetch(`/api/backgroundTasks?userId=${userId}&limit=${options.limit ?? DEFAULT_LIMIT}`)
-    //   .then(res => res.json())
-    //   .then(tasks => callback(tasks));
-    callback([]);
-    return () => {};
+    
+    // Poll every 2 seconds for task updates
+    const poll = async () => {
+      try {
+        const tasks = await this.fetchUserTasks(userId);
+        callback(tasks);
+      } catch (error) {
+        console.error('[backgroundTaskService] Poll error:', error);
+        callback([], error);
+      }
+    };
+    
+    // Initial fetch
+    poll();
+    
+    // Set up polling interval
+    const intervalId = setInterval(poll, 2000);
+    
+    // Return cleanup function
+    return () => clearInterval(intervalId);
   },
 
   fetchAllTasks: async function(options = {}) {

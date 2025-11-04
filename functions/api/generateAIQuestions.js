@@ -8,8 +8,9 @@ export async function onRequestPost(context) {
   
   try {
     const { amount, category, ageGroup, difficulty, provider } = await request.json();
+    const userEmail = request.headers.get('x-user-email') || 'anonymous';
     
-    console.log('[generateAIQuestions] Request:', { amount, category, ageGroup, difficulty, provider });
+    console.log('[generateAIQuestions] Request:', { amount, category, ageGroup, difficulty, provider, userEmail });
     
     // Validate input - difficulty is optional, defaults to 'medium'
     if (!amount || !category || !provider) {
@@ -21,6 +22,76 @@ export async function onRequestPost(context) {
         headers: { 'Content-Type': 'application/json' }
       });
     }
+    
+    // Create background task
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const now = Date.now();
+    
+    await env.DB.prepare(`
+      INSERT INTO background_tasks (
+        id, user_id, task_type, status, label, description,
+        progress, total, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      taskId,
+      userEmail,
+      'generation',
+      'processing',
+      'AI-generering',
+      `Genererar ${amount} frågor om ${category} med ${provider}`,
+      0,
+      100,
+      now,
+      now
+    ).run();
+    
+    console.log(`[generateAIQuestions] Created task ${taskId}, starting generation...`);
+    
+    // Start generation asynchronously using waitUntil
+    context.waitUntil(
+      generateQuestionsInBackground(env, taskId, {
+        amount,
+        category,
+        ageGroup,
+        difficulty: difficulty || 'medium',
+        provider
+      })
+    );
+    
+    // Return immediately with task ID
+    return new Response(JSON.stringify({ 
+      success: true,
+      taskId,
+      message: 'AI question generation started in background'
+    }), {
+      status: 200,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+    
+  } catch (error) {
+    console.error('[generateAIQuestions] Error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Background generation function
+async function generateQuestionsInBackground(env, taskId, params) {
+  const { amount, category, ageGroup, difficulty, provider } = params;
+  
+  try {
+    console.log(`[Task ${taskId}] Starting generation...`);
+    
+    // Update progress: 10%
+    await updateTaskProgress(env.DB, taskId, 10, 'Preparing AI request...');
     
     // Use default difficulty if not provided
     const effectiveDifficulty = difficulty || 'medium';
@@ -35,18 +106,15 @@ export async function onRequestPost(context) {
       if (env.MISTRAL_API_KEY) availableProviders.push('mistral');
       
       if (availableProviders.length === 0) {
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: 'No AI providers are configured' 
-        }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        throw new Error('No AI providers are configured');
       }
       
       effectiveProvider = availableProviders[Math.floor(Math.random() * availableProviders.length)];
-      console.log(`[generateAIQuestions] Random provider selected: ${effectiveProvider}`);
+      console.log(`[Task ${taskId}] Random provider selected: ${effectiveProvider}`);
     }
+    
+    // Update progress: 30%
+    await updateTaskProgress(env.DB, taskId, 30, `Generating with ${effectiveProvider}...`);
     
     // Get API key based on provider
     let apiKey;
@@ -70,24 +138,15 @@ export async function onRequestPost(context) {
         generatedQuestions = await generateWithMistral(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
         break;
       default:
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: `Unknown provider: ${effectiveProvider}` 
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        throw new Error(`Unknown provider: ${effectiveProvider}`);
     }
     
     if (!apiKey) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: `API key not configured for provider: ${effectiveProvider}` 
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      throw new Error(`API key not configured for provider: ${effectiveProvider}`);
     }
+    
+    // Update progress: 70%
+    await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
     
     // Save generated questions to D1 database
     const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
@@ -97,28 +156,62 @@ export async function onRequestPost(context) {
       model: getModelName(effectiveProvider)
     });
     
-    return new Response(JSON.stringify({ 
+    // Complete task
+    await completeTask(env.DB, taskId, {
       success: true,
-      taskId: `task_${Date.now()}`,
-      questions: savedQuestions,
-      count: savedQuestions.length
-    }), {
-      status: 200,
-      headers: { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      }
+      questionsGenerated: savedQuestions.length,
+      provider: effectiveProvider,
+      questions: savedQuestions
     });
     
+    console.log(`[Task ${taskId}] Completed successfully: ${savedQuestions.length} questions`);
+    
   } catch (error) {
-    console.error('Error generating AI questions:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    console.error(`[Task ${taskId}] Failed:`, error);
+    
+    // Mark task as failed
+    await failTask(env.DB, taskId, error.message);
+  }
+}
+
+// Helper function to update task progress
+async function updateTaskProgress(db, taskId, progress, description) {
+  try {
+    await db.prepare(`
+      UPDATE background_tasks 
+      SET progress = ?, description = ?, updated_at = ?
+      WHERE id = ?
+    `).bind(progress, description, Date.now(), taskId).run();
+  } catch (error) {
+    console.error(`[Task ${taskId}] Failed to update progress:`, error);
+  }
+}
+
+// Helper function to complete task
+async function completeTask(db, taskId, result) {
+  const now = Date.now();
+  try {
+    await db.prepare(`
+      UPDATE background_tasks 
+      SET status = ?, progress = 100, result = ?, updated_at = ?, completed_at = ?
+      WHERE id = ?
+    `).bind('completed', JSON.stringify(result), now, now, taskId).run();
+  } catch (error) {
+    console.error(`[Task ${taskId}] Failed to mark as completed:`, error);
+  }
+}
+
+// Helper function to fail task
+async function failTask(db, taskId, errorMessage) {
+  const now = Date.now();
+  try {
+    await db.prepare(`
+      UPDATE background_tasks 
+      SET status = ?, result = ?, updated_at = ?, completed_at = ?
+      WHERE id = ?
+    `).bind('failed', JSON.stringify({ error: errorMessage }), now, now, taskId).run();
+  } catch (error) {
+    console.error(`[Task ${taskId}] Failed to mark as failed:`, error);
   }
 }
 
