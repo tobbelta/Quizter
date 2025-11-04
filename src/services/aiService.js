@@ -42,17 +42,23 @@
 // };
 
 const queueTask = async (functionName, payload) => {
-
-
-  // TODO: Replace with Cloudflare API endpoint
-  // const response = await fetch(`/api/${functionName}`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(payload)
-  // });
-  // if (!response.ok) throw new Error(`AI task failed: ${response.statusText}`);
-  // return await response.json();
-  return null;
+  try {
+    const response = await fetch(`/api/${functionName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `AI task failed: ${response.statusText}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error(`Error calling ${functionName}:`, error);
+    throw error;
+  }
 };
 
 export const aiService = {
