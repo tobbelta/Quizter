@@ -142,31 +142,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
     
     console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
-    // Update progress: 50%
-    await updateTaskProgress(env.DB, taskId, 50, 'Validating questions...');
+    // Update progress: 40%
+    await updateTaskProgress(env.DB, taskId, 40, 'Saving questions to database...');
     
-    console.log(`[Task ${taskId}] Starting validation process...`);
-    
-    // Validate questions using AI (if validation providers are available)
-    const validatedQuestions = await validateQuestions(
-      env, 
-      factory, 
-      generatedQuestions, 
-      { category, ageGroup, difficulty }
-    );
-    
-    console.log(`[Task ${taskId}] Validation complete: ${validatedQuestions.length}/${generatedQuestions.length} questions`);
-    console.log(`[Task ${taskId}] Sample validated question:`, {
-      validated: validatedQuestions[0]?.validated,
-      hasValidationResult: !!validatedQuestions[0]?.validationResult,
-      validationError: validatedQuestions[0]?.validationError
-    });
-    
-    // Update progress: 70%
-    await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
-    
-    // Save validated questions to D1 database
-    const saveResult = await saveQuestionsToDatabase(env.DB, validatedQuestions, {
+    // Step 1: Save ALL generated questions to database immediately (unvalidated)
+    const saveResult = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
       category,
       difficulty,
       provider: effectiveProvider,
@@ -176,6 +156,32 @@ async function generateQuestionsInBackground(env, taskId, params) {
     });
     
     const { savedQuestions, errors } = saveResult;
+    console.log(`[Task ${taskId}] Saved ${savedQuestions.length} questions to database`);
+    
+    // Update progress: 60%
+    await updateTaskProgress(env.DB, taskId, 60, 'Checking for duplicates...');
+    
+    // Step 2: Check for duplicates (compare question text)
+    const { uniqueQuestions, duplicateCount } = await filterDuplicateQuestions(
+      env.DB, 
+      savedQuestions
+    );
+    
+    console.log(`[Task ${taskId}] Found ${uniqueQuestions.length} unique questions, ${duplicateCount} duplicates`);
+    
+    // Update progress: 70%
+    await updateTaskProgress(env.DB, taskId, 70, 'Validating unique questions...');
+    
+    // Step 3: Validate ONLY unique questions using a DIFFERENT provider
+    const validationResult = await validateUniqueQuestions(
+      env.DB,
+      factory,
+      uniqueQuestions,
+      effectiveProvider, // Exclude this provider from validation
+      { category, ageGroup, difficulty }
+    );
+    
+    console.log(`[Task ${taskId}] Validation complete: ${validationResult.validatedCount} valid, ${validationResult.invalidCount} invalid`);
     
     // Complete task
     await completeTask(env.DB, taskId, {
@@ -186,9 +192,12 @@ async function generateQuestionsInBackground(env, taskId, params) {
       questions: savedQuestions,
       validationInfo: {
         totalGenerated: generatedQuestions.length,
-        totalValidated: validatedQuestions.length,
-        validatedCount: validatedQuestions.filter(q => q.validated).length,
-        invalidCount: validatedQuestions.filter(q => !q.validated).length
+        totalSaved: savedQuestions.length,
+        uniqueQuestions: uniqueQuestions.length,
+        duplicates: duplicateCount,
+        validatedCount: validationResult.validatedCount,
+        invalidCount: validationResult.invalidCount,
+        skippedCount: validationResult.skippedCount
       },
       ...(errors.length > 0 && { saveErrors: errors })
     });
@@ -220,42 +229,68 @@ function determineTargetAudience(ageGroup) {
 }
 
 /**
- * Validate questions using AI providers
+ * Filter out duplicate questions by comparing question text
  */
-async function validateQuestions(env, factory, questions, context) {
-  console.log('[validateQuestions] Starting validation...');
-  console.log('[validateQuestions] Number of questions to validate:', questions.length);
+async function filterDuplicateQuestions(db, savedQuestions) {
+  const uniqueQuestions = [];
+  let duplicateCount = 0;
+  
+  for (const question of savedQuestions) {
+    // Check if a question with similar text already exists (before this batch)
+    const existing = await db.prepare(`
+      SELECT id FROM questions 
+      WHERE question_sv = ? 
+      AND id != ?
+      LIMIT 1
+    `).bind(question.question_sv, question.id).first();
+    
+    if (existing) {
+      duplicateCount++;
+      console.log(`[filterDuplicateQuestions] Duplicate found for: ${question.question_sv.substring(0, 50)}...`);
+    } else {
+      uniqueQuestions.push(question);
+    }
+  }
+  
+  return { uniqueQuestions, duplicateCount };
+}
+
+/**
+ * Validate unique questions using a different AI provider than the generator
+ */
+async function validateUniqueQuestions(db, factory, questions, generatorProvider, context) {
+  console.log('[validateUniqueQuestions] Starting validation...');
+  console.log('[validateUniqueQuestions] Questions to validate:', questions.length);
+  console.log('[validateUniqueQuestions] Generator provider (to exclude):', generatorProvider);
+  
+  let validatedCount = 0;
+  let invalidCount = 0;
+  let skippedCount = 0;
   
   try {
-    // Get available provider names
-    const availableProviderNames = factory.getAvailableProviders();
-    console.log('[validateQuestions] Available providers:', availableProviderNames);
+    // Get available providers excluding the generator
+    const availableProviderNames = factory.getAvailableProviders()
+      .filter(name => name !== generatorProvider);
+    
+    console.log('[validateUniqueQuestions] Available validation providers:', availableProviderNames);
     
     if (availableProviderNames.length === 0) {
-      console.log('[validateQuestions] No validation providers available, skipping validation');
-      return questions.map(q => ({ ...q, validated: false, validationSkipped: true }));
+      console.log('[validateUniqueQuestions] No validation providers available (excluding generator)');
+      skippedCount = questions.length;
+      return { validatedCount, invalidCount, skippedCount };
     }
     
-    // Pick a random validation provider name
-    const randomProviderName = availableProviderNames[Math.floor(Math.random() * availableProviderNames.length)];
-    console.log('[validateQuestions] Selected provider name:', randomProviderName);
+    // Pick a random validation provider (different from generator)
+    const validationProviderName = availableProviderNames[Math.floor(Math.random() * availableProviderNames.length)];
+    const validationProvider = factory.getProvider(validationProviderName);
+    console.log('[validateUniqueQuestions] Using provider:', validationProvider.name);
     
-    // Get the actual provider instance
-    let validationProvider;
-    try {
-      validationProvider = factory.getProvider(randomProviderName);
-      console.log('[validateQuestions] Provider instance created:', validationProvider.name);
-    } catch (providerError) {
-      console.error('[validateQuestions] Failed to get provider instance:', providerError);
-      return questions.map(q => ({ ...q, validated: false, validationError: 'Provider init failed' }));
-    }
-    
-    const validatedQuestions = [];
+    const now = Date.now();
     
     // Validate each question
     for (let i = 0; i < questions.length; i++) {
       const question = questions[i];
-      console.log(`[validateQuestions] Validating question ${i + 1}/${questions.length}...`);
+      console.log(`[validateUniqueQuestions] Validating question ${i + 1}/${questions.length}...`);
       
       try {
         const validationResult = await validationProvider.validateQuestion(question, {
@@ -264,42 +299,51 @@ async function validateQuestions(env, factory, questions, context) {
           difficulty: context.difficulty
         });
         
-        console.log(`[validateQuestions] Validation result for question ${i + 1}:`, {
-          isValid: validationResult.isValid,
-          confidence: validationResult.confidence,
-          feedback: validationResult.feedback?.substring(0, 100) // Truncate for logging
-        });
+        console.log(`[validateUniqueQuestions] Result: isValid=${validationResult.isValid}, confidence=${validationResult.confidence}`);
         
-        // Always include the question, but mark validation status
-        validatedQuestions.push({
-          ...question,
-          validated: validationResult.isValid,
-          validationResult: validationResult
-        });
+        // Update question in database with validation result
+        await db.prepare(`
+          UPDATE questions 
+          SET validated = ?,
+              ai_validation_result = ?,
+              validation_generated_at = ?
+          WHERE id = ?
+        `).bind(
+          validationResult.isValid ? 1 : 0,
+          JSON.stringify(validationResult),
+          now,
+          question.id
+        ).run();
+        
+        if (validationResult.isValid) {
+          validatedCount++;
+        } else {
+          invalidCount++;
+        }
         
       } catch (validationError) {
-        console.error(`[validateQuestions] Validation error for question ${i + 1}:`, validationError.message);
-        console.error('[validateQuestions] Error stack:', validationError.stack);
-        // Include question anyway but mark as unvalidated
-        validatedQuestions.push({
-          ...question,
-          validated: false,
-          validationError: validationError.message
-        });
+        console.error(`[validateUniqueQuestions] Error validating question ${i + 1}:`, validationError.message);
+        // Mark as unvalidated but don't fail the whole process
+        await db.prepare(`
+          UPDATE questions 
+          SET validated = 0,
+              ai_validation_result = ?
+          WHERE id = ?
+        `).bind(
+          JSON.stringify({ error: validationError.message }),
+          question.id
+        ).run();
+        invalidCount++;
       }
     }
     
-    console.log(`[validateQuestions] Validation complete: ${validatedQuestions.length}/${questions.length} questions processed`);
-    const validCount = validatedQuestions.filter(q => q.validated).length;
-    console.log(`[validateQuestions] Valid: ${validCount}, Invalid/Error: ${validatedQuestions.length - validCount}`);
-    
-    return validatedQuestions;
+    console.log('[validateUniqueQuestions] Validation complete');
+    return { validatedCount, invalidCount, skippedCount };
     
   } catch (error) {
-    console.error('[validateQuestions] Validation process failed:', error);
-    console.error('[validateQuestions] Error stack:', error.stack);
-    // Return all questions unvalidated on error
-    return questions.map(q => ({ ...q, validated: false, validationFailed: error.message }));
+    console.error('[validateUniqueQuestions] Validation process failed:', error);
+    skippedCount = questions.length;
+    return { validatedCount, invalidCount, skippedCount };
   }
 }
 
@@ -350,12 +394,6 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
   const savedQuestions = [];
   const errors = [];
   
-  console.log(`[saveQuestionsToDatabase] Saving ${questions.length} questions`);
-  if (questions.length > 0) {
-    console.log('[saveQuestionsToDatabase] First question has validated:', questions[0].validated);
-    console.log('[saveQuestionsToDatabase] First question has validationResult:', !!questions[0].validationResult);
-  }
-  
   for (const q of questions) {
     const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = Date.now();
@@ -366,8 +404,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
           id, question_sv, question_en, options_sv, options_en, correct_option, 
           explanation_sv, explanation_en, illustration_emoji, categories, difficulty, 
           age_groups, target_audience, created_at, updated_at, created_by,
-          ai_generation_provider, validated, ai_validation_result
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ai_generation_provider, validated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
         q.question_sv,
@@ -386,8 +424,7 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         now,
         'ai-system',
         provider,
-        q.validated || false,
-        q.validationResult ? JSON.stringify(q.validationResult) : null
+        0  // Always false initially, validation happens after
       ).run();
       
       savedQuestions.push({
@@ -408,8 +445,7 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         updatedAt: new Date(now).toISOString(),
         createdBy: 'ai-system',
         aiGenerated: true,
-        validated: q.validated || false,
-        validationResult: q.validationResult || null,
+        validated: false,  // Always false initially
         provider,
         model
       });
