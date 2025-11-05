@@ -102,15 +102,30 @@ export class AIProviderFactory {
 
   /**
    * Get validation providers (all except the generation provider)
+   * Only returns providers that are available and working
    */
   getValidationProviders(generationProviderName) {
     const available = this.getAvailableProviders();
     const genProvider = generationProviderName.toLowerCase();
     
     // Return all providers except the one that generated the questions
-    return available
+    const validationProviders = available
       .filter(name => name !== genProvider)
-      .map(name => this.getProvider(name));
+      .map(name => {
+        try {
+          return this.getProvider(name);
+        } catch (error) {
+          console.warn(`[AIProviderFactory] Provider ${name} not available for validation:`, error.message);
+          return null;
+        }
+      })
+      .filter(provider => provider !== null); // Remove failed providers
+    
+    if (validationProviders.length === 0) {
+      console.warn(`[AIProviderFactory] No validation providers available (generation provider: ${genProvider})`);
+    }
+    
+    return validationProviders;
   }
 
   /**
