@@ -20,23 +20,16 @@ export async function onRequestGet(context) {
         try {
           const provider = factory.getProvider(providerName);
           
-          // Try a minimal generation to check if provider works
-          // This will fail fast if there are credit/auth issues
-          await provider.generateQuestions({
-            amount: 1,
-            category: 'Test',
-            ageGroup: 'vuxen',
-            difficulty: 'easy',
-            targetAudience: 'vuxna',
-            language: 'sv'
-          });
+          // Just check that provider can be instantiated
+          // Don't actually generate questions - too slow and expensive
+          const info = provider.getInfo();
 
           return {
             name: providerName,
             available: true,
             status: 'active',
             model: provider.model,
-            info: provider.getInfo()
+            info
           };
         } catch (error) {
           console.warn(`[getProviderStatus] ${providerName} failed:`, error.message);
