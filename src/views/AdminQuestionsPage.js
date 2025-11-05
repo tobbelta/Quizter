@@ -298,9 +298,9 @@ const QuestionCard = ({
                 )}
               </div>
               <div className="flex items-center gap-4">
-                {question.illustration && (
-                  <span className="text-2xl" title={question.illustration.includes('<svg') ? 'SVG Illustration' : 'Emoji'}>
-                    {question.illustration.includes('<svg') ? '🖼️' : question.illustration}
+                {question.emoji && (
+                  <span className="text-2xl" title="Emoji">
+                    {question.emoji}
                   </span>
                 )}
                 <button

@@ -19,18 +19,38 @@ export async function onRequestGet(context) {
     // Transform database format to match frontend expectations
     const questions = results.map(row => ({
       id: row.id,
+      // Legacy fields for backwards compatibility
       question: row.question_sv || row.question,
       options: JSON.parse(row.options_sv || row.options || '[]'),
       correctOption: row.correct_option || row.correctOption,
       explanation: row.explanation_sv || row.explanation || '',
+      // Bilingual structure
+      languages: {
+        sv: {
+          text: row.question_sv || row.question || '',
+          options: JSON.parse(row.options_sv || row.options || '[]'),
+          explanation: row.explanation_sv || row.explanation || ''
+        },
+        en: row.question_en ? {
+          text: row.question_en || '',
+          options: JSON.parse(row.options_en || '[]'),
+          explanation: row.explanation_en || ''
+        } : null
+      },
       emoji: row.illustration_emoji || row.emoji || '❓',
       category: row.categories || row.category || 'Allmän',
+      categories: row.categories ? JSON.parse(row.categories) : [row.category || 'Allmän'],
+      ageGroups: row.age_groups ? JSON.parse(row.age_groups) : [],
+      targetAudience: row.target_audience || 'swedish',
       difficulty: row.difficulty || 'medium',
       createdAt: row.created_at || row.createdAt,
       updatedAt: row.updated_at || row.updatedAt,
       createdBy: row.created_by || row.createdBy || 'system',
       aiGenerated: row.ai_generation_provider ? true : (row.aiGenerated === 1 || row.aiGenerated === true),
       validated: row.validated === 1 || row.validated === true,
+      manuallyApproved: row.manually_approved === 1 || row.manuallyApproved === true,
+      manuallyRejected: row.manually_rejected === 1 || row.manuallyRejected === true,
+      reported: row.reported === 1 || row.reported === true,
       provider: row.ai_generation_provider || row.provider || null,
       model: row.model || null,
     }));
