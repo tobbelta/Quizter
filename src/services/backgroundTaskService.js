@@ -8,6 +8,20 @@
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 /**
+ * Transform task from API format to frontend format
+ */
+const transformTask = (task) => {
+  if (!task) return null;
+  
+  return {
+    ...task,
+    createdAt: task.createdAt ? new Date(task.createdAt) : null,
+    updatedAt: task.updatedAt ? new Date(task.updatedAt) : null,
+    finishedAt: task.finishedAt ? new Date(task.finishedAt) : null,
+  };
+};
+
+/**
  * Fetch background tasks for a specific user
  */
 const fetchUserTasks = async (userId) => {
@@ -22,7 +36,8 @@ const fetchUserTasks = async (userId) => {
     }
     
     const data = await response.json();
-    return data.tasks || [];
+    const tasks = data.tasks || [];
+    return tasks.map(transformTask);
   } catch (error) {
     console.error('[backgroundTaskService] Error fetching user tasks:', error);
     throw error;
@@ -42,7 +57,8 @@ const fetchAllTasks = async () => {
     }
     
     const data = await response.json();
-    return data.tasks || [];
+    const tasks = data.tasks || [];
+    return tasks.map(transformTask);
   } catch (error) {
     console.error('[backgroundTaskService] Error fetching all tasks:', error);
     throw error;

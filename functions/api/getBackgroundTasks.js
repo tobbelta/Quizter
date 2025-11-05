@@ -42,12 +42,13 @@ export async function onRequestGet(context) {
       status: row.status,
       label: row.label,
       description: row.description,
-      progress: row.progress,
-      total: row.total,
+      payload: row.payload ? JSON.parse(row.payload) : null,
+      progress: row.progress ? JSON.parse(row.progress) : null,
       result: row.result ? JSON.parse(row.result) : null,
+      error: row.error,
       createdAt: new Date(row.created_at).toISOString(),
       updatedAt: new Date(row.updated_at).toISOString(),
-      completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+      finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
     }));
 
     return new Response(
