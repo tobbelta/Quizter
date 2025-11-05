@@ -94,8 +94,7 @@ export class AIProviderFactory {
     
     if (this.env.OPENAI_API_KEY) available.push('openai');
     if (this.env.GEMINI_API_KEY) available.push('gemini');
-    // Temporarily disabled due to credit issues
-    // if (this.env.ANTHROPIC_API_KEY) available.push('anthropic');
+    if (this.env.ANTHROPIC_API_KEY) available.push('anthropic');
     if (this.env.MISTRAL_API_KEY) available.push('mistral');
     
     return available;

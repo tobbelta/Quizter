@@ -143,8 +143,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Update progress: 30%
     await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider}`);
     
-    // Generate questions using the selected provider (with fallback)
+    // Generate questions using the selected provider (with automatic fallback to all available providers)
     let generatedQuestions;
+    let attemptedProviders = [effectiveProvider];
+    let lastError;
+    
     try {
       generatedQuestions = await selectedProvider.generateQuestions({
         amount,
@@ -155,31 +158,46 @@ async function generateQuestionsInBackground(env, taskId, params) {
         language: 'sv'
       });
     } catch (providerError) {
-      // If provider fails (e.g. credit issues), try fallback
+      lastError = providerError;
       console.warn(`[Task ${taskId}] ${effectiveProvider} failed:`, providerError.message);
       
+      // Try all other available providers as fallback
       const availableProviders = factory.getAvailableProviders()
         .filter(name => name !== effectiveProvider);
       
-      if (availableProviders.length > 0) {
-        const fallbackProvider = availableProviders[0];
-        console.log(`[Task ${taskId}] Trying fallback provider: ${fallbackProvider}`);
-        
-        effectiveProvider = fallbackProvider;
-        selectedProvider = factory.getProvider(fallbackProvider);
-        
-        await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider} (fallback)`);
-        
-        generatedQuestions = await selectedProvider.generateQuestions({
-          amount,
-          category,
-          ageGroup,
-          difficulty,
-          targetAudience,
-          language: 'sv'
-        });
-      } else {
-        throw new Error(`${effectiveProvider} generation failed: ${providerError.message}`);
+      let fallbackSuccess = false;
+      
+      for (const fallbackProviderName of availableProviders) {
+        try {
+          console.log(`[Task ${taskId}] Trying fallback provider: ${fallbackProviderName}`);
+          attemptedProviders.push(fallbackProviderName);
+          
+          effectiveProvider = fallbackProviderName;
+          selectedProvider = factory.getProvider(fallbackProviderName);
+          
+          await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider} (fallback)`);
+          
+          generatedQuestions = await selectedProvider.generateQuestions({
+            amount,
+            category,
+            ageGroup,
+            difficulty,
+            targetAudience,
+            language: 'sv'
+          });
+          
+          fallbackSuccess = true;
+          console.log(`[Task ${taskId}] Fallback to ${effectiveProvider} succeeded`);
+          break;
+        } catch (fallbackError) {
+          lastError = fallbackError;
+          console.warn(`[Task ${taskId}] Fallback ${fallbackProviderName} also failed:`, fallbackError.message);
+          continue;
+        }
+      }
+      
+      if (!fallbackSuccess) {
+        throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError.message}`);
       }
     }
     
