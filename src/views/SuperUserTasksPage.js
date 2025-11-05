@@ -75,6 +75,8 @@ const SuperUserTasksPage = () => {
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
   const [migrationLoading, setMigrationLoading] = useState(false);
+  const [providerStatus, setProviderStatus] = useState(null);
+  const [loadingProviderStatus, setLoadingProviderStatus] = useState(false);
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -151,6 +153,25 @@ const SuperUserTasksPage = () => {
       return acc;
     }, initial);
   }, [allTasks]);
+
+  // Fetch provider status on mount
+  React.useEffect(() => {
+    const fetchProviderStatus = async () => {
+      setLoadingProviderStatus(true);
+      try {
+        const response = await fetch('/api/getProviderStatus');
+        const data = await response.json();
+        if (data.success) {
+          setProviderStatus(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch provider status:', error);
+      } finally {
+        setLoadingProviderStatus(false);
+      }
+    };
+    fetchProviderStatus();
+  }, []);
 
   const handleCleanup = async () => {
     if (!window.confirm('Vill du städa hängande bakgrundsjobb (äldre än 30 minuter)?')) {
@@ -482,6 +503,59 @@ const SuperUserTasksPage = () => {
             <div className="mt-2 text-2xl font-semibold text-red-300">{stats.failed}</div>
           </div>
         </section>
+
+        {/* AI Provider Status */}
+        {providerStatus && (
+          <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+            <div className="mb-3">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                🤖 AI Provider Status
+                {loadingProviderStatus && <span className="text-xs text-slate-400">(uppdaterar...)</span>}
+              </h3>
+              <p className="text-sm text-slate-400 mt-1">
+                {providerStatus.summary.active} av {providerStatus.summary.total} providers aktiva med tokens/credits
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {providerStatus.providers.map(provider => (
+                <div
+                  key={provider.name}
+                  className={`p-3 rounded-lg border ${
+                    provider.available
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : 'bg-red-500/10 border-red-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-white capitalize">
+                      {provider.name}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      provider.available
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {provider.available ? '✓ Aktiv' : '✗ Inaktiv'}
+                    </span>
+                  </div>
+                  {provider.model && (
+                    <p className="text-xs text-slate-400">
+                      Modell: {provider.model}
+                    </p>
+                  )}
+                  {!provider.available && provider.error && (
+                    <p className="text-xs text-red-400 mt-1 line-clamp-2">
+                      {provider.errorType === 'insufficient_credits' && '💳 Slut på credits'}
+                      {provider.errorType === 'rate_limit' && '⏱️ Rate limit'}
+                      {provider.errorType === 'authentication' && '🔐 Auth-fel'}
+                      {!provider.errorType && provider.error}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Underhåll-sektion */}
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">

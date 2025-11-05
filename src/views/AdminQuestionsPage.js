@@ -795,25 +795,37 @@ const AdminQuestionsPage = () => {
   const fetchAIStatus = async () => {
     setLoadingAiStatus(true);
     try {
-      const response = await fetch('/api/getAIStatus');
+      const response = await fetch('/api/getProviderStatus');
       const data = await response.json();
-      setAiStatus(data.providers);
-      const anyAvailable = Object.values(data.providers).some(p => p.available);
-      if (!anyAvailable) {
-        if (data.providers.gemini?.available) {
-          setAiProvider('gemini');
-        } else if (data.providers.anthropic?.available) {
-          setAiProvider('anthropic');
-        } else if (data.providers.openai?.available) {
-          setAiProvider('openai');
+      
+      if (data.success) {
+        // Convert array to object for compatibility
+        const providersObj = {};
+        data.providers.forEach(p => {
+          providersObj[p.name] = {
+            available: p.available,
+            status: p.status,
+            model: p.model,
+            error: p.error,
+            errorType: p.errorType
+          };
+        });
+        
+        setAiStatus(providersObj);
+        
+        // Select first available provider
+        const available = data.providers.find(p => p.available);
+        if (available) {
+          setAiProvider(available.name);
         }
       }
     } catch (error) {
       console.error('Failed to fetch AI status:', error);
       setAiStatus({
-        gemini: { available: false, message: 'Kunde inte hämta status' },
-        anthropic: { available: false, message: 'Kunde inte hämta status' },
-        openai: { available: false, message: 'Kunde inte hämta status' }
+        gemini: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        anthropic: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        openai: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        mistral: { available: false, status: 'error', error: 'Kunde inte hämta status' }
       });
     } finally {
       setLoadingAiStatus(false);
