@@ -49,10 +49,21 @@ export class GeminiProvider {
       const data = await response.json();
       
       if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
-        throw new Error('Invalid response structure from Gemini');
+        console.error('[Gemini] Invalid response structure:', JSON.stringify(data, null, 2));
+        throw new Error('Invalid response structure from Gemini - no text content');
       }
       
-      const content = JSON.parse(data.candidates[0].content.parts[0].text);
+      const rawText = data.candidates[0].content.parts[0].text;
+      console.log('[Gemini] Raw text from API:', rawText);
+      
+      let content;
+      try {
+        content = JSON.parse(rawText);
+      } catch (parseError) {
+        console.error('[Gemini] JSON parse failed:', parseError.message);
+        console.error('[Gemini] Raw text was:', rawText);
+        throw new Error(`Failed to parse Gemini response as JSON: ${parseError.message}`);
+      }
       
       console.log('[Gemini] Raw API response parsed:', JSON.stringify(content, null, 2));
       console.log('[Gemini] Questions array length:', content.questions?.length || 0);
