@@ -156,7 +156,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
     );
     
     console.log(`[Task ${taskId}] Validation complete: ${validatedQuestions.length}/${generatedQuestions.length} questions`);
-    console.log(`[Task ${taskId}] Validated questions:`, validatedQuestions.map(q => ({ validated: q.validated, hasResult: !!q.validationResult })));
+    console.log(`[Task ${taskId}] Sample validated question:`, {
+      validated: validatedQuestions[0]?.validated,
+      hasValidationResult: !!validatedQuestions[0]?.validationResult,
+      validationError: validatedQuestions[0]?.validationError
+    });
     
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
@@ -345,6 +349,12 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
   const { category, difficulty, provider, model, ageGroup, targetAudience } = metadata;
   const savedQuestions = [];
   const errors = [];
+  
+  console.log(`[saveQuestionsToDatabase] Saving ${questions.length} questions`);
+  if (questions.length > 0) {
+    console.log('[saveQuestionsToDatabase] First question has validated:', questions[0].validated);
+    console.log('[saveQuestionsToDatabase] First question has validationResult:', !!questions[0].validationResult);
+  }
   
   for (const q of questions) {
     const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
