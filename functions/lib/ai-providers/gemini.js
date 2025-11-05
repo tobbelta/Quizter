@@ -66,6 +66,15 @@ export class GeminiProvider {
       if (validated.length === 0 && content.questions && content.questions.length > 0) {
         console.warn('[Gemini] WARNING: All questions filtered by validation!');
         console.warn('[Gemini] Original questions:', JSON.stringify(content.questions, null, 2));
+        
+        // TEMPORARY: Return unvalidated questions with debug flag for inspection
+        return content.questions.map(q => ({
+          ...q,
+          provider: this.name,
+          model: this.model,
+          __DEBUG__: 'UNVALIDATED - Returned for inspection',
+          __ORIGINAL_KEYS__: Object.keys(q)
+        }));
       }
       
       return validated;

@@ -53,7 +53,21 @@ export class OpenAIProvider {
       console.log('[OpenAI] Raw response:', JSON.stringify(content, null, 2));
       console.log('[OpenAI] Questions received:', content.questions?.length || 0);
       
-      return this.validateAndFormatQuestions(content.questions || []);
+      const validated = this.validateAndFormatQuestions(content.questions || []);
+      
+      // If validation filtered everything, return unvalidated for debugging
+      if (validated.length === 0 && content.questions && content.questions.length > 0) {
+        console.warn('[OpenAI] WARNING: All questions filtered! Returning unvalidated for inspection');
+        return content.questions.map(q => ({
+          ...q,
+          provider: this.name,
+          model: this.model,
+          __DEBUG__: 'UNVALIDATED - Returned for inspection',
+          __ORIGINAL_KEYS__: Object.keys(q)
+        }));
+      }
+      
+      return validated;
       
     } catch (error) {
       console.error('[OpenAI] Generation error:', error);
