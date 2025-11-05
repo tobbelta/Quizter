@@ -68,6 +68,17 @@ export class GeminiProvider {
       console.log('[Gemini] Raw API response parsed:', JSON.stringify(content, null, 2));
       console.log('[Gemini] Questions array length:', content.questions?.length || 0);
       
+      // DEBUG: SKIP ALL VALIDATION - just return questions as-is
+      if (content.questions && content.questions.length > 0) {
+        console.log('[Gemini] Returning questions WITHOUT validation (DEBUG MODE)');
+        return content.questions.map(q => ({
+          ...q,
+          provider: this.name,
+          model: this.model,
+          __DEBUG__: 'NO_VALIDATION_APPLIED'
+        }));
+      }
+      
       // DEBUG: If no questions key, return the whole response for inspection
       if (!content.questions || content.questions.length === 0) {
         console.warn('[Gemini] No questions in response! Returning raw content for debugging');
