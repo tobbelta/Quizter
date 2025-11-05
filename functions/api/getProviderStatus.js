@@ -14,15 +14,38 @@ export async function onRequestGet(context) {
     
     console.log('[getProviderStatus] Checking providers:', availableProviders);
 
-    // Test each provider with a minimal request
+    // Test each provider with a minimal API call to check credits
     const providerStatus = await Promise.all(
       availableProviders.map(async (providerName) => {
         try {
           const provider = factory.getProvider(providerName);
-          
-          // Just check that provider can be instantiated
-          // Don't actually generate questions - too slow and expensive
           const info = provider.getInfo();
+          
+          // Check if provider has credits/tokens available
+          console.log(`[getProviderStatus] Checking credits for ${providerName}...`);
+          const creditCheck = await provider.checkCredits();
+          
+          if (!creditCheck.available) {
+            console.warn(`[getProviderStatus] ${providerName} has no credits:`, creditCheck.message);
+            
+            let status = 'error';
+            if (creditCheck.error === 'insufficient_credits') {
+              status = 'no_credits';
+            } else if (creditCheck.error === 'rate_limit') {
+              status = 'rate_limited';
+            } else if (creditCheck.error === 'api_error') {
+              status = 'auth_error';
+            }
+            
+            return {
+              name: providerName,
+              available: false,
+              status,
+              errorType: creditCheck.error,
+              model: provider.model,
+              error: creditCheck.message
+            };
+          }
 
           return {
             name: providerName,

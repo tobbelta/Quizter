@@ -244,6 +244,65 @@ Returnera JSON med följande format:
   }
 
   /**
+   * Check if provider has credits/tokens available
+   * Makes a minimal API call to verify access
+   */
+  async checkCredits() {
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 5,
+          messages: [{
+            role: 'user',
+            content: 'Hi'
+          }]
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        // Check for credit/quota issues
+        if (error.includes('credit') || error.includes('insufficient_quota')) {
+          return { 
+            available: false, 
+            error: 'insufficient_credits',
+            message: 'Insufficient credits or quota'
+          };
+        }
+        if (error.includes('rate_limit')) {
+          return { 
+            available: false, 
+            error: 'rate_limit',
+            message: 'Rate limit exceeded'
+          };
+        }
+        return { 
+          available: false, 
+          error: 'api_error',
+          message: `API error: ${response.status}`
+        };
+      }
+      
+      return { available: true };
+      
+    } catch (error) {
+      console.error('[Anthropic] Credit check error:', error);
+      return { 
+        available: false, 
+        error: 'connection_error',
+        message: error.message 
+      };
+    }
+  }
+
+  /**
    * Get provider info
    */
   getInfo() {

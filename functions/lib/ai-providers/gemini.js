@@ -279,6 +279,57 @@ Returnera JSON med följande format:
   }
 
   /**
+   * Check if provider has credits/tokens available
+   * Makes a minimal API call to verify access
+   */
+  async checkCredits() {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: 'Hi' }]
+            }],
+            generationConfig: {
+              maxOutputTokens: 5
+            }
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        const error = await response.text();
+        // Check for quota/rate limit issues
+        if (error.includes('quota') || error.includes('RESOURCE_EXHAUSTED')) {
+          return { 
+            available: false, 
+            error: 'insufficient_credits',
+            message: 'Quota exceeded or insufficient credits'
+          };
+        }
+        return { 
+          available: false, 
+          error: 'api_error',
+          message: `API error: ${response.status}`
+        };
+      }
+      
+      return { available: true };
+      
+    } catch (error) {
+      console.error('[Gemini] Credit check error:', error);
+      return { 
+        available: false, 
+        error: 'connection_error',
+        message: error.message 
+      };
+    }
+  }
+
+  /**
    * Get provider info
    */
   getInfo() {

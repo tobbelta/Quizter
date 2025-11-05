@@ -245,6 +245,61 @@ Returnera JSON med följande format:
   }
 
   /**
+   * Check if provider has credits/tokens available
+   * Makes a minimal API call to verify access
+   */
+  async checkCredits() {
+    try {
+      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        // Check for quota/rate limit issues
+        if (error.includes('quota') || error.includes('insufficient')) {
+          return { 
+            available: false, 
+            error: 'insufficient_credits',
+            message: 'Insufficient quota or credits'
+          };
+        }
+        if (error.includes('rate_limit')) {
+          return { 
+            available: false, 
+            error: 'rate_limit',
+            message: 'Rate limit exceeded'
+          };
+        }
+        return { 
+          available: false, 
+          error: 'api_error',
+          message: `API error: ${response.status}`
+        };
+      }
+      
+      return { available: true };
+      
+    } catch (error) {
+      console.error('[Mistral] Credit check error:', error);
+      return { 
+        available: false, 
+        error: 'connection_error',
+        message: error.message 
+      };
+    }
+  }
+
+  /**
    * Get provider info
    */
   getInfo() {

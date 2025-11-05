@@ -510,12 +510,12 @@ const SuperUserTasksPage = () => {
             <div className="mb-3">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 🤖 AI Provider Status
-                {loadingProviderStatus && <span className="text-xs text-slate-400">(uppdaterar...)</span>}
+                {loadingProviderStatus && <span className="text-xs text-slate-400">(testar credits...)</span>}
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                {providerStatus.summary.active} av {providerStatus.summary.total} providers konfigurerade
+                {providerStatus.summary.active} av {providerStatus.summary.total} providers har tillgängliga credits
                 <span className="text-xs text-slate-500 ml-2">
-                  • Credits/tokens verifieras vid användning
+                  • Uppdateras automatiskt var 2:a minut
                 </span>
               </p>
             </div>
@@ -538,7 +538,7 @@ const SuperUserTasksPage = () => {
                         ? 'bg-emerald-500/20 text-emerald-300'
                         : 'bg-red-500/20 text-red-300'
                     }`}>
-                      {provider.available ? '✓ Konfigurerad' : '✗ Ej konfigurerad'}
+                      {provider.available ? '✓ Aktiv' : '✗ Ej tillgänglig'}
                     </span>
                   </div>
                   {provider.model && (
@@ -551,6 +551,8 @@ const SuperUserTasksPage = () => {
                       {provider.errorType === 'insufficient_credits' && '💳 Slut på credits'}
                       {provider.errorType === 'rate_limit' && '⏱️ Rate limit'}
                       {provider.errorType === 'authentication' && '🔐 Auth-fel'}
+                      {provider.errorType === 'api_error' && '⚠️ API-fel'}
+                      {provider.errorType === 'connection_error' && '🔌 Anslutningsfel'}
                       {!provider.errorType && provider.error}
                     </p>
                   )}
