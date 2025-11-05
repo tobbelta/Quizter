@@ -9,8 +9,7 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   
   try {
-    async function generateQuestionsTask(params, env) {
-  const { amount, category, ageGroup, difficulty, provider } = params;
+    const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = await request.json();
     const userEmail = request.headers.get('x-user-email') || 'anonymous';
     
     console.log('[generateAIQuestions] Request:', { 
@@ -70,8 +69,7 @@ export async function onRequestPost(context) {
         category,
         ageGroup,
         difficulty: difficulty || 'medium',
-        provider,
-        generateIllustrations: generateIllustrations !== false // default true
+        provider
       })
     );
     
