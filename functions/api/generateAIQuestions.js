@@ -231,18 +231,17 @@ async function generateQuestionsInBackground(env, taskId, params) {
     console.log(`[Task ${taskId}] Found ${uniqueQuestions.length} unique questions, ${duplicateCount} duplicates`);
     
     // Update progress: 70%
-    await updateTaskProgress(env.DB, taskId, 70, 'Validerar unika frågor');
+    await updateTaskProgress(env.DB, taskId, 70, 'Klar med generering');
     
-    // Step 3: Validate ONLY unique questions using a DIFFERENT provider
-    const validationResult = await validateUniqueQuestions(
-      env.DB,
-      factory,
-      uniqueQuestions,
-      effectiveProvider, // Exclude this provider from validation
-      { category, ageGroup, difficulty }
-    );
+    // Skip AI validation for now to avoid timeout issues
+    // TODO: Move validation to separate background job or queue
+    const validationResult = {
+      validatedCount: 0,
+      invalidCount: 0,
+      skippedCount: uniqueQuestions.length
+    };
     
-    console.log(`[Task ${taskId}] Validation complete: ${validationResult.validatedCount} valid, ${validationResult.invalidCount} invalid`);
+    console.log(`[Task ${taskId}] Skipping validation to avoid timeout (${uniqueQuestions.length} questions)`);
     
     // Complete task
     await completeTask(env.DB, taskId, {
