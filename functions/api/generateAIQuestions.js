@@ -40,22 +40,35 @@ export async function onRequestPost(context) {
     
     // Create background task
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const now = Date.now();
+    const now = new Date().toISOString();
+    
+    const initialProgress = {
+      completed: 0,
+      total: 100,
+      phase: 'Queued',
+    };
+
+    const payload = {
+      amount,
+      category,
+      ageGroup,
+      difficulty: difficulty || 'medium',
+      provider,
+    };
     
     await env.DB.prepare(`
       INSERT INTO background_tasks (
-        id, user_id, task_type, status, label, description,
-        progress, total, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, user_id, task_type, status, label,
+        payload, progress, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       taskId,
       userEmail,
       'generation',
       'processing',
       'AI-generering',
-      `Genererar ${amount} frågor om ${category} för ${ageGroup} med ${provider}`,
-      0,
-      100,
+      JSON.stringify(payload),
+      JSON.stringify(initialProgress),
       now,
       now
     ).run();
@@ -106,7 +119,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     console.log(`[Task ${taskId}] Starting generation...`);
     
     // Update progress: 10%
-    await updateTaskProgress(env.DB, taskId, 10, 'Preparing AI request...');
+    await updateTaskProgress(env.DB, taskId, 10, 'Förbereder AI-förfrågan');
     
     // Determine target audience based on age group
     const targetAudience = determineTargetAudience(ageGroup);
@@ -128,7 +141,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     }
     
     // Update progress: 30%
-    await updateTaskProgress(env.DB, taskId, 30, `Generating with ${effectiveProvider}...`);
+    await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider}`);
     
     // Generate questions using the selected provider
     const generatedQuestions = await selectedProvider.generateQuestions({
@@ -143,7 +156,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
     // Update progress: 40%
-    await updateTaskProgress(env.DB, taskId, 40, 'Saving questions to database...');
+    await updateTaskProgress(env.DB, taskId, 40, 'Sparar frågor till databas');
     
     // Step 1: Save ALL generated questions to database immediately (unvalidated)
     const saveResult = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
@@ -159,7 +172,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     console.log(`[Task ${taskId}] Saved ${savedQuestions.length} questions to database`);
     
     // Update progress: 60%
-    await updateTaskProgress(env.DB, taskId, 60, 'Checking for duplicates...');
+    await updateTaskProgress(env.DB, taskId, 60, 'Kontrollerar dubletter');
     
     // Step 2: Check for duplicates (compare question text)
     const { uniqueQuestions, duplicateCount } = await filterDuplicateQuestions(
@@ -170,7 +183,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     console.log(`[Task ${taskId}] Found ${uniqueQuestions.length} unique questions, ${duplicateCount} duplicates`);
     
     // Update progress: 70%
-    await updateTaskProgress(env.DB, taskId, 70, 'Validating unique questions...');
+    await updateTaskProgress(env.DB, taskId, 70, 'Validerar unika frågor');
     
     // Step 3: Validate ONLY unique questions using a DIFFERENT provider
     const validationResult = await validateUniqueQuestions(
@@ -348,13 +361,23 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
 }
 
 // Helper function to update task progress
-async function updateTaskProgress(db, taskId, progress, description) {
+async function updateTaskProgress(db, taskId, progressPercent, phase, details = null) {
   try {
+    const progressData = {
+      completed: progressPercent,
+      total: 100,
+      phase: phase,
+    };
+    
+    if (details) {
+      progressData.details = details;
+    }
+
     await db.prepare(`
       UPDATE background_tasks 
-      SET progress = ?, description = ?, updated_at = ?
+      SET progress = ?, updated_at = ?
       WHERE id = ?
-    `).bind(progress, description, Date.now(), taskId).run();
+    `).bind(JSON.stringify(progressData), new Date().toISOString(), taskId).run();
   } catch (error) {
     console.error(`[Task ${taskId}] Failed to update progress:`, error);
   }
@@ -362,13 +385,29 @@ async function updateTaskProgress(db, taskId, progress, description) {
 
 // Helper function to complete task
 async function completeTask(db, taskId, result) {
-  const now = Date.now();
   try {
+    const progressData = {
+      completed: 100,
+      total: 100,
+      phase: 'Completed',
+    };
+
     await db.prepare(`
       UPDATE background_tasks 
-      SET status = ?, progress = 100, result = ?, updated_at = ?, completed_at = ?
+      SET status = ?, 
+          progress = ?, 
+          result = ?, 
+          updated_at = ?, 
+          finished_at = ?
       WHERE id = ?
-    `).bind('completed', JSON.stringify(result), now, now, taskId).run();
+    `).bind(
+      'completed', 
+      JSON.stringify(progressData),
+      JSON.stringify(result), 
+      new Date().toISOString(), 
+      new Date().toISOString(), 
+      taskId
+    ).run();
   } catch (error) {
     console.error(`[Task ${taskId}] Failed to mark as completed:`, error);
   }
@@ -376,13 +415,23 @@ async function completeTask(db, taskId, result) {
 
 // Helper function to fail task
 async function failTask(db, taskId, errorMessage) {
-  const now = Date.now();
   try {
     await db.prepare(`
       UPDATE background_tasks 
-      SET status = ?, result = ?, updated_at = ?, completed_at = ?
+      SET status = ?, 
+          error = ?,
+          result = ?, 
+          updated_at = ?, 
+          finished_at = ?
       WHERE id = ?
-    `).bind('failed', JSON.stringify({ error: errorMessage }), now, now, taskId).run();
+    `).bind(
+      'failed', 
+      errorMessage,
+      JSON.stringify({ error: errorMessage }), 
+      new Date().toISOString(), 
+      new Date().toISOString(), 
+      taskId
+    ).run();
   } catch (error) {
     console.error(`[Task ${taskId}] Failed to mark as failed:`, error);
   }
