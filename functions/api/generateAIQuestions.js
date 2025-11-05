@@ -145,6 +145,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Update progress: 50%
     await updateTaskProgress(env.DB, taskId, 50, 'Validating questions...');
     
+    console.log(`[Task ${taskId}] Starting validation process...`);
+    
     // Validate questions using AI (if validation providers are available)
     const validatedQuestions = await validateQuestions(
       env, 
@@ -153,7 +155,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
       { category, ageGroup, difficulty }
     );
     
-    console.log(`[Task ${taskId}] Validated ${validatedQuestions.length}/${generatedQuestions.length} questions`);
+    console.log(`[Task ${taskId}] Validation complete: ${validatedQuestions.length}/${generatedQuestions.length} questions`);
+    console.log(`[Task ${taskId}] Validated questions:`, validatedQuestions.map(q => ({ validated: q.validated, hasResult: !!q.validationResult })));
     
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
@@ -237,22 +240,27 @@ async function validateQuestions(env, factory, questions, context) {
           difficulty: context.difficulty
         });
         
-        // If validation passed or no strict filtering, include the question
-        if (validationResult.isValid) {
-          validatedQuestions.push({
-            ...question,
-            validated: true,
-            validationResult: validationResult
-          });
-        } else {
-          console.log(`[validateQuestions] Question rejected: ${validationResult.feedback}`);
-        }
+        console.log(`[validateQuestions] Validation result for question:`, {
+          isValid: validationResult.isValid,
+          confidence: validationResult.confidence,
+          feedback: validationResult.feedback
+        });
+        
+        // Always include the question, but mark validation status
+        validatedQuestions.push({
+          ...question,
+          validated: validationResult.isValid,
+          validationResult: validationResult
+        });
+        
       } catch (validationError) {
         console.error('[validateQuestions] Validation error for question:', validationError);
+        console.error('[validateQuestions] Error stack:', validationError.stack);
         // Include question anyway but mark as unvalidated
         validatedQuestions.push({
           ...question,
-          validated: false
+          validated: false,
+          validationError: validationError.message
         });
       }
     }
