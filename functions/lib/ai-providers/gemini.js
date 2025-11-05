@@ -54,6 +54,12 @@ export class GeminiProvider {
       
       const content = JSON.parse(data.candidates[0].content.parts[0].text);
       
+      console.log('[Gemini] Raw API response parsed:', JSON.stringify(content, null, 2));
+      console.log('[Gemini] Questions array length:', content.questions?.length || 0);
+      if (content.questions && content.questions.length > 0) {
+        console.log('[Gemini] First question keys:', Object.keys(content.questions[0]));
+      }
+      
       return this.validateAndFormatQuestions(content.questions || []);
       
     } catch (error) {
