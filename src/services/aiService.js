@@ -1,58 +1,70 @@
 /**
  * AI SERVICE
  * 
- * SYFTE: Kommunicerar med Firebase Cloud Functions för AI-uppgifter
+ * SYFTE: Kommunicerar med Cloudflare API för AI-uppgifter
  * 
  * FUNKTIONALITET:
  * - Kö-hantering för AI-tasks (generering, validering, emoji-regenerering)
- * - Authentication med Firebase ID tokens
  * - Error handling och response parsing
  * 
  * TILLGÄNGLIGA TASKS:
- * - startAIGeneration(): Generera batch med frågor (OpenAI/Gemini)
+ * - startAIGeneration(): Generera batch med frågor (OpenAI/Gemini/Anthropic/Mistral)
  * - startAIValidation(): Validera en fråga med AI
  * - startBatchValidation(): Validera flera frågor
  * - startEmojiRegeneration(): Regenerera emoji för fråga
  * - startBatchEmojiRegeneration(): Regenerera emojis för flera frågor
  * 
- * CLOUD FUNCTIONS ENDPOINTS:
- * - generateAIQuestions
- * - validateQuestionWithAI
- * - batchValidateQuestions
- * - regenerateQuestionEmoji
- * - batchRegenerateEmojis
- * 
- * AUTHENTICATION:
- * - Kräver inloggad användare (getAuth().currentUser)
- * - Skickar Firebase ID token i Authorization header
+ * CLOUDFLARE API ENDPOINTS:
+ * - /api/generateAIQuestions
+ * - /api/validateQuestionWithAI
+ * - /api/batchValidateQuestions
+ * - /api/regenerateQuestionEmoji
+ * - /api/batchRegenerateEmojis
  * 
  * ANVÄNDNING:
  * - questionService: Triggar AI-operationer
  * - AdminQuestionsPage: AI-validering och generering
  * - BackgroundTaskContext: Spårar task progress
  */
-// import removed: Legacy Firebase Auth logic removed.
 
-// Legacy Firebase Auth logic removed. Use Cloudflare API endpoint instead.
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-// const getFunctionUrl = (functionName) => {
-//   const projectId = "geoquest2-7e45c";
-//   const region = "europe-west1";
-//   return `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
-// };
-
+/**
+ * Queue a background task via Cloudflare API
+ * @param {string} functionName - Name of the API endpoint (without /api/ prefix)
+ * @param {object} payload - Task parameters
+ * @returns {Promise<{taskId: string}>}
+ */
 const queueTask = async (functionName, payload) => {
+  try {
+    const url = `${API_BASE_URL}/api/${functionName}`;
+    
+    console.log(`[aiService] Queuing task: ${functionName}`, payload);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        // TODO: Add user email header when authentication is implemented
+        // 'x-user-email': userEmail
+      },
+      body: JSON.stringify(payload)
+    });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI task failed (${response.status}): ${errorText}`);
+    }
 
-  // TODO: Replace with Cloudflare API endpoint
-  // const response = await fetch(`/api/${functionName}`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify(payload)
-  // });
-  // if (!response.ok) throw new Error(`AI task failed: ${response.statusText}`);
-  // return await response.json();
-  return null;
+    const result = await response.json();
+    
+    console.log(`[aiService] Task queued successfully:`, result);
+    
+    return result;
+  } catch (error) {
+    console.error(`[aiService] Failed to queue task ${functionName}:`, error);
+    throw error;
+  }
 };
 
 export const aiService = {
