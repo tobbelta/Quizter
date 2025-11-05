@@ -143,6 +143,28 @@ async function generateQuestionsInBackground(env, taskId, params) {
     
     console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
+    // DEBUG: If questions contain debug info, include it in result
+    const hasDebugInfo = generatedQuestions.some(q => q.__DEBUG_RAW_RESPONSE__ || q.__DEBUG__);
+    if (hasDebugInfo) {
+      console.warn(`[Task ${taskId}] Debug info detected in questions - returning raw for inspection`);
+      await completeTask(env.DB, taskId, {
+        success: false,
+        error: 'DEBUG MODE: Returning raw AI response for inspection',
+        debugInfo: generatedQuestions[0],
+        provider: effectiveProvider,
+        model: selectedProvider.model
+      });
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: 'Debug mode - check task result for raw response' 
+      }), {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+    
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
     
