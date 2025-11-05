@@ -142,11 +142,24 @@ async function generateQuestionsInBackground(env, taskId, params) {
     
     console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
+    // Update progress: 50%
+    await updateTaskProgress(env.DB, taskId, 50, 'Validating questions...');
+    
+    // Validate questions using AI (if validation providers are available)
+    const validatedQuestions = await validateQuestions(
+      env, 
+      factory, 
+      generatedQuestions, 
+      { category, ageGroup, difficulty }
+    );
+    
+    console.log(`[Task ${taskId}] Validated ${validatedQuestions.length}/${generatedQuestions.length} questions`);
+    
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
     
-    // Save generated questions to D1 database
-    const saveResult = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
+    // Save validated questions to D1 database
+    const saveResult = await saveQuestionsToDatabase(env.DB, validatedQuestions, {
       category,
       difficulty,
       provider: effectiveProvider,
@@ -191,6 +204,63 @@ function determineTargetAudience(ageGroup) {
   };
   
   return audienceMap[ageGroup] || 'swedish';
+}
+
+/**
+ * Validate questions using AI providers
+ */
+async function validateQuestions(env, factory, questions, context) {
+  try {
+    // Get available validation providers
+    const availableProviders = factory.getAvailableProviders();
+    
+    if (availableProviders.length === 0) {
+      console.log('[validateQuestions] No validation providers available, skipping validation');
+      return questions; // Return all questions unvalidated
+    }
+    
+    // Pick a random validation provider (different from generation provider if possible)
+    const validationProvider = availableProviders[Math.floor(Math.random() * availableProviders.length)];
+    console.log(`[validateQuestions] Using ${validationProvider.name} for validation`);
+    
+    const validatedQuestions = [];
+    
+    // Validate each question
+    for (const question of questions) {
+      try {
+        const validationResult = await validationProvider.validateQuestion(question, {
+          category: context.category,
+          ageGroup: context.ageGroup,
+          difficulty: context.difficulty
+        });
+        
+        // If validation passed or no strict filtering, include the question
+        if (validationResult.isValid) {
+          validatedQuestions.push({
+            ...question,
+            validated: true,
+            validationResult: validationResult
+          });
+        } else {
+          console.log(`[validateQuestions] Question rejected: ${validationResult.feedback}`);
+        }
+      } catch (validationError) {
+        console.error('[validateQuestions] Validation error for question:', validationError);
+        // Include question anyway but mark as unvalidated
+        validatedQuestions.push({
+          ...question,
+          validated: false
+        });
+      }
+    }
+    
+    return validatedQuestions;
+    
+  } catch (error) {
+    console.error('[validateQuestions] Validation process failed:', error);
+    // Return all questions unvalidated on error
+    return questions.map(q => ({ ...q, validated: false }));
+  }
 }
 
 // Helper function to update task progress
@@ -250,8 +320,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
           id, question_sv, question_en, options_sv, options_en, correct_option, 
           explanation_sv, explanation_en, illustration_emoji, categories, difficulty, 
           age_groups, target_audience, created_at, updated_at, created_by,
-          ai_generation_provider, validated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ai_generation_provider, validated, ai_validation_result
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
         q.question_sv,
@@ -270,7 +340,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         now,
         'ai-system',
         provider,
-        false
+        q.validated || false,
+        q.validationResult ? JSON.stringify(q.validationResult) : null
       ).run();
       
       savedQuestions.push({
@@ -291,7 +362,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         updatedAt: new Date(now).toISOString(),
         createdBy: 'ai-system',
         aiGenerated: true,
-        validated: false,
+        validated: q.validated || false,
+        validationResult: q.validationResult || null,
         provider,
         model
       });
