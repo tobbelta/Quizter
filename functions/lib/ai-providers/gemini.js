@@ -9,7 +9,7 @@ export class GeminiProvider {
       throw new Error('Gemini API key is required');
     }
     this.apiKey = apiKey;
-    this.model = 'gemini-1.5-flash-latest';
+    this.model = 'gemini-1.5-flash';
     this.name = 'gemini';
   }
 
