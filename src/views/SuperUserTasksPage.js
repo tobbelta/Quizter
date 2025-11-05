@@ -513,7 +513,10 @@ const SuperUserTasksPage = () => {
                 {loadingProviderStatus && <span className="text-xs text-slate-400">(uppdaterar...)</span>}
               </h3>
               <p className="text-sm text-slate-400 mt-1">
-                {providerStatus.summary.active} av {providerStatus.summary.total} providers aktiva med tokens/credits
+                {providerStatus.summary.active} av {providerStatus.summary.total} providers konfigurerade
+                <span className="text-xs text-slate-500 ml-2">
+                  • Credits/tokens verifieras vid användning
+                </span>
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -535,7 +538,7 @@ const SuperUserTasksPage = () => {
                         ? 'bg-emerald-500/20 text-emerald-300'
                         : 'bg-red-500/20 text-red-300'
                     }`}>
-                      {provider.available ? '✓ Aktiv' : '✗ Inaktiv'}
+                      {provider.available ? '✓ Konfigurerad' : '✗ Ej konfigurerad'}
                     </span>
                   </div>
                   {provider.model && (
