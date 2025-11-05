@@ -34,8 +34,7 @@ export class GeminiProvider {
               }]
             }],
             generationConfig: {
-              temperature: 0.7,
-              responseMimeType: 'application/json'
+              temperature: 0.7
             }
           })
         }
@@ -81,8 +80,7 @@ export class GeminiProvider {
               }]
             }],
             generationConfig: {
-              temperature: 0.3,
-              responseMimeType: 'application/json'
+              temperature: 0.3
             }
           })
         }
