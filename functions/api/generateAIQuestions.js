@@ -9,7 +9,8 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   
   try {
-    const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = await request.json();
+    async function generateQuestionsTask(params, env) {
+  const { amount, category, ageGroup, difficulty, provider } = params;
     const userEmail = request.headers.get('x-user-email') || 'anonymous';
     
     console.log('[generateAIQuestions] Request:', { 
@@ -101,7 +102,7 @@ export async function onRequestPost(context) {
 
 // Background generation function
 async function generateQuestionsInBackground(env, taskId, params) {
-  const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = params;
+  const { amount, category, ageGroup, difficulty, provider } = params;
   
   try {
     console.log(`[Task ${taskId}] Starting generation...`);
@@ -147,15 +148,16 @@ async function generateQuestionsInBackground(env, taskId, params) {
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
     
     // Save generated questions to D1 database
-    const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
+    const saveResult = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
       category,
       difficulty,
       provider: effectiveProvider,
       model: selectedProvider.model,
       ageGroup,
-      targetAudience,
-      generateIllustrations
+      targetAudience
     });
+    
+    const { savedQuestions, errors } = saveResult;
     
     // Complete task
     await completeTask(env.DB, taskId, {
@@ -163,7 +165,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
       questionsGenerated: savedQuestions.length,
       provider: effectiveProvider,
       model: selectedProvider.model,
-      questions: savedQuestions
+      questions: savedQuestions,
+      ...(errors.length > 0 && { saveErrors: errors })
     });
     
     console.log(`[Task ${taskId}] Completed successfully: ${savedQuestions.length} questions`);
@@ -237,6 +240,7 @@ async function failTask(db, taskId, errorMessage) {
 async function saveQuestionsToDatabase(db, questions, metadata) {
   const { category, difficulty, provider, model, ageGroup, targetAudience } = metadata;
   const savedQuestions = [];
+  const errors = [];
   
   for (const q of questions) {
     const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -295,13 +299,25 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         model
       });
     } catch (error) {
+      const errorInfo = {
+        message: error.message,
+        questionKeys: Object.keys(q),
+        questionData: q
+      };
+      errors.push(errorInfo);
       console.error('[generateAIQuestions] Error saving question:', error);
+      console.error('[generateAIQuestions] Question data:', JSON.stringify(q, null, 2));
+      console.error('[generateAIQuestions] Error message:', error.message);
+      console.error('[generateAIQuestions] Error stack:', error.stack);
       // Continue with other questions even if one fails
     }
   }
   
   console.log(`[generateAIQuestions] Saved ${savedQuestions.length}/${questions.length} questions to database`);
-  return savedQuestions;
+  if (errors.length > 0) {
+    console.error(`[generateAIQuestions] Encountered ${errors.length} errors while saving`);
+  }
+  return { savedQuestions, errors };
 }
 
 // Handle CORS preflight
