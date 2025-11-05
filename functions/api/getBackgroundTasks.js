@@ -42,13 +42,13 @@ export async function onRequestGet(context) {
       status: row.status,
       label: row.label,
       description: row.description,
-      payload: row.payload ? JSON.parse(row.payload) : null,
+      payload: null, // payload column doesn't exist yet in old schema
       progress: row.progress ? JSON.parse(row.progress) : null,
       result: row.result ? JSON.parse(row.result) : null,
-      error: row.error,
+      error: null, // error column doesn't exist yet in old schema
       createdAt: new Date(row.created_at).toISOString(),
       updatedAt: new Date(row.updated_at).toISOString(),
-      finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
+      finishedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null, // Use completed_at instead of finished_at
     }));
 
     return new Response(

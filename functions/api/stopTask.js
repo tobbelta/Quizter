@@ -74,7 +74,7 @@ export async function onRequestPost(context) {
     await env.DB.prepare(
       `UPDATE background_tasks 
        SET status = ?, 
-           finished_at = ?,
+           completed_at = ?,
            updated_at = ?
        WHERE id = ?`
     )
