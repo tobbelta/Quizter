@@ -50,6 +50,9 @@ export class OpenAIProvider {
       const data = await response.json();
       const content = JSON.parse(data.choices[0].message.content);
       
+      console.log('[OpenAI] Raw response:', JSON.stringify(content, null, 2));
+      console.log('[OpenAI] Questions received:', content.questions?.length || 0);
+      
       return this.validateAndFormatQuestions(content.questions || []);
       
     } catch (error) {
@@ -200,22 +203,24 @@ Returnera JSON:
    * Validate and format questions from AI response
    */
   validateAndFormatQuestions(questions) {
-    return questions.filter(q => {
+    console.log('[OpenAI] Validating', questions.length, 'questions');
+    
+    const validated = questions.filter(q => {
       // Basic validation
       if (!q.question_sv || !q.question_en) {
-        console.warn('[OpenAI] Skipping question without bilingual content:', q);
+        console.warn('[OpenAI] Skipping question without bilingual content:', JSON.stringify(q, null, 2));
         return false;
       }
       if (!Array.isArray(q.options_sv) || q.options_sv.length !== 4) {
-        console.warn('[OpenAI] Skipping question with invalid Swedish options:', q);
+        console.warn('[OpenAI] Skipping question with invalid Swedish options:', JSON.stringify(q, null, 2));
         return false;
       }
       if (!Array.isArray(q.options_en) || q.options_en.length !== 4) {
-        console.warn('[OpenAI] Skipping question with invalid English options:', q);
+        console.warn('[OpenAI] Skipping question with invalid English options:', JSON.stringify(q, null, 2));
         return false;
       }
       if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption > 3) {
-        console.warn('[OpenAI] Skipping question with invalid correctOption:', q);
+        console.warn('[OpenAI] Skipping question with invalid correctOption:', JSON.stringify(q, null, 2));
         return false;
       }
       return true;
@@ -224,6 +229,9 @@ Returnera JSON:
       provider: this.name,
       model: this.model
     }));
+    
+    console.log('[OpenAI] Validated', validated.length, 'of', questions.length, 'questions');
+    return validated;
   }
 
   /**
