@@ -4,6 +4,8 @@ import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
 import { useAuth } from '../context/AuthContext';
+import TaskTimeline from '../components/admin/TaskTimeline';
+import { getRelativeTime, formatShortDateTime } from '../utils/timeUtils';
 // ...existing code...
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -533,6 +535,24 @@ const SuperUserTasksPage = () => {
         </section>
 
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+          <div className="mb-4 pb-3 border-b border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white">Alla bakgrundsjobb</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Sorterat med <span className="text-cyan-400 font-semibold">nyaste först</span> • {filteredTasks.length} av {allTasks.length} jobb visas
+                </p>
+              </div>
+              <button
+                onClick={refreshAllTasks}
+                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-semibold transition-colors"
+                title="Uppdatera lista"
+              >
+                🔄 Uppdatera
+              </button>
+            </div>
+          </div>
+          
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div className="flex flex-wrap items-center gap-3">
               <select
@@ -669,9 +689,6 @@ const SuperUserTasksPage = () => {
 
                     // Progress för batch-validering och generering
                     const hasProgress = task.progress && (task.progress.total > 0 || task.progress.phase);
-                    const progressPercent = hasProgress && task.progress.total > 0
-                      ? Math.round((task.progress.completed / task.progress.total) * 100)
-                      : 0;
 
                     return (
                       <tr key={task.id} className="border-b border-slate-800/60">
@@ -701,52 +718,56 @@ const SuperUserTasksPage = () => {
                           </div>
                           <div className="text-xs text-slate-500">{task.id.substring(0, 8)}...</div>
 
-                          {/* Progress bar för batch-jobb */}
-                          {hasProgress && task.status === 'processing' && (
-                            <div className="mt-2 space-y-1">
-                              {task.progress.total > 0 && (
-                                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                                  <div
-                                    className="bg-cyan-500 h-full transition-all duration-300"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                              )}
-                              <div className="text-xs text-slate-400">
-                                {task.progress.phase && <div className="font-semibold">{task.progress.phase}</div>}
-                                {task.progress.total > 0 && (
-                                  <div>
-                                    {task.progress.completed} / {task.progress.total}
-                                    {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
-                                      ` (${task.progress.validated} godkända, ${task.progress.failed} underkända)`}
-                                    {task.taskType === 'migration' && task.progress.details &&
-                                      ` - ${task.progress.details}`}
-                                  </div>
-                                )}
-                                {task.progress.details && <div className="text-slate-500">{task.progress.details}</div>}
-                              </div>
-                            </div>
-                          )}
+                          {/* Compact Timeline */}
+                          <div className="mt-2">
+                            <TaskTimeline task={task} compact={true} />
+                          </div>
 
-                          {/* Slutlig progress för klara jobb */}
-                          {hasProgress && task.status === 'completed' && (
-                            <div className="mt-1 text-xs text-slate-400">
-                              {task.taskType === 'batchvalidation' && task.progress.validated != null &&
-                                `${task.progress.validated} godkända, ${task.progress.failed} underkända`}
-                              {task.taskType === 'generation' && task.progress.details &&
-                                task.progress.details}
-                              {task.taskType === 'migration' && task.progress.details &&
-                                task.progress.details}
+                          {/* Progress details för pågående jobb */}
+                          {hasProgress && task.status === 'processing' && task.progress.phase && (
+                            <div className="mt-2 text-xs text-amber-300 font-semibold">
+                              {task.progress.phase}
                             </div>
                           )}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusBadge}`}>
-                            {statusLabel}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusBadge}`}>
+                              {statusLabel}
+                            </span>
+                            {task.status === 'processing' && (
+                              <span className="flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                              </span>
+                            )}
+                          </div>
+                          {/* Progress bar för pågående jobb */}
+                          {task.status === 'processing' && task.progress?.total > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full transition-all duration-500"
+                                  style={{
+                                    width: `${Math.round((task.progress.completed / task.progress.total) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                {task.progress.completed} / {task.progress.total}
+                                {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
+                                  ` (${task.progress.validated} ✓, ${task.progress.failed} ✗)`}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 align-top text-slate-300">
-                          {formatDateTime(task.createdAt)}
+                          <div className="text-sm font-medium text-cyan-300">
+                            {getRelativeTime(task.createdAt)}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {formatShortDateTime(task.createdAt)}
+                          </div>
                         </td>
                         <td className="px-4 py-3 align-top text-slate-300">
                           {formatDateTime(task.finishedAt)}
