@@ -211,16 +211,19 @@ function determineTargetAudience(ageGroup) {
  */
 async function validateQuestions(env, factory, questions, context) {
   try {
-    // Get available validation providers
-    const availableProviders = factory.getAvailableProviders();
+    // Get available provider names
+    const availableProviderNames = factory.getAvailableProviders();
     
-    if (availableProviders.length === 0) {
+    if (availableProviderNames.length === 0) {
       console.log('[validateQuestions] No validation providers available, skipping validation');
-      return questions; // Return all questions unvalidated
+      return questions.map(q => ({ ...q, validated: false }));
     }
     
-    // Pick a random validation provider (different from generation provider if possible)
-    const validationProvider = availableProviders[Math.floor(Math.random() * availableProviders.length)];
+    // Pick a random validation provider name
+    const randomProviderName = availableProviderNames[Math.floor(Math.random() * availableProviderNames.length)];
+    
+    // Get the actual provider instance
+    const validationProvider = factory.getProvider(randomProviderName);
     console.log(`[validateQuestions] Using ${validationProvider.name} for validation`);
     
     const validatedQuestions = [];
@@ -254,6 +257,7 @@ async function validateQuestions(env, factory, questions, context) {
       }
     }
     
+    console.log(`[validateQuestions] Validation complete: ${validatedQuestions.length}/${questions.length} questions passed`);
     return validatedQuestions;
     
   } catch (error) {
