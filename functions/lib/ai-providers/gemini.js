@@ -56,6 +56,18 @@ export class GeminiProvider {
       
       console.log('[Gemini] Raw API response parsed:', JSON.stringify(content, null, 2));
       console.log('[Gemini] Questions array length:', content.questions?.length || 0);
+      
+      // DEBUG: If no questions key, return the whole response for inspection
+      if (!content.questions || content.questions.length === 0) {
+        console.warn('[Gemini] No questions in response! Returning raw content for debugging');
+        return [{
+          __DEBUG_RAW_RESPONSE__: content,
+          __DEBUG_KEYS__: Object.keys(content),
+          provider: this.name,
+          model: this.model
+        }];
+      }
+      
       if (content.questions && content.questions.length > 0) {
         console.log('[Gemini] First question keys:', Object.keys(content.questions[0]));
       }

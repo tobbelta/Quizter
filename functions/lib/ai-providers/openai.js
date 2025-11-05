@@ -53,6 +53,17 @@ export class OpenAIProvider {
       console.log('[OpenAI] Raw response:', JSON.stringify(content, null, 2));
       console.log('[OpenAI] Questions received:', content.questions?.length || 0);
       
+      // DEBUG: If no questions, return raw content
+      if (!content.questions || content.questions.length === 0) {
+        console.warn('[OpenAI] No questions in response! Returning raw content for debugging');
+        return [{
+          __DEBUG_RAW_RESPONSE__: content,
+          __DEBUG_KEYS__: Object.keys(content),
+          provider: this.name,
+          model: this.model
+        }];
+      }
+      
       const validated = this.validateAndFormatQuestions(content.questions || []);
       
       // If validation filtered everything, return unvalidated for debugging
