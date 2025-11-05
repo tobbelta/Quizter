@@ -977,9 +977,8 @@ const AdminQuestionsPage = () => {
     try {
       const { taskId } = await aiService.startAIGeneration({
         amount: requestAmount,
-        category: aiCategory || 'Allmän', // Default to 'Allmän' if empty
-        ageGroup: aiAgeGroup || 'adults', // Default to 'adults' if empty
-        difficulty: 'medium', // Default difficulty
+        category: aiCategory || undefined,
+        ageGroup: aiAgeGroup || undefined,
         provider: aiProvider,
       });
 

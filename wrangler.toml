@@ -32,17 +32,8 @@ REACT_APP_STRIPE_PUBLISHABLE_KEY = "pk_live_51SCkJSCO02VZleLGS20eWjUQl0cAhGoZaQA
 # This makes your D1 database available to your serverless functions.
 # You can access it in your code via `env.DB`.
 # ============================================================================
-
-# Production database (used by main branch)
 [[d1_databases]]
-binding = "DB"
+binding = "DB" # The name to use in your code (env.DB)
 database_name = "quizter-db"
 database_id = "8b90c5aa-c172-469f-b852-3662b7a717bf"
-
-# Preview database (used by all preview deployments)
-[[env.preview.d1_databases]]
-binding = "DB"
-database_name = "quizter-db-preview"
-database_id = "f0c0f1b9-9955-4f99-bd49-965249967fec"
-
 
