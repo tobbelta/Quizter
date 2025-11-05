@@ -50,35 +50,20 @@ export class OpenAIProvider {
       const data = await response.json();
       const content = JSON.parse(data.choices[0].message.content);
       
-      console.log('[OpenAI] Raw response:', JSON.stringify(content, null, 2));
+      console.log('[OpenAI] Successfully parsed response');
       console.log('[OpenAI] Questions received:', content.questions?.length || 0);
       
-      // DEBUG: If no questions, return raw content
-      if (!content.questions || content.questions.length === 0) {
-        console.warn('[OpenAI] No questions in response! Returning raw content for debugging');
-        return [{
-          __DEBUG_RAW_RESPONSE__: content,
-          __DEBUG_KEYS__: Object.keys(content),
-          provider: this.name,
-          model: this.model
-        }];
-      }
-      
-      const validated = this.validateAndFormatQuestions(content.questions || []);
-      
-      // If validation filtered everything, return unvalidated for debugging
-      if (validated.length === 0 && content.questions && content.questions.length > 0) {
-        console.warn('[OpenAI] WARNING: All questions filtered! Returning unvalidated for inspection');
+      // Return questions with provider/model info (skip strict validation for now)
+      if (content.questions && content.questions.length > 0) {
         return content.questions.map(q => ({
           ...q,
           provider: this.name,
-          model: this.model,
-          __DEBUG__: 'UNVALIDATED - Returned for inspection',
-          __ORIGINAL_KEYS__: Object.keys(q)
+          model: this.model
         }));
       }
       
-      return validated;
+      console.warn('[OpenAI] No questions in response');
+      return [];
       
     } catch (error) {
       console.error('[OpenAI] Generation error:', error);

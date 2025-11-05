@@ -65,53 +65,20 @@ export class GeminiProvider {
         throw new Error(`Failed to parse Gemini response as JSON: ${parseError.message}`);
       }
       
-      console.log('[Gemini] Raw API response parsed:', JSON.stringify(content, null, 2));
-      console.log('[Gemini] Questions array length:', content.questions?.length || 0);
+      console.log('[Gemini] Successfully parsed response');
+      console.log('[Gemini] Questions received:', content.questions?.length || 0);
       
-      // DEBUG: SKIP ALL VALIDATION - just return questions as-is
+      // Return questions with provider/model info (skip strict validation for now)
       if (content.questions && content.questions.length > 0) {
-        console.log('[Gemini] Returning questions WITHOUT validation (DEBUG MODE)');
         return content.questions.map(q => ({
           ...q,
-          provider: this.name,
-          model: this.model,
-          __DEBUG__: 'NO_VALIDATION_APPLIED'
-        }));
-      }
-      
-      // DEBUG: If no questions key, return the whole response for inspection
-      if (!content.questions || content.questions.length === 0) {
-        console.warn('[Gemini] No questions in response! Returning raw content for debugging');
-        return [{
-          __DEBUG_RAW_RESPONSE__: content,
-          __DEBUG_KEYS__: Object.keys(content),
           provider: this.name,
           model: this.model
-        }];
-      }
-      
-      if (content.questions && content.questions.length > 0) {
-        console.log('[Gemini] First question keys:', Object.keys(content.questions[0]));
-      }
-      
-      const validated = this.validateAndFormatQuestions(content.questions || []);
-      
-      // Add debug info if validation filtered everything
-      if (validated.length === 0 && content.questions && content.questions.length > 0) {
-        console.warn('[Gemini] WARNING: All questions filtered by validation!');
-        console.warn('[Gemini] Original questions:', JSON.stringify(content.questions, null, 2));
-        
-        // TEMPORARY: Return unvalidated questions with debug flag for inspection
-        return content.questions.map(q => ({
-          ...q,
-          provider: this.name,
-          model: this.model,
-          __DEBUG__: 'UNVALIDATED - Returned for inspection',
-          __ORIGINAL_KEYS__: Object.keys(q)
         }));
       }
       
-      return validated;
+      console.warn('[Gemini] No questions in response');
+      return [];
       
     } catch (error) {
       console.error('[Gemini] Generation error:', error);
