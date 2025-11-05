@@ -1,22 +1,37 @@
 /**
  * Cloudflare Pages Function - Generate AI Questions
- * Generates quiz questions using OpenAI, Gemini, or Anthropic
+ * Generates quiz questions using OpenAI, Gemini, Anthropic, or Mistral
  */
+
+import { AIProviderFactory } from '../lib/ai-providers/index.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   
   try {
-    const { amount, category, ageGroup, difficulty, provider } = await request.json();
+    const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = await request.json();
     const userEmail = request.headers.get('x-user-email') || 'anonymous';
     
-    console.log('[generateAIQuestions] Request:', { amount, category, ageGroup, difficulty, provider, userEmail });
+    console.log('[generateAIQuestions] Request:', { 
+      amount, category, ageGroup, difficulty, provider, generateIllustrations, userEmail 
+    });
     
-    // Validate input - difficulty is optional, defaults to 'medium'
-    if (!amount || !category || !provider) {
+    // Validate input
+    if (!amount || !category || !provider || !ageGroup) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'Missing required parameters: amount, category, and provider are required' 
+        error: 'Missing required parameters: amount, category, ageGroup, and provider are required' 
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // Validate amount
+    if (amount < 1 || amount > 50) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Amount must be between 1 and 50' 
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
@@ -38,7 +53,7 @@ export async function onRequestPost(context) {
       'generation',
       'processing',
       'AI-generering',
-      `Genererar ${amount} frågor om ${category} med ${provider}`,
+      `Genererar ${amount} frågor om ${category} för ${ageGroup} med ${provider}`,
       0,
       100,
       now,
@@ -54,7 +69,8 @@ export async function onRequestPost(context) {
         category,
         ageGroup,
         difficulty: difficulty || 'medium',
-        provider
+        provider,
+        generateIllustrations: generateIllustrations !== false // default true
       })
     );
     
@@ -85,7 +101,7 @@ export async function onRequestPost(context) {
 
 // Background generation function
 async function generateQuestionsInBackground(env, taskId, params) {
-  const { amount, category, ageGroup, difficulty, provider } = params;
+  const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = params;
   
   try {
     console.log(`[Task ${taskId}] Starting generation...`);
@@ -93,57 +109,39 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Update progress: 10%
     await updateTaskProgress(env.DB, taskId, 10, 'Preparing AI request...');
     
-    // Use default difficulty if not provided
-    const effectiveDifficulty = difficulty || 'medium';
+    // Determine target audience based on age group
+    const targetAudience = determineTargetAudience(ageGroup);
+    
+    // Initialize provider factory
+    const factory = new AIProviderFactory(env);
     
     // Handle 'random' provider by picking one randomly
     let effectiveProvider = provider.toLowerCase();
+    let selectedProvider;
+    
     if (effectiveProvider === 'random') {
-      const availableProviders = [];
-      if (env.OPENAI_API_KEY) availableProviders.push('openai');
-      if (env.GEMINI_API_KEY) availableProviders.push('gemini');
-      if (env.ANTHROPIC_API_KEY) availableProviders.push('anthropic');
-      if (env.MISTRAL_API_KEY) availableProviders.push('mistral');
-      
-      if (availableProviders.length === 0) {
-        throw new Error('No AI providers are configured');
-      }
-      
-      effectiveProvider = availableProviders[Math.floor(Math.random() * availableProviders.length)];
+      const randomSelection = factory.getRandomProvider();
+      effectiveProvider = randomSelection.name;
+      selectedProvider = randomSelection.provider;
       console.log(`[Task ${taskId}] Random provider selected: ${effectiveProvider}`);
+    } else {
+      selectedProvider = factory.getProvider(effectiveProvider);
     }
     
     // Update progress: 30%
     await updateTaskProgress(env.DB, taskId, 30, `Generating with ${effectiveProvider}...`);
     
-    // Get API key based on provider
-    let apiKey;
-    let generatedQuestions = [];
+    // Generate questions using the selected provider
+    const generatedQuestions = await selectedProvider.generateQuestions({
+      amount,
+      category,
+      ageGroup,
+      difficulty,
+      targetAudience,
+      language: 'sv'
+    });
     
-    switch (effectiveProvider) {
-      case 'openai':
-        apiKey = env.OPENAI_API_KEY;
-        generatedQuestions = await generateWithOpenAI(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
-        break;
-      case 'gemini':
-        apiKey = env.GEMINI_API_KEY;
-        generatedQuestions = await generateWithGemini(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
-        break;
-      case 'anthropic':
-        apiKey = env.ANTHROPIC_API_KEY;
-        generatedQuestions = await generateWithAnthropic(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
-        break;
-      case 'mistral':
-        apiKey = env.MISTRAL_API_KEY;
-        generatedQuestions = await generateWithMistral(apiKey, { amount, category, ageGroup, difficulty: effectiveDifficulty });
-        break;
-      default:
-        throw new Error(`Unknown provider: ${effectiveProvider}`);
-    }
-    
-    if (!apiKey) {
-      throw new Error(`API key not configured for provider: ${effectiveProvider}`);
-    }
+    console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
@@ -151,9 +149,12 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Save generated questions to D1 database
     const savedQuestions = await saveQuestionsToDatabase(env.DB, generatedQuestions, {
       category,
-      difficulty: effectiveDifficulty,
+      difficulty,
       provider: effectiveProvider,
-      model: getModelName(effectiveProvider)
+      model: selectedProvider.model,
+      ageGroup,
+      targetAudience,
+      generateIllustrations
     });
     
     // Complete task
@@ -161,6 +162,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
       success: true,
       questionsGenerated: savedQuestions.length,
       provider: effectiveProvider,
+      model: selectedProvider.model,
       questions: savedQuestions
     });
     
@@ -172,6 +174,22 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Mark task as failed
     await failTask(env.DB, taskId, error.message);
   }
+}
+
+/**
+ * Determine target audience based on age group
+ */
+function determineTargetAudience(ageGroup) {
+  // Children (6-12): Swedish focus
+  // Youth (13-25): Global focus
+  // Adults (25+): Swedish focus
+  const audienceMap = {
+    'children': 'swedish',
+    'youth': 'global',
+    'adults': 'swedish'
+  };
+  
+  return audienceMap[ageGroup] || 'swedish';
 }
 
 // Helper function to update task progress
@@ -215,178 +233,9 @@ async function failTask(db, taskId, errorMessage) {
   }
 }
 
-// OpenAI implementation
-async function generateWithOpenAI(apiKey, params) {
-  const { amount, category, ageGroup, difficulty } = params;
-  
-  const prompt = buildPrompt(category, ageGroup, difficulty, amount);
-  
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Du är en expert på att skapa pedagogiska quizfrågor på svenska.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      response_format: { type: 'json_object' }
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  const content = JSON.parse(data.choices[0].message.content);
-  return content.questions || [];
-}
-
-// Gemini implementation
-async function generateWithGemini(apiKey, params) {
-  const { amount, category, ageGroup, difficulty } = params;
-  
-  const prompt = buildPrompt(category, ageGroup, difficulty, amount);
-  
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: `Du är en expert på att skapa pedagogiska quizfrågor på svenska.\n\n${prompt}\n\nSvara med JSON-format.`
-        }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        responseMimeType: 'application/json'
-      }
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  const content = JSON.parse(data.candidates[0].content.parts[0].text);
-  return content.questions || [];
-}
-
-// Anthropic implementation
-async function generateWithAnthropic(apiKey, params) {
-  const { amount, category, ageGroup, difficulty } = params;
-  
-  const prompt = buildPrompt(category, ageGroup, difficulty, amount);
-  
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: `Du är en expert på att skapa pedagogiska quizfrågor på svenska.\n\n${prompt}\n\nSvara med JSON-format.`
-      }]
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Anthropic API error: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  const content = JSON.parse(data.content[0].text);
-  return content.questions || [];
-}
-
-// Mistral implementation
-async function generateWithMistral(apiKey, params) {
-  const { amount, category, ageGroup, difficulty } = params;
-  
-  const prompt = buildPrompt(category, ageGroup, difficulty, amount);
-  
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'mistral-small-latest',
-      messages: [
-        { role: 'system', content: 'Du är en expert på att skapa pedagogiska quizfrågor på svenska.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      response_format: { type: 'json_object' }
-    })
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Mistral API error: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  const content = JSON.parse(data.choices[0].message.content);
-  return content.questions || [];
-}
-
-// Build prompt for question generation
-function buildPrompt(category, ageGroup, difficulty, amount) {
-  const difficultyMap = {
-    'easy': 'lätt',
-    'medium': 'medel',
-    'hard': 'svår'
-  };
-  
-  return `Skapa ${amount} quizfrågor om ${category} för åldersgrupp ${ageGroup} med svårighetsgrad ${difficultyMap[difficulty] || difficulty}.
-
-Varje fråga ska ha:
-- En tydlig fråga på svenska
-- 4 svarsalternativ
-- Markera vilket alternativ som är rätt (0-3)
-- En kort förklaring av svaret
-- En passande emoji som illustration
-
-Returnera JSON i följande format:
-{
-  "questions": [
-    {
-      "question": "Frågan här?",
-      "options": ["Alt 1", "Alt 2", "Alt 3", "Alt 4"],
-      "correctOption": 0,
-      "explanation": "Förklaring här",
-      "emoji": "🎯"
-    }
-  ]
-}`;
-}
-
-// Get model name for each provider
-function getModelName(provider) {
-  const models = {
-    'openai': 'gpt-4o-mini',
-    'gemini': 'gemini-1.5-flash',
-    'anthropic': 'claude-3-5-sonnet-20241022',
-    'mistral': 'mistral-small-latest'
-  };
-  return models[provider.toLowerCase()] || 'unknown';
-}
-
 // Save questions to D1 database
 async function saveQuestionsToDatabase(db, questions, metadata) {
-  const { category, difficulty, provider, model } = metadata;
+  const { category, difficulty, provider, model, ageGroup, targetAudience, generateIllustrations } = metadata;
   const savedQuestions = [];
   
   for (const q of questions) {
@@ -396,31 +245,47 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
     try {
       await db.prepare(`
         INSERT INTO questions (
-          id, question_sv, options_sv, correct_option, explanation_sv, illustration_emoji,
-          categories, difficulty, created_at, updated_at, created_by,
-          ai_generation_provider, validated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, question_sv, question_en, options_sv, options_en, correct_option, 
+          explanation_sv, explanation_en, illustration_emoji, categories, difficulty, 
+          age_groups, target_audience, created_at, updated_at, created_by,
+          ai_generation_provider, ai_generation_model, validated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
-        q.question,
-        JSON.stringify(q.options),
+        q.question_sv,
+        q.question_en || q.question_sv, // fallback if English not provided
+        JSON.stringify(q.options_sv),
+        JSON.stringify(q.options_en || q.options_sv), // fallback if English not provided
         q.correctOption,
-        q.explanation || '',
+        q.explanation_sv || '',
+        q.explanation_en || q.explanation_sv || '', // fallback
         q.emoji || '❓',
         category,
         difficulty,
+        ageGroup,
+        targetAudience,
         now,
         now,
         'ai-system',
         provider,
+        model,
         false
       ).run();
       
       savedQuestions.push({
         id,
-        ...q,
+        question_sv: q.question_sv,
+        question_en: q.question_en || q.question_sv,
+        options_sv: q.options_sv,
+        options_en: q.options_en || q.options_sv,
+        correctOption: q.correctOption,
+        explanation_sv: q.explanation_sv || '',
+        explanation_en: q.explanation_en || q.explanation_sv || '',
+        emoji: q.emoji || '❓',
         category,
         difficulty,
+        ageGroup,
+        targetAudience,
         createdAt: new Date(now).toISOString(),
         updatedAt: new Date(now).toISOString(),
         createdBy: 'ai-system',
