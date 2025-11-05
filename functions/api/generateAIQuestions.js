@@ -16,11 +16,11 @@ export async function onRequestPost(context) {
       amount, category, ageGroup, difficulty, provider, generateIllustrations, userEmail 
     });
     
-    // Validate input
-    if (!amount || !category || !provider || !ageGroup) {
+    // Validate required input
+    if (!amount || !provider) {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'Missing required parameters: amount, category, ageGroup, and provider are required' 
+        error: 'Missing required parameters: amount and provider are required' 
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }

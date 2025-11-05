@@ -124,11 +124,17 @@ export class AnthropicProvider {
       'adults': '25+ år (vuxna)'
     };
 
-    const audienceContext = targetAudience === 'swedish' 
+    // Default values for optional parameters
+    const effectiveCategory = category || 'Allmän kunskap';
+    const effectiveAgeGroup = ageGroup || 'adults';
+    const effectiveDifficulty = difficulty || 'medium';
+    const effectiveTargetAudience = targetAudience || 'swedish';
+
+    const audienceContext = effectiveTargetAudience === 'swedish' 
       ? 'Fokusera på svensk kultur, historia och geografi där det är relevant.'
       : 'Fokusera på global kunskap och internationella perspektiv.';
 
-    return `Skapa ${amount} quizfrågor om ${category} för åldersgrupp ${ageGroupInfo[ageGroup] || ageGroup} med svårighetsgrad ${difficultyMap[difficulty] || difficulty}.
+    return `Skapa ${amount} quizfrågor om ${effectiveCategory} för åldersgrupp ${ageGroupInfo[effectiveAgeGroup] || effectiveAgeGroup} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
 
 ${audienceContext}
 
@@ -146,7 +152,7 @@ Varje fråga ska ha:
 - Korrekt svar angivet som index (0-3)
 - Pedagogisk förklaring på båda språken
 - En passande emoji som visuell illustration
-- Target audience: "${targetAudience}"
+- Target audience: "${effectiveTargetAudience}"
 
 Returnera JSON i exakt följande format:
 {
@@ -160,7 +166,7 @@ Returnera JSON i exakt följande format:
       "explanation_sv": "Förklaring på svenska",
       "explanation_en": "Explanation in English",
       "emoji": "🎯",
-      "targetAudience": "${targetAudience}"
+      "targetAudience": "${effectiveTargetAudience}"
     }
   ]
 }`;
@@ -172,15 +178,20 @@ Returnera JSON i exakt följande format:
   buildValidationPrompt(question, criteria) {
     const { category, ageGroup, difficulty } = criteria;
     
+    // Default values for optional parameters
+    const effectiveCategory = category || 'Allmän kunskap';
+    const effectiveAgeGroup = ageGroup || 'adults';
+    const effectiveDifficulty = difficulty || 'medium';
+    
     return `Validera följande quizfråga enligt dessa kriterier:
 
 FRÅGA:
 ${JSON.stringify(question, null, 2)}
 
 KONTEXT:
-- Kategori: ${category}
-- Åldersgrupp: ${ageGroup}
-- Svårighetsgrad: ${difficulty}
+- Kategori: ${effectiveCategory}
+- Åldersgrupp: ${effectiveAgeGroup}
+- Svårighetsgrad: ${effectiveDifficulty}
 
 Kontrollera:
 1. Är frågan faktiskt korrekt?
@@ -189,8 +200,8 @@ Kontrollera:
 4. Är förklaringen pedagogisk och korrekt?
 5. Finns både svenska och engelska versioner?
 6. Är översättningarna korrekta?
-7. Är svårighetsgraden lämplig för målgruppen (${ageGroup})?
-8. Passar frågan kategorin ${category}?
+7. Är svårighetsgraden lämplig för målgruppen (${effectiveAgeGroup})?
+8. Passar frågan kategorin ${effectiveCategory}?
 
 Returnera JSON med följande format:
 {
