@@ -47,21 +47,28 @@ export async function onRequestPost(context) {
       total: 100,
       phase: 'Queued',
     };
+
+    const payload = {
+      amount,
+      category,
+      ageGroup,
+      difficulty: difficulty || 'medium',
+      provider,
+    };
     
     await env.DB.prepare(`
       INSERT INTO background_tasks (
-        id, user_id, task_type, status, label, description,
-        progress, total, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, user_id, task_type, status, label,
+        payload, progress, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       taskId,
       userEmail,
       'generation',
       'processing',
       'AI-generering',
-      `Genererar ${amount} frågor: ${category} (${ageGroup})`,
+      JSON.stringify(payload),
       JSON.stringify(initialProgress),
-      100,
       now,
       now
     ).run();
@@ -391,7 +398,7 @@ async function completeTask(db, taskId, result) {
           progress = ?, 
           result = ?, 
           updated_at = ?, 
-          completed_at = ?
+          finished_at = ?
       WHERE id = ?
     `).bind(
       'completed', 
@@ -412,12 +419,14 @@ async function failTask(db, taskId, errorMessage) {
     await db.prepare(`
       UPDATE background_tasks 
       SET status = ?, 
+          error = ?,
           result = ?, 
           updated_at = ?, 
-          completed_at = ?
+          finished_at = ?
       WHERE id = ?
     `).bind(
       'failed', 
+      errorMessage,
       JSON.stringify({ error: errorMessage }), 
       new Date().toISOString(), 
       new Date().toISOString(), 
