@@ -180,6 +180,12 @@ async function generateQuestionsInBackground(env, taskId, params) {
       provider: effectiveProvider,
       model: selectedProvider.model,
       questions: savedQuestions,
+      validationInfo: {
+        totalGenerated: generatedQuestions.length,
+        totalValidated: validatedQuestions.length,
+        validatedCount: validatedQuestions.filter(q => q.validated).length,
+        invalidCount: validatedQuestions.filter(q => !q.validated).length
+      },
       ...(errors.length > 0 && { saveErrors: errors })
     });
     
@@ -213,26 +219,40 @@ function determineTargetAudience(ageGroup) {
  * Validate questions using AI providers
  */
 async function validateQuestions(env, factory, questions, context) {
+  console.log('[validateQuestions] Starting validation...');
+  console.log('[validateQuestions] Number of questions to validate:', questions.length);
+  
   try {
     // Get available provider names
     const availableProviderNames = factory.getAvailableProviders();
+    console.log('[validateQuestions] Available providers:', availableProviderNames);
     
     if (availableProviderNames.length === 0) {
       console.log('[validateQuestions] No validation providers available, skipping validation');
-      return questions.map(q => ({ ...q, validated: false }));
+      return questions.map(q => ({ ...q, validated: false, validationSkipped: true }));
     }
     
     // Pick a random validation provider name
     const randomProviderName = availableProviderNames[Math.floor(Math.random() * availableProviderNames.length)];
+    console.log('[validateQuestions] Selected provider name:', randomProviderName);
     
     // Get the actual provider instance
-    const validationProvider = factory.getProvider(randomProviderName);
-    console.log(`[validateQuestions] Using ${validationProvider.name} for validation`);
+    let validationProvider;
+    try {
+      validationProvider = factory.getProvider(randomProviderName);
+      console.log('[validateQuestions] Provider instance created:', validationProvider.name);
+    } catch (providerError) {
+      console.error('[validateQuestions] Failed to get provider instance:', providerError);
+      return questions.map(q => ({ ...q, validated: false, validationError: 'Provider init failed' }));
+    }
     
     const validatedQuestions = [];
     
     // Validate each question
-    for (const question of questions) {
+    for (let i = 0; i < questions.length; i++) {
+      const question = questions[i];
+      console.log(`[validateQuestions] Validating question ${i + 1}/${questions.length}...`);
+      
       try {
         const validationResult = await validationProvider.validateQuestion(question, {
           category: context.category,
@@ -240,10 +260,10 @@ async function validateQuestions(env, factory, questions, context) {
           difficulty: context.difficulty
         });
         
-        console.log(`[validateQuestions] Validation result for question:`, {
+        console.log(`[validateQuestions] Validation result for question ${i + 1}:`, {
           isValid: validationResult.isValid,
           confidence: validationResult.confidence,
-          feedback: validationResult.feedback
+          feedback: validationResult.feedback?.substring(0, 100) // Truncate for logging
         });
         
         // Always include the question, but mark validation status
@@ -254,7 +274,7 @@ async function validateQuestions(env, factory, questions, context) {
         });
         
       } catch (validationError) {
-        console.error('[validateQuestions] Validation error for question:', validationError);
+        console.error(`[validateQuestions] Validation error for question ${i + 1}:`, validationError.message);
         console.error('[validateQuestions] Error stack:', validationError.stack);
         // Include question anyway but mark as unvalidated
         validatedQuestions.push({
@@ -265,13 +285,17 @@ async function validateQuestions(env, factory, questions, context) {
       }
     }
     
-    console.log(`[validateQuestions] Validation complete: ${validatedQuestions.length}/${questions.length} questions passed`);
+    console.log(`[validateQuestions] Validation complete: ${validatedQuestions.length}/${questions.length} questions processed`);
+    const validCount = validatedQuestions.filter(q => q.validated).length;
+    console.log(`[validateQuestions] Valid: ${validCount}, Invalid/Error: ${validatedQuestions.length - validCount}`);
+    
     return validatedQuestions;
     
   } catch (error) {
     console.error('[validateQuestions] Validation process failed:', error);
+    console.error('[validateQuestions] Error stack:', error.stack);
     // Return all questions unvalidated on error
-    return questions.map(q => ({ ...q, validated: false }));
+    return questions.map(q => ({ ...q, validated: false, validationFailed: error.message }));
   }
 }
 
