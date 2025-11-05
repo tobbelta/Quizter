@@ -99,7 +99,8 @@ export class MistralProvider {
         isValid: validation.isValid || false,
         confidence: validation.confidence || 0,
         issues: validation.issues || [],
-        suggestions: validation.suggestions || []
+        suggestions: validation.suggestions || [],
+        feedback: validation.feedback || 'No feedback provided'
       };
       
     } catch (error) {
@@ -170,13 +171,17 @@ Returnera JSON i exakt följande format:
    * Build validation prompt
    */
   buildValidationPrompt(question, criteria) {
+    const { category, ageGroup, difficulty } = criteria;
+    
     return `Validera följande quizfråga enligt dessa kriterier:
 
 FRÅGA:
 ${JSON.stringify(question, null, 2)}
 
-VALIDERINGSKRITERIER:
-${criteria.map(c => `- ${c}`).join('\n')}
+KONTEXT:
+- Kategori: ${category}
+- Åldersgrupp: ${ageGroup}
+- Svårighetsgrad: ${difficulty}
 
 Kontrollera:
 1. Är frågan faktiskt korrekt?
@@ -185,14 +190,16 @@ Kontrollera:
 4. Är förklaringen pedagogisk och korrekt?
 5. Finns både svenska och engelska versioner?
 6. Är översättningarna korrekta?
-7. Är svårighetsgraden lämplig för målgruppen?
+7. Är svårighetsgraden lämplig för målgruppen (${ageGroup})?
+8. Passar frågan kategorin ${category}?
 
-Returnera JSON:
+Returnera JSON med följande format:
 {
   "isValid": true/false,
   "confidence": 0-100,
   "issues": ["eventuella problem"],
-  "suggestions": ["eventuella förbättringsförslag"]
+  "suggestions": ["eventuella förbättringsförslag"],
+  "feedback": "Kort sammanfattning av valideringen"
 }`;
   }
 
