@@ -1,64 +1,128 @@
 /**
- * Firestore helpers for background task queue monitoring.
+ * Background Task Service
+ * 
+ * Handles communication with Cloudflare API for background task monitoring.
+ * Provides polling-based updates since Cloudflare Workers don't support WebSockets.
  */
-// Legacy Firestore/Firebase logic removed. Use Cloudflare API endpoint instead.
 
-// Helper functions removed (no longer needed without Firestore)
-// const DEFAULT_LIMIT = 100;
-// const toDate = (value) => { ... }
-// const mapTask = (doc) => { ... }
-// const sortTasks = (tasks) => { ... }
-// const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-// Helper functions above the service object
-// subscribeToQuery is now removed (Firestore logic gone)
-
-  /**
-   * Subscribe to all background tasks created by the specified user.
-   * @param {string} userId
-   * @param {(tasks: object[], error?: Error) => void} callback
-   * @param {{limit?: number}} [options]
-   * @returns {() => void}
-   */
-export const backgroundTaskService = {
-  subscribeToUserTasks: function(userId, callback, options = {}) {
-    if (!userId) {
-      callback([]);
-      return () => {};
+/**
+ * Fetch background tasks for a specific user
+ */
+const fetchUserTasks = async (userId) => {
+  try {
+    if (!userId) return [];
+    
+    const url = `${API_BASE_URL}/api/getBackgroundTasks?userId=${encodeURIComponent(userId)}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tasks: ${response.statusText}`);
     }
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // fetch(`/api/backgroundTasks?userId=${userId}&limit=${options.limit ?? DEFAULT_LIMIT}`)
-    //   .then(res => res.json())
-    //   .then(tasks => callback(tasks));
-    callback([]);
-    return () => {};
-  },
+    
+    const data = await response.json();
+    return data.tasks || [];
+  } catch (error) {
+    console.error('[backgroundTaskService] Error fetching user tasks:', error);
+    throw error;
+  }
+};
 
-  fetchAllTasks: async function(options = {}) {
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // const response = await fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`);
-    // const tasks = await response.json();
-    // return sortTasks(tasks);
-    return [];
-  },
+/**
+ * Fetch all background tasks (superuser)
+ */
+const fetchAllTasks = async () => {
+  try {
+    const url = `${API_BASE_URL}/api/getBackgroundTasks`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tasks: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.tasks || [];
+  } catch (error) {
+    console.error('[backgroundTaskService] Error fetching all tasks:', error);
+    throw error;
+  }
+};
 
-  /**
-   * Subscribe to all background tasks (superuser overview).
-   * @param {(tasks: object[], error?: Error) => void} callback
-   * @param {{limit?: number}} [options]
-   * @returns {() => void}
-   */
-  subscribeToAllTasks: function(callback, options = {}) {
-    // TODO: Replace with Cloudflare API endpoint
-    // Example:
-    // fetch(`/api/backgroundTasks?limit=${options.limit ?? DEFAULT_LIMIT}`)
-    //   .then(res => res.json())
-    //   .then(tasks => callback(tasks));
+/**
+ * Subscribe to user tasks with polling
+ * Returns an unsubscribe function
+ */
+const subscribeToUserTasks = (userId, callback, options = {}) => {
+  if (!userId) {
     callback([]);
     return () => {};
   }
+
+  const pollInterval = options.pollInterval || 2000; // Poll every 2 seconds
+  let isActive = true;
+  
+  const poll = async () => {
+    if (!isActive) return;
+    
+    try {
+      const tasks = await fetchUserTasks(userId);
+      callback(tasks, null);
+    } catch (error) {
+      callback([], error);
+    }
+    
+    if (isActive) {
+      setTimeout(poll, pollInterval);
+    }
+  };
+  
+  // Start polling
+  poll();
+  
+  // Return unsubscribe function
+  return () => {
+    isActive = false;
+  };
+};
+
+/**
+ * Subscribe to all tasks with polling (superuser)
+ * Returns an unsubscribe function
+ */
+const subscribeToAllTasks = (callback, options = {}) => {
+  const pollInterval = options.pollInterval || 3000; // Poll every 3 seconds
+  let isActive = true;
+  
+  const poll = async () => {
+    if (!isActive) return;
+    
+    try {
+      const tasks = await fetchAllTasks();
+      callback(tasks, null);
+    } catch (error) {
+      callback([], error);
+    }
+    
+    if (isActive) {
+      setTimeout(poll, pollInterval);
+    }
+  };
+  
+  // Start polling
+  poll();
+  
+  // Return unsubscribe function
+  return () => {
+    isActive = false;
+  };
+};
+
+export const backgroundTaskService = {
+  fetchUserTasks,
+  fetchAllTasks,
+  subscribeToUserTasks,
+  subscribeToAllTasks,
 };
 
 
