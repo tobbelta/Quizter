@@ -60,7 +60,15 @@ export class GeminiProvider {
         console.log('[Gemini] First question keys:', Object.keys(content.questions[0]));
       }
       
-      return this.validateAndFormatQuestions(content.questions || []);
+      const validated = this.validateAndFormatQuestions(content.questions || []);
+      
+      // Add debug info if validation filtered everything
+      if (validated.length === 0 && content.questions && content.questions.length > 0) {
+        console.warn('[Gemini] WARNING: All questions filtered by validation!');
+        console.warn('[Gemini] Original questions:', JSON.stringify(content.questions, null, 2));
+      }
+      
+      return validated;
       
     } catch (error) {
       console.error('[Gemini] Generation error:', error);
@@ -209,24 +217,31 @@ Returnera JSON:
    * Validate and format questions from AI response
    */
   validateAndFormatQuestions(questions) {
+    console.log('[Gemini] Starting validation of', questions.length, 'questions');
+    
     return questions.filter(q => {
+      console.log('[Gemini] Validating question with keys:', Object.keys(q));
+      
       // Basic validation
       if (!q.question_sv || !q.question_en) {
-        console.warn('[Gemini] Skipping question without bilingual content:', q);
+        console.warn('[Gemini] REJECT: Missing bilingual question. Has question_sv:', !!q.question_sv, 'question_en:', !!q.question_en);
+        console.warn('[Gemini] Question object:', JSON.stringify(q, null, 2));
         return false;
       }
       if (!Array.isArray(q.options_sv) || q.options_sv.length !== 4) {
-        console.warn('[Gemini] Skipping question with invalid Swedish options:', q);
+        console.warn('[Gemini] REJECT: Invalid Swedish options. Is array:', Array.isArray(q.options_sv), 'length:', q.options_sv?.length);
         return false;
       }
       if (!Array.isArray(q.options_en) || q.options_en.length !== 4) {
-        console.warn('[Gemini] Skipping question with invalid English options:', q);
+        console.warn('[Gemini] REJECT: Invalid English options. Is array:', Array.isArray(q.options_en), 'length:', q.options_en?.length);
         return false;
       }
       if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption > 3) {
-        console.warn('[Gemini] Skipping question with invalid correctOption:', q);
+        console.warn('[Gemini] REJECT: Invalid correctOption:', q.correctOption, 'type:', typeof q.correctOption);
         return false;
       }
+      
+      console.log('[Gemini] ACCEPT: Question passed validation');
       return true;
     }).map(q => ({
       ...q,

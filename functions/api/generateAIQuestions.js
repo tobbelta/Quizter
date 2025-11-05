@@ -143,6 +143,12 @@ async function generateQuestionsInBackground(env, taskId, params) {
     
     console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
     
+    // DEBUG: Store raw response for inspection if no questions generated
+    const debugInfo = generatedQuestions.length === 0 ? {
+      rawQuestionsCount: generatedQuestions.length,
+      sampleQuestion: null // We'll add this info in provider
+    } : null;
+    
     // Update progress: 70%
     await updateTaskProgress(env.DB, taskId, 70, 'Saving questions to database...');
     
