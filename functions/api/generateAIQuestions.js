@@ -250,8 +250,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
           id, question_sv, question_en, options_sv, options_en, correct_option, 
           explanation_sv, explanation_en, illustration_emoji, categories, difficulty, 
           age_groups, target_audience, created_at, updated_at, created_by,
-          ai_generation_provider, ai_generation_model, validated
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ai_generation_provider, validated
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
         q.question_sv,
@@ -262,15 +262,14 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         q.explanation_sv || '',
         q.explanation_en || q.explanation_sv || '', // fallback
         q.emoji || '❓',
-        category,
+        JSON.stringify([category]), // categories is a JSON array
         difficulty,
-        ageGroup,
-        targetAudience,
+        JSON.stringify([ageGroup]), // age_groups is a JSON array
+        q.targetAudience || 'swedish',
         now,
         now,
         'ai-system',
         provider,
-        model,
         false
       ).run();
       

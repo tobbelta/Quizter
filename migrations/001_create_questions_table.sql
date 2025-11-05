@@ -3,13 +3,17 @@
 
 CREATE TABLE IF NOT EXISTS questions (
   id TEXT PRIMARY KEY,
-  question TEXT NOT NULL,
-  options TEXT NOT NULL,  -- JSON array of answer options
+  question_sv TEXT NOT NULL,
+  question_en TEXT,
+  options_sv TEXT NOT NULL,  -- JSON array of answer options
+  options_en TEXT,           -- JSON array of answer options (English)
   correctOption INTEGER NOT NULL,
-  explanation TEXT,
+  explanation_sv TEXT,
+  explanation_en TEXT,
   emoji TEXT DEFAULT '❓',
   category TEXT DEFAULT 'Allmän',
   difficulty TEXT DEFAULT 'medium',
+  targetAudience TEXT DEFAULT 'swedish',  -- 'swedish', 'global', 'international'
   createdAt TEXT NOT NULL,  -- ISO 8601 timestamp
   updatedAt TEXT NOT NULL,  -- ISO 8601 timestamp
   createdBy TEXT DEFAULT 'system',
