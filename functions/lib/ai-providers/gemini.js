@@ -1,6 +1,6 @@
 /**
  * Google Gemini Provider for Question Generation
- * Model: gemini-1.5-flash-002
+ * Model: gemini-1.5-flash
  */
 
 export class GeminiProvider {
@@ -9,7 +9,7 @@ export class GeminiProvider {
       throw new Error('Gemini API key is required');
     }
     this.apiKey = apiKey;
-    this.model = 'gemini-1.5-flash-002';
+    this.model = 'gemini-1.5-flash';
     this.name = 'gemini';
   }
 
