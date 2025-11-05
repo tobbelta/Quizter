@@ -204,23 +204,29 @@ Returnera JSON:
    */
   validateAndFormatQuestions(questions) {
     console.log('[OpenAI] Validating', questions.length, 'questions');
+    console.log('[OpenAI] First question keys:', questions[0] ? Object.keys(questions[0]) : 'no questions');
     
     const validated = questions.filter(q => {
-      // Basic validation
-      if (!q.question_sv || !q.question_en) {
-        console.warn('[OpenAI] Skipping question without bilingual content:', JSON.stringify(q, null, 2));
+      // Log full question structure
+      console.log('[OpenAI] Checking question:', JSON.stringify(q, null, 2));
+      
+      // Basic validation - check both new format (question_sv/en) and potential old format
+      const hasQuestion = (q.question_sv && q.question_en) || q.question;
+      if (!hasQuestion) {
+        console.warn('[OpenAI] Skipping question without question field');
         return false;
       }
-      if (!Array.isArray(q.options_sv) || q.options_sv.length !== 4) {
-        console.warn('[OpenAI] Skipping question with invalid Swedish options:', JSON.stringify(q, null, 2));
+      
+      const hasOptions = (Array.isArray(q.options_sv) && q.options_sv.length === 4 && 
+                         Array.isArray(q.options_en) && q.options_en.length === 4) ||
+                        (Array.isArray(q.options) && q.options.length === 4);
+      if (!hasOptions) {
+        console.warn('[OpenAI] Skipping question with invalid options');
         return false;
       }
-      if (!Array.isArray(q.options_en) || q.options_en.length !== 4) {
-        console.warn('[OpenAI] Skipping question with invalid English options:', JSON.stringify(q, null, 2));
-        return false;
-      }
+      
       if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption > 3) {
-        console.warn('[OpenAI] Skipping question with invalid correctOption:', JSON.stringify(q, null, 2));
+        console.warn('[OpenAI] Skipping question with invalid correctOption');
         return false;
       }
       return true;
