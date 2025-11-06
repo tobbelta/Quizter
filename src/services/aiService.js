@@ -79,11 +79,11 @@ export const aiService = {
 
   /**
    * Queues a task to validate a single question.
-   * @param {{ question: string, options: string[], correctOption: number, explanation: string }} params
+   * @param {{ questionId: string, provider?: string }} params
    * @returns {Promise<{success: boolean, taskId: string}>}
    */
-  startAIValidation: async ({ question, options, correctOption, explanation }) => {
-    return await queueTask('validateQuestionWithAI', { question, options, correctOption, explanation });
+  startAIValidation: async ({ questionId, provider }) => {
+    return await queueTask('validateQuestionWithAI', { questionId, provider });
   },
 
   /**

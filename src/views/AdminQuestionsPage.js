@@ -771,17 +771,20 @@ const QuestionCard = ({
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-700">
-            <button
-              onClick={handleValidateWithAI}
-              disabled={validatingQuestions && validatingQuestions.has(question.id)}
-              className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                validatingQuestions && validatingQuestions.has(question.id)
-                  ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
-            >
-              {validatingQuestions && validatingQuestions.has(question.id) ? '⏳ Validerar...' : '✅ AI-validera'}
-            </button>
+            {/* Visa AI-valideringsknapp endast om frågan INTE är AI-validerad */}
+            {!aiPassed && (
+              <button
+                onClick={handleValidateWithAI}
+                disabled={validatingQuestions && validatingQuestions.has(question.id)}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  validatingQuestions && validatingQuestions.has(question.id)
+                    ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                {validatingQuestions && validatingQuestions.has(question.id) ? '⏳ Validerar...' : '✅ AI-validera'}
+              </button>
+            )}
 
             <button
               onClick={handleRegenerateEmoji}

@@ -498,17 +498,9 @@ export const questionService = {
         throw new Error(`Question ${questionId} not found`);
       }
 
-      const langData = question.languages?.sv || { 
-        text: question.text, 
-        options: question.options, 
-        explanation: question.explanation 
-      };
-
       const response = await aiService.startAIValidation({
-        question: langData.text,
-        options: langData.options,
-        correctOption: question.correctOption,
-        explanation: langData.explanation || ''
+        questionId: questionId,
+        provider: 'openai' // Default provider
       });
 
       return response;
@@ -812,12 +804,12 @@ export const questionService = {
 
     try {
       const response = await aiService.regenerateQuestionEmoji({ questionId, provider: preferredProvider });
-      const { svg, provider } = response || {};
+      const { emoji, provider } = response || {};
 
       const updateData = {
-        illustration: svg,
-        illustrationProvider: provider,
-        illustrationGeneratedAt: new Date(),
+        emoji: emoji,
+        emojiProvider: provider,
+        emojiGeneratedAt: new Date(),
       };
 
       await questionRepository.updateQuestion(questionId, updateData);
