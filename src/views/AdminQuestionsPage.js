@@ -365,7 +365,96 @@ const QuestionCard = ({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-slate-700 space-y-4">
+          {/* Metadata sektion */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-slate-800/40 rounded border border-slate-600 p-3">
+              <p className="text-xs font-semibold text-gray-400 mb-2">📊 Metadata</p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Svårighetsgrad:</span>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                    question.difficulty === 'easy' ? 'bg-green-500/20 text-green-300' :
+                    question.difficulty === 'hard' ? 'bg-red-500/20 text-red-300' :
+                    'bg-yellow-500/20 text-yellow-300'
+                  }`}>
+                    {question.difficulty === 'easy' ? 'Lätt' : question.difficulty === 'medium' ? 'Medel' : 'Svår'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Målgrupp:</span>
+                  <span className="text-xs text-gray-200">
+                    {question.targetAudience === 'swedish' ? '🇸🇪 Svensk' : '🌍 Global'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Åldersgrupper:</span>
+                  <span className="text-xs text-gray-200">
+                    {formattedAgeGroups.length > 0 ? formattedAgeGroups.join(', ') : 'Ej angivet'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Kategorier:</span>
+                  <span className="text-xs text-gray-200">
+                    {categories.length > 0 ? categories.join(', ') : 'Allmän'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-800/40 rounded border border-slate-600 p-3">
+              <p className="text-xs font-semibold text-gray-400 mb-2">🤖 AI-Information</p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Provider:</span>
+                  <span className="text-xs text-gray-200 capitalize">
+                    {question.provider || 'Ej angivet'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Modell:</span>
+                  <span className="text-xs text-gray-200">
+                    {question.model || 'Ej angivet'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Skapad av:</span>
+                  <span className="text-xs text-gray-200">
+                    {question.createdBy || 'system'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Skapad:</span>
+                  <span className="text-xs text-gray-200">
+                    {question.createdAt ? new Date(question.createdAt).toLocaleString('sv-SE', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    }) : 'Okänt'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Illustration (Emoji eller SVG) */}
+          {question.emoji && (
+            <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-300">Illustration:</p>
+              </div>
+              <div className="mx-auto w-full max-w-xs">
+                <div className="flex items-center justify-center py-8">
+                  <span className="text-8xl" role="img" aria-label="Question illustration">
+                    {question.emoji}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Gamla illustration-koden (för bakåtkompatibilitet med gamla frågor) */}
           {question.illustration && (() => {
             // Stöd både nya och gamla fältnamn
             const illustrationDate = question.illustrationGeneratedAt || question.migrationSvgUpdatedAt;
