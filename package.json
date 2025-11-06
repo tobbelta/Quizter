@@ -12,7 +12,6 @@
     "@stripe/react-stripe-js": "^4.0.2",
     "@stripe/stripe-js": "^7.9.0",
     "eruda": "^3.4.3",
-    "firebase": "^10.12.2",
     "leaflet": "^1.9.4",
     "leaflet-polylinedecorator": "^1.6.0",
     "qrcode": "^1.5.4",
@@ -25,6 +24,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "dev": "npm run build && npx wrangler pages dev build --compatibility-date=2024-01-01 --kv=KV --d1=DB",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",

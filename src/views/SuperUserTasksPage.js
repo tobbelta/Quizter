@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
-import { useAuth } from '../context/AuthContext';
+import TaskTimeline from '../components/admin/TaskTimeline';
+import { getRelativeTime, formatShortDateTime } from '../utils/timeUtils';
 // ...existing code...
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -11,6 +11,7 @@ const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const STATUS_LABELS = {
   queued: 'Köad',
   pending: 'Förbereds',
+  running: 'Pågår',
   processing: 'Pågår',
   completed: 'Klar',
   failed: 'Misslyckades',
@@ -20,6 +21,7 @@ const STATUS_LABELS = {
 const STATUS_BADGES = {
   queued: 'bg-slate-700/70 text-slate-200',
   pending: 'bg-slate-700/70 text-slate-200',
+  running: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   processing: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   completed: 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30',
   failed: 'bg-red-500/20 text-red-300 border border-red-500/40',
@@ -59,20 +61,15 @@ const toDuration = (start, end) => {
 };
 
 const SuperUserTasksPage = () => {
-  const navigate = useNavigate();
   const { allTasks, refreshAllTasks } = useBackgroundTasks();
-  const { currentUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteResult, setDeleteResult] = useState(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
-  const [migrationLoading, setMigrationLoading] = useState(false);
+  const [providerStatus, setProviderStatus] = useState(null);
+  const [loadingProviderStatus, setLoadingProviderStatus] = useState(false);
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -150,69 +147,26 @@ const SuperUserTasksPage = () => {
     }, initial);
   }, [allTasks]);
 
-  const handleCleanup = async () => {
-    if (!window.confirm('Vill du städa hängande bakgrundsjobb (äldre än 30 minuter)?')) {
-      return;
-    }
-    setCleanupLoading(true);
-    setCleanupResult(null);
-    try {
-      const response = await fetch('/api/cleanupStuckTasks');
-      const data = await response.json();
-      if (response.ok) {
-        setCleanupResult({
-          success: true,
-          message: `Städat ${data.cleaned} hängande jobb (${data.processingChecked} processing, ${data.queuedChecked} queued)`
-        });
-      } else {
-        setCleanupResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
+  // Fetch provider status on mount
+  React.useEffect(() => {
+    const fetchProviderStatus = async () => {
+      setLoadingProviderStatus(true);
+      try {
+        const response = await fetch('/api/getProviderStatus');
+        const data = await response.json();
+        if (data.success) {
+          setProviderStatus(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch provider status:', error);
+      } finally {
+        setLoadingProviderStatus(false);
       }
-    } catch (error) {
-      setCleanupResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setCleanupLoading(false);
-      await refreshAllTasks();
-      setTimeout(() => setCleanupResult(null), 5000);
-    }
-  };
+    };
+    fetchProviderStatus();
+  }, []);
 
-  const handleDeleteOldTasks = async () => {
-    if (!window.confirm('Vill du ta bort alla gamla klara och misslyckade jobb (äldre än 24 timmar)?\n\nDetta går INTE att ångra!')) {
-      return;
-    }
-    setDeleteLoading(true);
-    setDeleteResult(null);
-    try {
-      const response = await fetch('/api/deleteOldTasks');
-      const data = await response.json();
-      if (response.ok) {
-        setDeleteResult({
-          success: true,
-          message: `Raderat ${data.deleted} gamla jobb (${data.completedDeleted} klara, ${data.failedDeleted} misslyckade)`
-        });
-      } else {
-        setDeleteResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
-      }
-    } catch (error) {
-      setDeleteResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setDeleteLoading(false);
-      await refreshAllTasks();
-      setTimeout(() => setDeleteResult(null), 5000);
-    }
-  };
+
 
   const handleToggleTask = (taskId) => {
     setSelectedTasks(prev => {
@@ -413,50 +367,7 @@ const SuperUserTasksPage = () => {
     }
   };
 
-  const handleMigration = async () => {
-    if (!window.confirm('⚠️ Vill du köra om AI-kategorisering på alla befintliga frågor med striktare svårighetsnivåer?\n\nDetta kommer att:\n- Uppdatera ageGroups för alla frågor\n- Använd striktare kriterier för barn/ungdom/vuxen\n- Köras som en bakgrundsuppgift\n\nFortsätt?')) {
-      return;
-    }
-    setMigrationLoading(true);
-    try {
-      if (!currentUser) {
-        throw new Error('Du måste vara inloggad för att köra migration');
-      }
-      // Om du behöver auth, hämta från din nuvarande auth-lösning
-      const response = await fetch('/api/queueMigration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setDialogConfig({
-          isOpen: true,
-          title: 'Migration startad',
-          message: `AI-migration har köats som bakgrundsjobb. Du kan följa progress nedan.`,
-          type: 'success'
-        });
-      } else {
-        setDialogConfig({
-          isOpen: true,
-          title: 'Kunde inte starta migration',
-          message: data.error || 'Okänt fel',
-          type: 'error'
-        });
-      }
-    } catch (error) {
-      setDialogConfig({
-        isOpen: true,
-        title: 'Fel vid migration',
-        message: error.message,
-        type: 'error'
-      });
-    } finally {
-      setMigrationLoading(false);
-      await refreshAllTasks();
-    }
-  };
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-gray-100">
@@ -481,58 +392,73 @@ const SuperUserTasksPage = () => {
           </div>
         </section>
 
-        {/* Underhåll-sektion */}
-        <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Developer Tools</h3>
+        {/* AI Provider Status */}
+        {providerStatus && (
+          <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+            <div className="mb-3">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                🤖 AI Provider Status
+                {loadingProviderStatus && <span className="text-xs text-slate-400">(testar credits...)</span>}
+              </h3>
               <p className="text-sm text-slate-400 mt-1">
-                Migrera frågor, städa gamla jobb eller konfigurera AI-providers
+                {providerStatus.summary.active} av {providerStatus.summary.total} providers har tillgängliga credits
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => navigate('/superuser/ai-providers')}
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                ⚙️ AI Providers
-              </button>
-              <button
-                onClick={handleMigration}
-                disabled={migrationLoading}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {migrationLoading ? '🔄 Kör migration...' : '🔄 Migrera frågor'}
-              </button>
-              <button
-                onClick={handleCleanup}
-                disabled={cleanupLoading}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {cleanupLoading ? '🧹 Städar...' : '🧹 Städa hängande'}
-              </button>
-              <button
-                onClick={handleDeleteOldTasks}
-                disabled={deleteLoading}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {deleteLoading ? '🗑️ Raderar...' : '🗑️ Radera gamla'}
-              </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {providerStatus.providers.map(provider => (
+                <div
+                  key={provider.name}
+                  className={`p-3 rounded-lg border ${
+                    provider.available
+                      ? 'bg-emerald-500/10 border-emerald-500/30'
+                      : 'bg-red-500/10 border-red-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-white capitalize">
+                      {provider.name}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      provider.available
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {provider.available ? '✓ Aktiv' : '✗ Ej tillgänglig'}
+                    </span>
+                  </div>
+                  {provider.model && (
+                    <p className="text-xs text-slate-400">
+                      Modell: {provider.model}
+                    </p>
+                  )}
+                  {!provider.available && provider.error && (
+                    <p className="text-xs text-red-400 mt-1 line-clamp-2">
+                      {provider.errorType === 'insufficient_credits' && '💳 Slut på credits'}
+                      {provider.errorType === 'rate_limit' && '⏱️ Rate limit'}
+                      {provider.errorType === 'authentication' && '🔐 Auth-fel'}
+                      {provider.errorType === 'api_error' && '⚠️ API-fel'}
+                      {provider.errorType === 'connection_error' && '🔌 Anslutningsfel'}
+                      {!provider.errorType && provider.error}
+                    </p>
+                  )}
+                </div>
+              ))}
             </div>
-          </div>
-          {cleanupResult && (
-            <div className={`mt-4 p-3 rounded-lg ${cleanupResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {cleanupResult.message}
-            </div>
-          )}
-          {deleteResult && (
-            <div className={`mt-3 p-3 rounded-lg ${deleteResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {deleteResult.message}
-            </div>
-          )}
-        </section>
+          </section>
+        )}
+
+
 
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
+          <div className="mb-4 pb-3 border-b border-slate-700">
+            <div>
+              <h2 className="text-xl font-bold text-white">Alla bakgrundsjobb</h2>
+              <p className="text-sm text-slate-400 mt-1">
+                Sorterat med <span className="text-cyan-400 font-semibold">nyaste först</span> • Uppdateras automatiskt i realtid • {filteredTasks.length} av {allTasks.length} jobb visas
+              </p>
+            </div>
+          </div>
+          
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div className="flex flex-wrap items-center gap-3">
               <select
@@ -669,9 +595,6 @@ const SuperUserTasksPage = () => {
 
                     // Progress för batch-validering och generering
                     const hasProgress = task.progress && (task.progress.total > 0 || task.progress.phase);
-                    const progressPercent = hasProgress && task.progress.total > 0
-                      ? Math.round((task.progress.completed / task.progress.total) * 100)
-                      : 0;
 
                     return (
                       <tr key={task.id} className="border-b border-slate-800/60">
@@ -687,6 +610,8 @@ const SuperUserTasksPage = () => {
                           <div className="flex items-center gap-2">
                             <div className="text-white font-semibold">
                               {task.taskType === 'generation' ? 'AI-generering' :
+                               task.taskType === 'generate_questions' ? 'AI-generering' :
+                               task.taskType === 'validate_questions' ? 'AI-validering' :
                                task.taskType === 'batchvalidation' ? 'AI-validering (batch)' :
                                task.taskType === 'validation' ? 'AI-validering' :
                                task.taskType === 'migration' ? 'AI-migrering' :
@@ -701,52 +626,56 @@ const SuperUserTasksPage = () => {
                           </div>
                           <div className="text-xs text-slate-500">{task.id.substring(0, 8)}...</div>
 
-                          {/* Progress bar för batch-jobb */}
-                          {hasProgress && task.status === 'processing' && (
-                            <div className="mt-2 space-y-1">
-                              {task.progress.total > 0 && (
-                                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                                  <div
-                                    className="bg-cyan-500 h-full transition-all duration-300"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                              )}
-                              <div className="text-xs text-slate-400">
-                                {task.progress.phase && <div className="font-semibold">{task.progress.phase}</div>}
-                                {task.progress.total > 0 && (
-                                  <div>
-                                    {task.progress.completed} / {task.progress.total}
-                                    {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
-                                      ` (${task.progress.validated} godkända, ${task.progress.failed} underkända)`}
-                                    {task.taskType === 'migration' && task.progress.details &&
-                                      ` - ${task.progress.details}`}
-                                  </div>
-                                )}
-                                {task.progress.details && <div className="text-slate-500">{task.progress.details}</div>}
-                              </div>
-                            </div>
-                          )}
+                          {/* Compact Timeline */}
+                          <div className="mt-2">
+                            <TaskTimeline task={task} compact={true} />
+                          </div>
 
-                          {/* Slutlig progress för klara jobb */}
-                          {hasProgress && task.status === 'completed' && (
-                            <div className="mt-1 text-xs text-slate-400">
-                              {task.taskType === 'batchvalidation' && task.progress.validated != null &&
-                                `${task.progress.validated} godkända, ${task.progress.failed} underkända`}
-                              {task.taskType === 'generation' && task.progress.details &&
-                                task.progress.details}
-                              {task.taskType === 'migration' && task.progress.details &&
-                                task.progress.details}
+                          {/* Progress details för pågående jobb */}
+                          {hasProgress && task.status === 'processing' && task.progress.phase && (
+                            <div className="mt-2 text-xs text-amber-300 font-semibold">
+                              {task.progress.phase}
                             </div>
                           )}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusBadge}`}>
-                            {statusLabel}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusBadge}`}>
+                              {statusLabel}
+                            </span>
+                            {task.status === 'processing' && (
+                              <span className="flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                              </span>
+                            )}
+                          </div>
+                          {/* Progress bar för pågående jobb */}
+                          {task.status === 'processing' && task.progress?.total > 0 && (
+                            <div className="mt-2 space-y-1">
+                              <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full transition-all duration-500"
+                                  style={{
+                                    width: `${Math.round((task.progress.completed / task.progress.total) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                {task.progress.completed} / {task.progress.total}
+                                {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
+                                  ` (${task.progress.validated} ✓, ${task.progress.failed} ✗)`}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 align-top text-slate-300">
-                          {formatDateTime(task.createdAt)}
+                          <div className="text-sm font-medium text-cyan-300">
+                            {getRelativeTime(task.createdAt)}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {formatShortDateTime(task.createdAt)}
+                          </div>
                         </td>
                         <td className="px-4 py-3 align-top text-slate-300">
                           {formatDateTime(task.finishedAt)}

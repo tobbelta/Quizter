@@ -64,7 +64,7 @@ const buildGenerationCompletionMessage = (task = {}) => {
   }
 
   if (Array.isArray(task.result?.questionIds) && task.result.questionIds.length > 0) {
-    lines.push('Frågorna importeras och visas i listan när Firestore-synken är klar.');
+    lines.push('Frågorna importeras och visas i listan när synken är klar.');
   }
 
   return lines.join('\n\n');
@@ -419,41 +419,41 @@ const refreshAllTasks = useCallback(async () => {
     // Create map of localStorage tasks
     const trackedMap = new Map(trackedEntries);
     
-    // Create map of Firestore tasks
+    // Create map of API tasks
     const snapshotMap = userTasksSnapshot.reduce((acc, task) => {
       acc.set(task.id, task);
       return acc;
     }, new Map());
 
-    // Use Firestore as source of truth, fall back to localStorage for tasks not in Firestore
+    // Use API data as source of truth, fall back to localStorage for tasks not in API
     const allTaskIds = new Set([
       ...Array.from(snapshotMap.keys()),
       ...Array.from(trackedMap.keys())
     ]);
 
     const combined = Array.from(allTaskIds).map(taskId => {
-      const firestoreTask = snapshotMap.get(taskId);
+      const apiTask = snapshotMap.get(taskId);
       const meta = trackedMap.get(taskId);
       
-      // Prefer Firestore data, fall back to localStorage
-      const createdAt = firestoreTask?.createdAt || meta?.createdAt || null;
-      const status = firestoreTask?.status || 'queued';
+      // Prefer API data, fall back to localStorage
+      const createdAt = apiTask?.createdAt || meta?.createdAt || null;
+      const status = apiTask?.status || 'queued';
       
       return {
         id: taskId,
-        taskType: firestoreTask?.taskType || meta?.taskType || 'task',
+        taskType: apiTask?.taskType || meta?.taskType || 'task',
         status,
-        label: firestoreTask?.label || meta?.label || 'Bakgrundsjobb',
-        description: firestoreTask?.description || meta?.description || null,
+        label: apiTask?.label || meta?.label || 'Bakgrundsjobb',
+        description: apiTask?.description || meta?.description || null,
         createdAt,
-        startedAt: firestoreTask?.startedAt || null,
-        finishedAt: firestoreTask?.finishedAt || null,
-        userId: firestoreTask?.userId || currentUser?.uid,
-        payload: firestoreTask?.payload,
-        result: firestoreTask?.result,
-        error: firestoreTask?.error,
-        progress: firestoreTask?.progress,
-        statusHistory: firestoreTask?.statusHistory,
+        startedAt: apiTask?.startedAt || null,
+        finishedAt: apiTask?.finishedAt || null,
+        userId: apiTask?.userId || currentUser?.uid,
+        payload: apiTask?.payload,
+        result: apiTask?.result,
+        error: apiTask?.error,
+        progress: apiTask?.progress,
+        statusHistory: apiTask?.statusHistory,
         tracked: true,
       };
     });

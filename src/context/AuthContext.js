@@ -1,11 +1,8 @@
 /**
- * Hanterar autentisering för både offline-läge och Firebase-backend.
+ * AuthContext - Hanterar autentisering via Cloudflare API
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-// Removed all Firebase imports
-// import { getFirebaseAuth, getFirebaseDb, hasFirebaseConfig } from '../firebaseClient'; // Removed legacy Firebase imports
-// import { userPreferencesService } from '../services/userPreferencesService'; // Removed unused import
 
 const STORAGE_KEY = 'tipspromenad:auth';
 
@@ -36,15 +33,6 @@ const writeStoredUser = (value) => {
 };
 
 const AuthContext = createContext();
-
-// const usesFirebaseAuth = false; // Firebase removed
-// const firebaseAuth = null;
-// const firebaseDb = null;
-
-// Removed all Firebase user mapping logic
-
-/** Skapar eller kompletterar användardokumentet i Firestore. */
-// ...dead code removed...
 
 /** Context-provider som exponerar inloggnings- och registreringsmetoder. */
 export const AuthProvider = ({ children }) => {

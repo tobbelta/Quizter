@@ -137,13 +137,17 @@ CREATE TABLE provider_settings (
 
 CREATE TABLE background_tasks (
   id TEXT PRIMARY KEY,
+  user_id TEXT,
   task_type TEXT NOT NULL, -- e.g., 'GENERATE_QUESTIONS', 'VALIDATE_QUESTIONS'
   status TEXT NOT NULL, -- 'queued', 'processing', 'completed', 'failed'
+  label TEXT,
+  description TEXT,
   payload TEXT, -- JSON with task parameters
   progress TEXT, -- JSON with progress details
   result TEXT, -- JSON with task result
   error TEXT,
   created_at INTEGER NOT NULL,
+  updated_at INTEGER,
   started_at INTEGER,
   finished_at INTEGER
 );

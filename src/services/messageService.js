@@ -2,13 +2,11 @@
 export const subscribeToMessages = (userId = null, deviceId = null, callback) => {
   return () => {};
 };
+
 /**
  * Message Service - Hanterar meddelanden från admin till användare
+ * All operations use Cloudflare API endpoints
  */
-// import { getFirebaseDb } from '../firebaseClient'; // Removed legacy Firebase import
-// All legacy Firestore imports and usage removed. Replace with API calls as needed.
-
-// ...existing code...
 
 /**
  * Skicka meddelande från admin

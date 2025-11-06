@@ -9,7 +9,8 @@ export async function onRequestGet(context) {
   const userEmail = request.headers.get('x-user-email');
   
   // Get superuser email from environment variable
-  const superuserEmail = env.SUPERUSER_EMAIL;
+  // For local development, use a default superuser email
+  const superuserEmail = env.SUPERUSER_EMAIL || 'admin@admin.se';
   
   // Check if user is superuser
   const isSuperuser = userEmail && superuserEmail && userEmail.toLowerCase() === superuserEmail.toLowerCase();

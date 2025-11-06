@@ -31,10 +31,6 @@ yarn-error.log*
 .npm
 .yarn
 
-# Firebase
-.firebase
-firebase-debug.log
-
 # Editor-specifika filer
 .vscode
 .idea
