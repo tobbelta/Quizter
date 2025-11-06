@@ -13,8 +13,6 @@ import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
-import DuplicateQuestionsPanel from '../components/admin/DuplicateQuestionsPanel';
-import ValidationPanel from '../components/admin/ValidationPanel';
 import MessageDialog from '../components/shared/MessageDialog';
 
 const QuestionCard = ({
@@ -853,7 +851,6 @@ const AdminQuestionsPage = () => {
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  const [activeTab, setActiveTab] = useState('questions'); // 'questions' | 'duplicates'
   const isMountedRef = useRef(true);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
 
@@ -1416,49 +1413,8 @@ const AdminQuestionsPage = () => {
       <Header title="Frågebank" />
 
       <div className="mx-auto max-w-6xl px-4 pt-24 pb-8">
-        {/* Flik-navigation */}
-        <div className="mb-6 flex gap-2 border-b border-slate-700">
-          <button
-            onClick={() => setActiveTab('questions')}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === 'questions'
-                ? 'text-cyan-400 border-b-2 border-cyan-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            📝 Frågor ({questions.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('duplicates')}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === 'duplicates'
-                ? 'text-amber-400 border-b-2 border-amber-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            🔍 Dubletter
-          </button>
-          <button
-            onClick={() => setActiveTab('validation')}
-            className={`px-4 py-2 font-semibold transition-colors ${
-              activeTab === 'validation'
-                ? 'text-green-400 border-b-2 border-green-400'
-                : 'text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            ✓ Validering
-          </button>
-        </div>
-
-        {/* Innehåll baserat på aktiv flik */}
-        {activeTab === 'validation' ? (
-          <ValidationPanel />
-        ) : activeTab === 'duplicates' ? (
-          <DuplicateQuestionsPanel />
-        ) : (
-          <>
-            {/* Sök och filter */}
-            <div className="mb-6 flex flex-col gap-4">
+        {/* Sök och filter */}
+        <div className="mb-6 flex flex-col gap-4">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-cyan-200 mb-2">Sök frågor</label>
@@ -1676,9 +1632,10 @@ const AdminQuestionsPage = () => {
             )}
           </div>
         )}
+      </div>
 
-        {/* AI Generation Dialog */}
-        {showAIDialog && (
+      {/* AI Generation Dialog */}
+      {showAIDialog && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[1200]">
           <div className="bg-slate-900 rounded-xl shadow-2xl border border-purple-500/40 max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
@@ -1879,20 +1836,15 @@ const AdminQuestionsPage = () => {
           </div>
         </div>
         )}
-        </>
-      )}
-      </div>
 
       <MessageDialog
-        isOpen={dialogConfig.isOpen}
-        onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
-        title={dialogConfig.title}
-        message={dialogConfig.message}
+          isOpen={dialogConfig.isOpen}
+          onClose={() => setDialogConfig({ ...dialogConfig, isOpen: false })}
+          title={dialogConfig.title}
+          message={dialogConfig.message}
         type={dialogConfig.type}
       />
     </div>
   );
-};
-
-export default AdminQuestionsPage;
+};export default AdminQuestionsPage;
 
