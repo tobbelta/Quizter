@@ -65,6 +65,7 @@ const QuestionCard = ({
     }
   });
   const targetAudience = question.targetAudience;
+
   const handleRegenerateEmoji = async () => {
     if (regeneratingEmoji) {
       return;
@@ -97,6 +98,7 @@ const QuestionCard = ({
       setRegeneratingEmoji(false);
     }
   };
+
   const handleValidateWithAI = async () => {
     if (!question.id) return;
 
@@ -149,6 +151,7 @@ const QuestionCard = ({
       }
     }
   };
+
   const rawAiResult = question.aiValidationResult;
   const structureResult =
     question.structureValidationResult ||
@@ -1420,11 +1423,7 @@ const AdminQuestionsPage = () => {
                   </select>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-gray-400">
-                  Behöver du köra struktur- eller AI-validering på nytt? Använd fliken{' '}
-                  <span className="text-cyan-300">Validering</span> för strukturvalidering. För AI-validering, använd knapparna på individuella frågor eller batch-funktionen ovan.
-                </p>
+              <div className="flex flex-wrap items-center justify-end gap-3">
                 <button
                   onClick={() => setShowAIDialog(true)}
                   disabled={isGeneratingAI}
