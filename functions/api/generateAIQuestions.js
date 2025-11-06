@@ -280,9 +280,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
         'validate_questions',
         'running',
         'AI-validering',
-        `Validerar ${uniqueQuestions.length} genererade frågor med AI`,
+        `Validerar ${savedQuestions.length} genererade frågor med AI`,
         JSON.stringify({
-          questionIds: uniqueQuestions.map(q => q.id),
+          questionIds: savedQuestions.map(q => q.id),
           generatorProvider: effectiveProvider,
           category,
           ageGroup,
@@ -297,8 +297,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
       console.log(`[Task ${taskId}] Validation metadata before call: { category: '${category}', ageGroup: '${ageGroup}', difficulty: '${difficulty}' }`);
       
       // Run validation synchronously (AWAIT instead of fire-and-forget)
+      // IMPORTANT: Use savedQuestions (with database IDs), not uniqueQuestions!
       try {
-        await validateQuestionsInBackground(env, validationTaskId, uniqueQuestions, effectiveProvider, {
+        await validateQuestionsInBackground(env, validationTaskId, savedQuestions, effectiveProvider, {
           category,
           ageGroup,
           difficulty
@@ -537,6 +538,7 @@ async function filterDuplicatesBeforeSaving(db, newQuestions) {
 async function validateUniqueQuestions(db, factory, questions, generatorProvider, context) {
   console.log('[validateUniqueQuestions] Starting validation...');
   console.log('[validateUniqueQuestions] Questions to validate:', questions.length);
+  console.log('[validateUniqueQuestions] Questions array:', questions.map(q => ({ id: q.id, question_sv: q.question_sv?.substring(0, 50) })));
   console.log('[validateUniqueQuestions] Generator provider (to exclude):', generatorProvider);
   
   let validatedCount = 0;
@@ -545,10 +547,13 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   
   try {
     // Get available providers excluding the generator
-    const availableProviderNames = factory.getAvailableProviders()
+    const allProviders = factory.getAvailableProviders();
+    console.log('[validateUniqueQuestions] ALL available providers:', allProviders);
+    
+    const availableProviderNames = allProviders
       .filter(name => name !== generatorProvider);
     
-    console.log('[validateUniqueQuestions] Available validation providers:', availableProviderNames);
+    console.log('[validateUniqueQuestions] Available validation providers (excluding generator):', availableProviderNames);
     
     if (availableProviderNames.length === 0) {
       console.log('[validateUniqueQuestions] No validation providers available (excluding generator)');
