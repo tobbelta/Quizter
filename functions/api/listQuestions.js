@@ -38,8 +38,9 @@ export async function onRequestGet(context) {
         } : null
       },
       emoji: row.illustration_emoji || row.emoji || '❓',
-      category: row.categories || row.category || 'Allmän',
-      categories: row.categories ? JSON.parse(row.categories) : [row.category || 'Allmän'],
+      // Parse categories from JSON, default to ['Allmän'] if missing
+      categories: row.categories ? JSON.parse(row.categories) : ['Allmän'],
+      category: row.categories ? JSON.parse(row.categories)[0] : 'Allmän',
       ageGroups: row.age_groups ? JSON.parse(row.age_groups) : [],
       targetAudience: row.target_audience || 'swedish',
       difficulty: row.difficulty || 'medium',
