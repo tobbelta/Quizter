@@ -829,11 +829,8 @@ const AdminQuestionsPage = () => {
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
-  const [isBatchRegeneratingEmojis, setIsBatchRegeneratingEmojis] = useState(false);
-  const [isBatchValidatingAI, setIsBatchValidatingAI] = useState(false);
   const [validatingQuestions, setValidatingQuestions] = useState(new Set());
   const [regeneratingEmojis] = useState(new Set());
-  const [batchValidatingAll, setBatchValidatingAll] = useState(false);
   const [individualValidationTasks, setIndividualValidationTasks] = useState(new Map()); // Map: taskId -> questionId
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
@@ -1314,79 +1311,6 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  const handleBatchRegenerateEmojis = async () => {
-    if (selectedQuestions.size === 0) return;
-
-    if (!window.confirm(`Är du säker på att du vill regenerera emojis för ${selectedQuestions.size} fråga(r)?`)) {
-      return;
-    }
-
-    setIsBatchRegeneratingEmojis(true);
-    try {
-      const questionIds = Array.from(selectedQuestions);
-      const { taskId } = await aiService.startBatchEmojiRegeneration({ questionIds });
-
-      if (taskId) {
-        registerTask(taskId, {
-          taskType: 'batchregenerateemojis',
-          label: 'Mass-regenerering Emojis',
-          description: `Genererar om emojis för ${questionIds.length} frågor.`,
-          createdAt: new Date(),
-        });
-        // Visual feedback via batch status panel - no alert needed
-      }
-      setSelectedQuestions(new Set()); // Avmarkera efter start
-    } catch (error) {
-      console.error('Kunde inte starta mass-regenerering av emojis:', error);
-      setDialogConfig({
-        isOpen: true,
-        title: 'Fel vid mass-regenerering',
-        message: 'Ett fel uppstod vid start av mass-regenerering: ' + error.message,
-        type: 'error'
-      });
-    } finally {
-      setIsBatchRegeneratingEmojis(false);
-    }
-  };
-
-  const handleBatchAIValidation = async () => {
-    if (selectedQuestions.size === 0) return;
-
-    if (!window.confirm(`Är du säker på att du vill köra AI-validering på ${selectedQuestions.size} fråga(r)? Detta kan medföra kostnader.`)) {
-      return;
-    }
-
-    setIsBatchValidatingAI(true);
-    setBatchValidatingAll(true);
-    const questionIds = Array.from(selectedQuestions);
-    setValidatingQuestions(new Set(questionIds));
-
-    try {
-      const { taskId } = await questionService.batchValidateQuestions(questionIds);
-
-      if (taskId) {
-        registerTask(taskId, {
-          taskType: 'batchvalidation',
-          label: 'AI-validering (batch)',
-          description: `Validerar ${questionIds.length} frågor med AI.`,
-          createdAt: new Date(),
-        });
-        // Visual feedback via batch status panel - no alert needed
-      }
-      setSelectedQuestions(new Set()); // Deselect after starting
-    } catch (error) {
-      console.error('Kunde inte starta batch AI-validering:', error);
-      setDialogConfig({
-        isOpen: true,
-        title: 'Fel vid AI-validering',
-        message: 'Ett fel uppstod vid start av AI-validering: ' + error.message,
-        type: 'error'
-      });
-    } finally {
-      setIsBatchValidatingAI(false);
-    }
-  };
-
   // Handler for individual question validation
   const handleValidationStart = (questionId) => {
     setValidatingQuestions(prev => new Set([...prev, questionId]));
@@ -1526,51 +1450,11 @@ const AdminQuestionsPage = () => {
             </label>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleBatchAIValidation}
-              disabled={selectedQuestions.size === 0 || isBatchValidatingAI || batchValidatingAll}
-              className="rounded bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
-            >
-              {isBatchValidatingAI || batchValidatingAll ? '🤖 Validerar...' : '🤖 AI-validera'}
-            </button>
-            <button
-              onClick={handleBatchRegenerateEmojis}
-              disabled={selectedQuestions.size === 0 || isBatchRegeneratingEmojis}
-              className="rounded bg-teal-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed"
-            >
-              {isBatchRegeneratingEmojis ? '🎨 Genererar...' : '🎨 Regenerera Emojis'}
-            </button>
             <button onClick={handleDeleteSelected} disabled={selectedQuestions.size === 0} className="rounded bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:bg-slate-700 disabled:cursor-not-allowed">
               Radera markerade
             </button>
           </div>
         </div>
-
-        {/* Batch validation status */}
-        {batchValidatingAll && (
-          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <div className="flex items-center gap-2 text-yellow-300">
-              <div className="animate-spin">⏳</div>
-              <span className="font-medium">Batch-validering pågår...</span>
-            </div>
-            <div className="mt-1 text-sm text-yellow-200">
-              {validatingQuestions.size} frågor kvar att validera
-            </div>
-          </div>
-        )}
-
-        {/* Batch emoji regeneration status */}
-        {regeneratingEmojis.size > 0 && (
-          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <div className="flex items-center gap-2 text-blue-300">
-              <div className="animate-spin">🎨</div>
-              <span className="font-medium">Emoji-regenerering pågår...</span>
-            </div>
-            <div className="mt-1 text-sm text-blue-200">
-              {regeneratingEmojis.size} frågor kvar att bearbeta
-            </div>
-          </div>
-        )}
 
         {isLoading ? (
           <div className="text-center py-8">
