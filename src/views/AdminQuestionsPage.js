@@ -32,11 +32,12 @@ const QuestionCard = ({
   regeneratingEmojis,
   onValidationStart,
   onValidationEnd,
+  onEmojiRegenerationStart,
+  onEmojiRegenerationEnd,
   setIndividualValidationTasks,
   setDialogConfig
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
-  const [regeneratingEmoji, setRegeneratingEmoji] = useState(false);
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
@@ -67,15 +68,29 @@ const QuestionCard = ({
   const targetAudience = question.targetAudience;
 
   const handleRegenerateEmoji = async () => {
-    if (regeneratingEmoji) {
-      return;
+    if (regeneratingEmojis && regeneratingEmojis.has(question.id)) {
+      return; // Already regenerating
     }
 
-    setRegeneratingEmoji(true);
+    if (onEmojiRegenerationStart) {
+      onEmojiRegenerationStart(question.id);
+    }
     try {
       const response = await questionService.regenerateEmoji(question.id);
       
-      // Register task for background monitoring if taskId is returned
+      // Show immediate success feedback for synchronous operation
+      if (response && response.success) {
+        setDialogConfig({
+          isOpen: true,
+          title: '🎨 Emoji-regenerering lyckades',
+          message: response.emoji ? 
+            `Ny emoji genererad: ${response.emoji}\nProvider: ${response.provider || 'okänd'}` :
+            'Nya emojis har genererats för frågan',
+          type: 'success'
+        });
+      }
+      
+      // Legacy: Register task for background monitoring if taskId is returned (for older API responses)
       if (response?.taskId && typeof registerTask === 'function') {
         registerTask(response.taskId, {
           taskType: 'regenerateemoji',
@@ -83,9 +98,7 @@ const QuestionCard = ({
           description: `Genererar nya emojis för fråga ${question.id}`,
           createdAt: new Date()
         });
-        // Visual feedback via UI indicators - no alert needed
       }
-      // Success - visual feedback via updated emoji display
     } catch (error) {
       console.error('[AdminQuestionsPage] Kunde inte regenerera emojis:', error);
       setDialogConfig({
@@ -95,7 +108,9 @@ const QuestionCard = ({
         type: 'error'
       });
     } finally {
-      setRegeneratingEmoji(false);
+      if (onEmojiRegenerationEnd) {
+        onEmojiRegenerationEnd(question.id);
+      }
     }
   };
 
@@ -112,32 +127,43 @@ const QuestionCard = ({
 
     try {
       const response = await questionService.validateSingleQuestion(question.id);
-      const taskId = response?.taskId;
+      
+        // Since validation is now synchronous, show immediate feedback
+        if (response.success && response.result) {
+          const { isValid, feedback, details } = response.result;
+          
+          // Build detailed message with AI analysis
+          let detailedMessage = feedback || (isValid ? 'Frågan godkändes av AI' : 'Frågan underkändes av AI');
+          
+          if (details) {
+            if (details.confidence !== undefined) {
+              detailedMessage += `\n\n📊 Konfidensgrad: ${details.confidence}%`;
+            }
+            
+            if (details.issues && details.issues.length > 0) {
+              detailedMessage += '\n\n⚠️ Identifierade problem:';
+              details.issues.forEach(issue => {
+                detailedMessage += `\n• ${issue}`;
+              });
+            }
+            
+            if (details.suggestions && details.suggestions.length > 0) {
+              detailedMessage += '\n\n💡 Förbättringsförslag:';
+              details.suggestions.forEach(suggestion => {
+                detailedMessage += `\n• ${suggestion}`;
+              });
+            }
+          }
+          
+          setDialogConfig({
+            isOpen: true,
+            title: isValid ? '✅ AI-validering lyckades' : '❌ AI-validering misslyckades',
+            message: detailedMessage,
+            type: isValid ? 'success' : 'warning'
+          });
 
-      if (taskId && typeof registerTask === 'function') {
-        // Register the task for the background task UI
-        const langData = question.languages?.sv || {
-          text: question.text,
-          options: question.options,
-          explanation: question.explanation
-        };
-        const descriptionParts = [
-          `Fråga ${question.id}`,
-          langData.text.length > 80 ? `${langData.text.slice(0, 80)}…` : langData.text
-        ];
-        registerTask(taskId, {
-          taskType: 'validation',
-          label: 'AI-validering',
-          description: descriptionParts.join(' – '),
-          createdAt: new Date()
-        });
-        
-        // Store the mapping so we can track this specific question
-        setIndividualValidationTasks(prev => new Map(prev).set(taskId, question.id));
-      }
-
-      // Visual feedback via UI indicators - no alert needed
-    } catch (error) {
+          // Note: Question list will be refreshed automatically by cache update in questionService
+        }    } catch (error) {
       console.error('[AdminQuestionsPage] Kunde inte starta AI-validering:', error);
       setDialogConfig({
         isOpen: true,
@@ -788,14 +814,14 @@ const QuestionCard = ({
 
             <button
               onClick={handleRegenerateEmoji}
-              disabled={regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))}
+              disabled={(validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))}
               className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                regeneratingEmoji || (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))
+                (validatingQuestions && validatingQuestions.has(question.id)) || (regeneratingEmojis && regeneratingEmojis.has(question.id))
                   ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
                   : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
             >
-              {regeneratingEmoji || (regeneratingEmojis && regeneratingEmojis.has(question.id)) ? '⏳ Genererar...' : '🎨 Nya emojis'}
+              {(regeneratingEmojis && regeneratingEmojis.has(question.id)) ? '⏳ Genererar...' : '🎨 Nya emojis'}
             </button>
 
             {question.reported === true && (
@@ -836,7 +862,7 @@ const AdminQuestionsPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [validatingQuestions, setValidatingQuestions] = useState(new Set());
-  const [regeneratingEmojis] = useState(new Set());
+  const [regeneratingEmojis, setRegeneratingEmojis] = useState(new Set());
   const [individualValidationTasks, setIndividualValidationTasks] = useState(new Map()); // Map: taskId -> questionId
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [aiAmount, setAiAmount] = useState(10);
@@ -1330,6 +1356,19 @@ const AdminQuestionsPage = () => {
     });
   };
 
+  // Handler for individual emoji regeneration
+  const handleEmojiRegenerationStart = (questionId) => {
+    setRegeneratingEmojis(prev => new Set([...prev, questionId]));
+  };
+
+  const handleEmojiRegenerationEnd = (questionId) => {
+    setRegeneratingEmojis(prev => {
+      const next = new Set(prev);
+      next.delete(questionId);
+      return next;
+    });
+  };
+
   // Alla frågor kan raderas nu (inga inbyggda frågor)
   const deletableQuestions = filteredQuestions;
   const isAllSelected = selectedQuestions.size > 0 && selectedQuestions.size === deletableQuestions.length;
@@ -1502,6 +1541,8 @@ const AdminQuestionsPage = () => {
                       regeneratingEmojis={regeneratingEmojis}
                       onValidationStart={handleValidationStart}
                       onValidationEnd={handleValidationEnd}
+                      onEmojiRegenerationStart={handleEmojiRegenerationStart}
+                      onEmojiRegenerationEnd={handleEmojiRegenerationEnd}
                       setIndividualValidationTasks={setIndividualValidationTasks}
                       setDialogConfig={setDialogConfig}
                     />

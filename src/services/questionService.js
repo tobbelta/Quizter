@@ -503,6 +503,19 @@ export const questionService = {
         provider: 'openai' // Default provider
       });
 
+      // Update question in cache with validation result
+      if (response.success && response.result) {
+        updateCachedQuestion(questionId, (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            aiValidated: response.result.isValid,
+            aiValidationResult: response.result,
+            aiValidatedAt: new Date()
+          };
+        });
+      }
+
       return response;
     } catch (error) {
       console.error('Error validating single question:', error);
@@ -804,28 +817,31 @@ export const questionService = {
 
     try {
       const response = await aiService.regenerateQuestionEmoji({ questionId, provider: preferredProvider });
-      const { emoji, provider } = response || {};
-
-      const updateData = {
-        emoji: emoji,
-        emojiProvider: provider,
-        emojiGeneratedAt: new Date(),
-      };
-
-      await questionRepository.updateQuestion(questionId, updateData);
-
-      updateCachedQuestion(questionId, (current) => {
-        if (!current) {
-          return current;
-        }
-
-        return {
-          ...current,
-          ...updateData
+      
+      if (response.success && response.emoji) {
+        const updateData = {
+          emoji: response.emoji,
+          emojiProvider: response.provider,
+          emojiGeneratedAt: new Date(),
         };
-      });
 
-      return response;
+        await questionRepository.updateQuestion(questionId, updateData);
+
+        updateCachedQuestion(questionId, (current) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            ...updateData
+          };
+        });
+
+        return response.emoji;
+      } else {
+        throw new Error('Failed to regenerate emoji');
+      }
     } catch (error) {
       console.error('[questionService] Kunde inte regenerera emoji:', error);
       throw error;

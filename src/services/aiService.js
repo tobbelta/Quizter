@@ -78,12 +78,38 @@ export const aiService = {
   },
 
   /**
-   * Queues a task to validate a single question.
+   * Validates a single question synchronously (not as a background task).
    * @param {{ questionId: string, provider?: string }} params
-   * @returns {Promise<{success: boolean, taskId: string}>}
+   * @returns {Promise<{success: boolean, result: object}>}
    */
-  startAIValidation: async ({ questionId, provider }) => {
-    return await queueTask('validateQuestionWithAI', { questionId, provider });
+  startAIValidation: async ({ questionId, provider = 'openai' }) => {
+    try {
+      const url = `${API_BASE_URL}/api/validateQuestionWithAI`;
+      
+      console.log(`[aiService] Validating question synchronously:`, { questionId, provider });
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ questionId, provider })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`AI validation failed (${response.status}): ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log(`[aiService] Validation completed:`, result);
+      
+      return result;
+    } catch (error) {
+      console.error(`[aiService] Failed to validate question ${questionId}:`, error);
+      throw error;
+    }
   },
 
   /**
@@ -99,8 +125,39 @@ export const aiService = {
     return await queueTask('regenerateAllIllustrations', {});
   },
 
-  regenerateQuestionEmoji: async ({ questionId, provider }) => {
-    return await queueTask('regenerateQuestionEmoji', { questionId, provider });
+  /**
+   * Regenerates emoji for a single question synchronously (not as a background task).
+   * @param {{ questionId: string, provider?: string }} params
+   * @returns {Promise<{success: boolean, emoji: string}>}
+   */
+  regenerateQuestionEmoji: async ({ questionId, provider = 'openai' }) => {
+    try {
+      const url = `${API_BASE_URL}/api/regenerateQuestionEmoji`;
+      
+      console.log(`[aiService] Regenerating emoji synchronously:`, { questionId, provider });
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ questionId, provider })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Emoji regeneration failed (${response.status}): ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      console.log(`[aiService] Emoji regenerated:`, result);
+      
+      return result;
+    } catch (error) {
+      console.error(`[aiService] Failed to regenerate emoji for question ${questionId}:`, error);
+      throw error;
+    }
   },
 
   startBatchEmojiRegeneration: async ({ questionIds }) => {

@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
-import { useAuth } from '../context/AuthContext';
 import TaskTimeline from '../components/admin/TaskTimeline';
 import { getRelativeTime, formatShortDateTime } from '../utils/timeUtils';
 // ...existing code...
@@ -63,20 +61,13 @@ const toDuration = (start, end) => {
 };
 
 const SuperUserTasksPage = () => {
-  const navigate = useNavigate();
   const { allTasks, refreshAllTasks } = useBackgroundTasks();
-  const { currentUser } = useAuth();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [cleanupLoading, setCleanupLoading] = useState(false);
-  const [cleanupResult, setCleanupResult] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [deleteResult, setDeleteResult] = useState(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
-  const [migrationLoading, setMigrationLoading] = useState(false);
   const [providerStatus, setProviderStatus] = useState(null);
   const [loadingProviderStatus, setLoadingProviderStatus] = useState(false);
 
@@ -175,69 +166,7 @@ const SuperUserTasksPage = () => {
     fetchProviderStatus();
   }, []);
 
-  const handleCleanup = async () => {
-    if (!window.confirm('Vill du städa hängande bakgrundsjobb (äldre än 30 minuter)?')) {
-      return;
-    }
-    setCleanupLoading(true);
-    setCleanupResult(null);
-    try {
-      const response = await fetch('/api/cleanupStuckTasks');
-      const data = await response.json();
-      if (response.ok) {
-        setCleanupResult({
-          success: true,
-          message: `Städat ${data.cleaned} hängande jobb (${data.processingChecked} processing, ${data.queuedChecked} queued)`
-        });
-      } else {
-        setCleanupResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
-      }
-    } catch (error) {
-      setCleanupResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setCleanupLoading(false);
-      await refreshAllTasks();
-      setTimeout(() => setCleanupResult(null), 5000);
-    }
-  };
 
-  const handleDeleteOldTasks = async () => {
-    if (!window.confirm('Vill du ta bort alla gamla klara och misslyckade jobb (äldre än 24 timmar)?\n\nDetta går INTE att ångra!')) {
-      return;
-    }
-    setDeleteLoading(true);
-    setDeleteResult(null);
-    try {
-      const response = await fetch('/api/deleteOldTasks');
-      const data = await response.json();
-      if (response.ok) {
-        setDeleteResult({
-          success: true,
-          message: `Raderat ${data.deleted} gamla jobb (${data.completedDeleted} klara, ${data.failedDeleted} misslyckade)`
-        });
-      } else {
-        setDeleteResult({
-          success: false,
-          message: data.error || 'Något gick fel'
-        });
-      }
-    } catch (error) {
-      setDeleteResult({
-        success: false,
-        message: `Fel: ${error.message}`
-      });
-    } finally {
-      setDeleteLoading(false);
-      await refreshAllTasks();
-      setTimeout(() => setDeleteResult(null), 5000);
-    }
-  };
 
   const handleToggleTask = (taskId) => {
     setSelectedTasks(prev => {
@@ -438,50 +367,7 @@ const SuperUserTasksPage = () => {
     }
   };
 
-  const handleMigration = async () => {
-    if (!window.confirm('⚠️ Vill du köra om AI-kategorisering på alla befintliga frågor med striktare svårighetsnivåer?\n\nDetta kommer att:\n- Uppdatera ageGroups för alla frågor\n- Använd striktare kriterier för barn/ungdom/vuxen\n- Köras som en bakgrundsuppgift\n\nFortsätt?')) {
-      return;
-    }
-    setMigrationLoading(true);
-    try {
-      if (!currentUser) {
-        throw new Error('Du måste vara inloggad för att köra migration');
-      }
-      // Om du behöver auth, hämta från din nuvarande auth-lösning
-      const response = await fetch('/api/queueMigration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setDialogConfig({
-          isOpen: true,
-          title: 'Migration startad',
-          message: `AI-migration har köats som bakgrundsjobb. Du kan följa progress nedan.`,
-          type: 'success'
-        });
-      } else {
-        setDialogConfig({
-          isOpen: true,
-          title: 'Kunde inte starta migration',
-          message: data.error || 'Okänt fel',
-          type: 'error'
-        });
-      }
-    } catch (error) {
-      setDialogConfig({
-        isOpen: true,
-        title: 'Fel vid migration',
-        message: error.message,
-        type: 'error'
-      });
-    } finally {
-      setMigrationLoading(false);
-      await refreshAllTasks();
-    }
-  };
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-gray-100">
@@ -516,9 +402,6 @@ const SuperUserTasksPage = () => {
               </h3>
               <p className="text-sm text-slate-400 mt-1">
                 {providerStatus.summary.active} av {providerStatus.summary.total} providers har tillgängliga credits
-                <span className="text-xs text-slate-500 ml-2">
-                  • Uppdateras automatiskt var 2:a minut
-                </span>
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -564,73 +447,15 @@ const SuperUserTasksPage = () => {
           </section>
         )}
 
-        {/* Underhåll-sektion */}
-        <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Developer Tools</h3>
-              <p className="text-sm text-slate-400 mt-1">
-                Migrera frågor, städa gamla jobb eller konfigurera AI-providers
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => navigate('/superuser/ai-providers')}
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                ⚙️ AI Providers
-              </button>
-              <button
-                onClick={handleMigration}
-                disabled={migrationLoading}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {migrationLoading ? '🔄 Kör migration...' : '🔄 Migrera frågor'}
-              </button>
-              <button
-                onClick={handleCleanup}
-                disabled={cleanupLoading}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {cleanupLoading ? '🧹 Städar...' : '🧹 Städa hängande'}
-              </button>
-              <button
-                onClick={handleDeleteOldTasks}
-                disabled={deleteLoading}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-lg font-semibold transition-colors whitespace-nowrap"
-              >
-                {deleteLoading ? '🗑️ Raderar...' : '🗑️ Radera gamla'}
-              </button>
-            </div>
-          </div>
-          {cleanupResult && (
-            <div className={`mt-4 p-3 rounded-lg ${cleanupResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {cleanupResult.message}
-            </div>
-          )}
-          {deleteResult && (
-            <div className={`mt-3 p-3 rounded-lg ${deleteResult.success ? 'bg-green-500/10 border border-green-500/30 text-green-300' : 'bg-red-500/10 border border-red-500/30 text-red-300'}`}>
-              {deleteResult.message}
-            </div>
-          )}
-        </section>
+
 
         <section className="rounded-xl bg-slate-900 border border-slate-800 p-4">
           <div className="mb-4 pb-3 border-b border-slate-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-white">Alla bakgrundsjobb</h2>
-                <p className="text-sm text-slate-400 mt-1">
-                  Sorterat med <span className="text-cyan-400 font-semibold">nyaste först</span> • {filteredTasks.length} av {allTasks.length} jobb visas
-                </p>
-              </div>
-              <button
-                onClick={refreshAllTasks}
-                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-semibold transition-colors"
-                title="Uppdatera lista"
-              >
-                🔄 Uppdatera
-              </button>
+            <div>
+              <h2 className="text-xl font-bold text-white">Alla bakgrundsjobb</h2>
+              <p className="text-sm text-slate-400 mt-1">
+                Sorterat med <span className="text-cyan-400 font-semibold">nyaste först</span> • Uppdateras automatiskt i realtid • {filteredTasks.length} av {allTasks.length} jobb visas
+              </p>
             </div>
           </div>
           
