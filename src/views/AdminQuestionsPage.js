@@ -889,9 +889,9 @@ const AdminQuestionsPage = () => {
       : question.category
         ? [question.category]
         : [];
-    const lowerCaseCategories = categoryList.map((category) => category.toLowerCase());
+    const lowerCaseCategories = categoryList.map((category) => (category || '').toLowerCase());
     const ageGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
-    const lowerCaseAgeGroups = ageGroups.map((group) => group.toLowerCase());
+    const lowerCaseAgeGroups = ageGroups.map((group) => (group || '').toLowerCase());
     const audienceValue = (question.targetAudience || question.audience || '').toLowerCase();
 
     const matchesSearch =
