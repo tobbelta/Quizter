@@ -1,0 +1,7 @@
+{
+  "amount": 2,
+  "category": "Vetenskap",
+  "ageGroup": "youth",
+  "difficulty": "medium",
+  "provider": "openai"
+}

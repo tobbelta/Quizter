@@ -1,0 +1,11 @@
+{
+  "contents": [{
+    "parts": [{
+      "text": "Skapa 1 quizfråga om Djur för barn. Svara med JSON: {\"questions\": [{\"question_sv\": \"text\", \"options_sv\": [\"a\",\"b\",\"c\",\"d\"], \"correctOption\": 0}]}"
+    }]
+  }],
+  "generationConfig": {
+    "temperature": 0.7,
+    "responseMimeType": "application/json"
+  }
+}

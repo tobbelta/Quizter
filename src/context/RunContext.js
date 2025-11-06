@@ -2,8 +2,8 @@
  * RunContext - Central state management för rundor och deltagare
  *
  * Hanterar all run-relaterad state och business logic för applikationen.
- * Tillhandahåller real-time updates via Firebase subscriptions och
- * persistent storage för aktiv deltagare.
+ * Tillhandahåller real-time updates via Cloudflare API och persistent storage
+ * för aktiv deltagare.
  *
  * Optimeringar:
  * - Memoization av alla callbacks för att förhindra onödiga re-renders
@@ -134,7 +134,7 @@ export const RunProvider = ({ children }) => {
    * Centraliserad laddning av run-state med optimerad error handling
    * Laddar runda + frågor + deltagare och synkroniserar aktuell deltagare
    *
-   * @param {Object} run - Run-objekt från Firebase
+   * @param {Object} run - Run-objekt från API
    */
   const loadRunState = useCallback(async (run) => {
     if (!run) return;
