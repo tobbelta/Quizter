@@ -49,11 +49,15 @@ export async function onRequestGet(context) {
       createdBy: row.created_by || row.createdBy || 'system',
       aiGenerated: row.ai_generation_provider ? true : (row.aiGenerated === 1 || row.aiGenerated === true),
       validated: row.validated === 1 || row.validated === true,
+      aiValidated: row.ai_validated === 1 || row.ai_validated === true,
+      aiValidationResult: row.ai_validation_result ? JSON.parse(row.ai_validation_result) : null,
+      aiValidatedAt: row.ai_validated_at || null,
+      validationGeneratedAt: row.validation_generated_at || null,
       manuallyApproved: row.manually_approved === 1 || row.manuallyApproved === true,
       manuallyRejected: row.manually_rejected === 1 || row.manuallyRejected === true,
       reported: row.reported === 1 || row.reported === true,
       provider: row.ai_generation_provider || row.provider || null,
-      model: row.model || null,
+      model: row.ai_generation_model || row.model || null,
     }));
 
     return new Response(

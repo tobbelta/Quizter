@@ -203,14 +203,16 @@ Kontrollera:
 7. Är svårighetsgraden lämplig för målgruppen (${effectiveAgeGroup})?
 8. Passar frågan kategorin ${effectiveCategory}?
 
-Returnera JSON med följande format:
+Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
 {
   "isValid": true/false,
   "confidence": 0-100,
-  "issues": ["eventuella problem"],
-  "suggestions": ["eventuella förbättringsförslag"],
-  "feedback": "Kort sammanfattning av valideringen"
-}`;
+  "issues": ["eventuella problem på svenska"],
+  "suggestions": ["eventuella förbättringsförslag på svenska"],
+  "feedback": "Kort sammanfattning av valideringen på svenska"
+}
+
+VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
   }
 
   /**

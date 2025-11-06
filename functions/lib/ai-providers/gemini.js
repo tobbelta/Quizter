@@ -101,7 +101,7 @@ export class GeminiProvider {
           body: JSON.stringify({
             contents: [{
               parts: [{
-                text: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format.`
+                text: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde. Du svarar ALLTID på SVENSKA.\n\n${prompt}\n\nSvara med JSON-format. VIKTIGT: All text i ditt svar MÅSTE vara på SVENSKA.`
               }]
             }],
             generationConfig: {
@@ -154,7 +154,6 @@ export class GeminiProvider {
 
     // Default values for optional parameters
     const effectiveCategory = category || 'Allmän kunskap';
-    const effectiveAgeGroup = ageGroup || 'adults';
     const effectiveDifficulty = difficulty || 'medium';
     const effectiveTargetAudience = targetAudience || 'swedish';
 
@@ -162,7 +161,17 @@ export class GeminiProvider {
       ? 'Fokusera på svensk kultur, historia och geografi där det är relevant.'
       : 'Fokusera på global kunskap och internationella perspektiv.';
 
-    return `Skapa ${amount} quizfrågor om ${effectiveCategory} för åldersgrupp ${ageGroupInfo[effectiveAgeGroup] || effectiveAgeGroup} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
+    // Handle mixed age groups
+    let ageGroupInstruction;
+    if (!ageGroup || ageGroup === '') {
+      ageGroupInstruction = `Variera svårighetsgraden och rikta olika frågor till olika åldersgrupper: barn (6-12 år), ungdomar (13-25 år) och vuxna (25+). Fördela frågorna jämnt mellan åldersgrupperna.`;
+    } else {
+      ageGroupInstruction = `Alla frågor ska vara riktade till åldersgrupp ${ageGroupInfo[ageGroup] || ageGroup}.`;
+    }
+
+    return `Skapa ${amount} quizfrågor om ${effectiveCategory} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
+
+${ageGroupInstruction}
 
 ${audienceContext}
 
@@ -173,6 +182,7 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - options_en: 4 svarsalternativ på engelska
 - explanation_sv: Förklaring på svenska
 - explanation_en: Förklaring på engelska
+- ageGroup: Vilken åldersgrupp frågan riktar sig till ("children", "youth" eller "adults")
 
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
@@ -181,6 +191,7 @@ Varje fråga ska ha:
 - Pedagogisk förklaring på båda språken
 - En passande emoji som visuell illustration
 - Target audience: "${effectiveTargetAudience}"
+- Age group: specificera "children", "youth" eller "adults" för varje fråga
 
 Returnera JSON i exakt följande format:
 {
@@ -194,7 +205,8 @@ Returnera JSON i exakt följande format:
       "explanation_sv": "Förklaring på svenska",
       "explanation_en": "Explanation in English",
       "emoji": "🎯",
-      "targetAudience": "${effectiveTargetAudience}"
+      "targetAudience": "${effectiveTargetAudience}",
+      "ageGroup": "children"
     }
   ]
 }`;
@@ -231,14 +243,16 @@ Kontrollera:
 7. Är svårighetsgraden lämplig för målgruppen (${effectiveAgeGroup})?
 8. Passar frågan kategorin ${effectiveCategory}?
 
-Returnera JSON med följande format:
+Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
 {
   "isValid": true/false,
   "confidence": 0-100,
-  "issues": ["eventuella problem"],
-  "suggestions": ["eventuella förbättringsförslag"],
-  "feedback": "Kort sammanfattning av valideringen"
-}`;
+  "issues": ["eventuella problem på svenska"],
+  "suggestions": ["eventuella förbättringsförslag på svenska"],
+  "feedback": "Kort sammanfattning av valideringen på svenska"
+}
+
+VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
   }
 
   /**

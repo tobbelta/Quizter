@@ -389,7 +389,7 @@ const QuestionCard = ({
                 <div className="flex justify-between">
                   <span className="text-xs text-gray-400">Åldersgrupper:</span>
                   <span className="text-xs text-gray-200">
-                    {formattedAgeGroups.length > 0 ? formattedAgeGroups.join(', ') : 'Ej angivet'}
+                    {formattedAgeGroups.length > 0 ? formattedAgeGroups.join(', ') : 'Alla åldrar'}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -634,10 +634,39 @@ const QuestionCard = ({
                 </div>
               )}
 
-              {aiResult.reasoning && (
+              {aiResult.suggestions && aiResult.suggestions.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-blue-300 mb-1">Förbättringsförslag:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {aiResult.suggestions.map((suggestion, idx) => (
+                      <li key={idx} className="text-xs text-blue-200">{suggestion}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(aiResult.feedback || aiResult.reasoning) && (
                 <div className="mb-2">
-                  <p className="text-xs font-semibold text-gray-300 mb-1">Motivering:</p>
-                  <p className="text-xs text-gray-300 whitespace-pre-wrap">{aiResult.reasoning}</p>
+                  <p className="text-xs font-semibold text-gray-300 mb-1">
+                    {aiResult.feedback ? 'AI-feedback:' : 'Motivering:'}
+                  </p>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap">
+                    {aiResult.feedback || aiResult.reasoning}
+                  </p>
+                </div>
+              )}
+
+              {(aiResult.confidence || aiResult.provider || aiResult.model) && (
+                <div className="mb-2 flex flex-wrap gap-3 text-xs text-gray-400">
+                  {aiResult.provider && (
+                    <span>Provider: <span className="text-gray-300">{aiResult.provider}</span></span>
+                  )}
+                  {aiResult.model && (
+                    <span>Model: <span className="text-gray-300">{aiResult.model}</span></span>
+                  )}
+                  {aiResult.confidence && (
+                    <span>Konfidens: <span className="text-gray-300">{aiResult.confidence}%</span></span>
+                  )}
                 </div>
               )}
 

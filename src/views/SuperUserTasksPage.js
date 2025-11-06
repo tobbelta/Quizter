@@ -13,6 +13,7 @@ const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const STATUS_LABELS = {
   queued: 'Köad',
   pending: 'Förbereds',
+  running: 'Pågår',
   processing: 'Pågår',
   completed: 'Klar',
   failed: 'Misslyckades',
@@ -22,6 +23,7 @@ const STATUS_LABELS = {
 const STATUS_BADGES = {
   queued: 'bg-slate-700/70 text-slate-200',
   pending: 'bg-slate-700/70 text-slate-200',
+  running: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   processing: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
   completed: 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30',
   failed: 'bg-red-500/20 text-red-300 border border-red-500/40',
@@ -783,6 +785,8 @@ const SuperUserTasksPage = () => {
                           <div className="flex items-center gap-2">
                             <div className="text-white font-semibold">
                               {task.taskType === 'generation' ? 'AI-generering' :
+                               task.taskType === 'generate_questions' ? 'AI-generering' :
+                               task.taskType === 'validate_questions' ? 'AI-validering' :
                                task.taskType === 'batchvalidation' ? 'AI-validering (batch)' :
                                task.taskType === 'validation' ? 'AI-validering' :
                                task.taskType === 'migration' ? 'AI-migrering' :
