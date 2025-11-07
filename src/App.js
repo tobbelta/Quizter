@@ -1,14 +1,13 @@
 /**
  * Router-konfiguration för tipspromenaden samt auth-/run-provider.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { RunProvider } from './context/RunContext';
 import { BackgroundTaskProvider } from './context/BackgroundTaskContext';
 import { ToastProvider } from './context/ToastContext';
-import { localStorageService } from './services/localStorageService';
 import { analyticsService } from './services/analyticsService';
 import { VERSION } from './version';
 
@@ -30,8 +29,6 @@ import SuperUserNotificationsPage from './views/SuperUserNotificationsPage';
 import SuperUserErrorLogsPage from './views/SuperUserErrorLogsPage';
 import SuperUserTasksPage from './views/SuperUserTasksPage';
 import AIProviderSettingsPage from './views/AIProviderSettingsPage';
-import MigrationHandler from './components/migration/MigrationHandler';
-import LocalRunsImportDialog from './components/migration/LocalRunsImportDialog';
 import InstallPrompt from './components/shared/InstallPrompt';
 import ToastViewport from './components/shared/ToastViewport';
 import ServiceStatusIcon from './components/shared/ServiceStatusIcon';
@@ -245,74 +242,6 @@ const AnalyticsTracker = () => {
 };
 
 /**
- * Komponent som hanterar import av localStorage-rundor vid inloggning
- */
-const LocalRunsImportHandler = () => {
-  const { currentUser, isAuthInitialized, isSuperUser } = useAuth();
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [localRunCount, setLocalRunCount] = useState(0);
-
-  useEffect(() => {
-    // Kontrollera om användaren precis loggat in och har lokala rundor
-    if (isAuthInitialized && currentUser && !currentUser.isAnonymous) {
-      // SuperUsers behöver aldrig importera
-      if (isSuperUser) {
-        return;
-      }
-
-      // Kolla om användaren redan har sett/hanterat importdialogen
-      const importHandledKey = `quizter:import:handled:${currentUser.id}`;
-      const alreadyHandled = localStorage.getItem(importHandledKey) === 'true';
-
-      if (alreadyHandled) {
-        return;
-      }
-
-      const localRuns = localStorageService.getCreatedRuns();
-      const count = localRuns?.length || 0;
-
-      if (count > 0) {
-        setLocalRunCount(count);
-        setShowImportDialog(true);
-      } else {
-        // Även om användaren inte har några rundor, markera att vi har frågat
-        // så att dialogen inte dyker upp varje gång vid F5
-        localStorage.setItem(importHandledKey, 'true');
-      }
-    }
-  }, [currentUser, isAuthInitialized, isSuperUser]);
-
-  // Återställ när användaren loggar ut
-  useEffect(() => {
-    if (isAuthInitialized && !currentUser) {
-      setShowImportDialog(false);
-    }
-  }, [currentUser, isAuthInitialized]);
-
-  const handleImportComplete = (success) => {
-    // Markera att användaren har hanterat importen (även om de hoppade över)
-    if (currentUser && !currentUser.isAnonymous) {
-      const importHandledKey = `quizter:import:handled:${currentUser.id}`;
-      localStorage.setItem(importHandledKey, 'true');
-    }
-
-    setShowImportDialog(false);
-  };
-
-  if (!showImportDialog) {
-    return null;
-  }
-
-  return (
-    <LocalRunsImportDialog
-      localRunCount={localRunCount}
-      currentUser={currentUser}
-      onComplete={handleImportComplete}
-    />
-  );
-};
-
-/**
  * Breadcrumb tracker - loggar navigering automatiskt
  */
 const BreadcrumbTracker = () => {
@@ -407,8 +336,6 @@ function App() {
               <div className="min-h-screen bg-slate-950 text-gray-100">
                 <BreadcrumbTracker />
                 <AnalyticsTracker />
-                <MigrationHandler />
-                <LocalRunsImportHandler />
                 <InstallPrompt />
                 <AppRoutes />
                 <ToastViewport />
