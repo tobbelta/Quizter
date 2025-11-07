@@ -35,30 +35,41 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Start test server in background
-        run: |
-          npm run dev:test &
-          echo "SERVER_PID=$!" >> $GITHUB_ENV
+
+
+
+
+      - name: Start test server (foreground, see logs)
+        run: npx wrangler@3 pages dev . --port 8789 --d1 DB
         env:
           NODE_ENV: test
+        timeout-minutes: 5
 
-      - name: Wait for server to be ready
-        run: |
-          timeout 60 bash -c 'until curl -f http://127.0.0.1:8788/api/runs 2>/dev/null; do sleep 2; done'
-          echo "✅ Test server is ready!"
-
-      - name: Run All API Tests
-        run: npm run test:api
-        env:
-          TEST_URL: http://127.0.0.1:8788
-
-      - name: Stop test server
-        if: always()
-        run: |
-          if [ ! -z "$SERVER_PID" ]; then
-            kill $SERVER_PID 2>/dev/null || true
-          fi
-          pkill -f "wrangler pages dev" || true
+      # If foreground works, switch back to background + curl + test:api
+      # - name: Start test server in background
+      #   run: |
+      #     npx wrangler@3 pages dev . --port 8789 --d1 DB &
+      #     echo "SERVER_PID=$!" >> $GITHUB_ENV
+      #   env:
+      #     NODE_ENV: test
+      #
+      # - name: Wait for server to be ready
+      #   run: |
+      #     timeout 60 bash -c 'until curl -f http://127.0.0.1:8789/api/runs 2>/dev/null; do sleep 2; done'
+      #     echo "✅ Test server is ready!"
+      #
+      # - name: Run All API Tests
+      #   run: npm run test:api
+      #   env:
+      #     TEST_URL: http://127.0.0.1:8789
+      #
+      # - name: Stop test server
+      #   if: always()
+      #   run: |
+      #     if [ ! -z "$SERVER_PID" ]; then
+      #       kill $SERVER_PID 2>/dev/null || true
+      #     fi
+      #     pkill -f "wrangler pages dev" || true
 
       - name: Publish to Cloudflare Pages
         if: success()
