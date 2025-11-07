@@ -147,10 +147,11 @@ async function initDatabaseIfNeeded(env) {
 }
 
 export async function onRequest(context) {
+  // COMMENTED OUT FOR DEBUGGING
   // Only auto-init in local development
-  if (context.env.DB) {
-    await initDatabaseIfNeeded(context.env);
-  }
+  // if (context.env.DB) {
+  //   await initDatabaseIfNeeded(context.env);
+  // }
   
   // Continue to the actual handler
   return context.next();

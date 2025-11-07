@@ -1,0 +1,7 @@
+{
+  "name": "Test Run",
+  "created_by": "test-user-123",
+  "question_ids": ["q1", "q2", "q3"],
+  "checkpoints": [],
+  "route": null
+}
