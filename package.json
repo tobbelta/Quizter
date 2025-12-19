@@ -25,8 +25,9 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "dev": "npx wrangler pages dev . --port 8788 --d1 DB",
+    "dev": "npm run build && npx wrangler pages dev build --port 8788 --d1 DB",
     "dev:build": "npm run build && npx wrangler pages dev build --port 8788 --d1 DB",
+    "dev:api": "npx wrangler pages dev . --port 8788 --d1 DB",
     "dev:test": "npx wrangler pages dev . --port 8788 --d1 DB",
     "build": "react-scripts build",
     "test": "react-scripts test",

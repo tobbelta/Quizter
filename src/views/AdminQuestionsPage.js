@@ -1164,7 +1164,24 @@ const AdminQuestionsPage = () => {
       if (!taskId) {
         throw new Error('Bakgrundsjobbet saknar taskId.');
       }
-      await taskService.waitForCompletion(taskId);
+      const completedTask = await taskService.waitForCompletion(taskId);
+      await questionService.refreshFromServer();
+
+      const generatedCount =
+        completedTask?.result?.questionsGenerated ??
+        completedTask?.result?.count ??
+        completedTask?.result?.totalSaved;
+
+      if (typeof generatedCount === 'number' && generatedCount === 0) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'AI-generering klar, men inga frågor sparades',
+          message:
+            'Bakgrundsjobbet blev klart men inga nya frågor hamnade i databasen.\n\n' +
+            'Öppna DevTools → Console för detaljer, eller testa en annan provider.',
+          type: 'warning'
+        });
+      }
 
     } catch (error) {
       console.error('Kunde inte generera frågor:', error);
@@ -1774,4 +1791,3 @@ const AdminQuestionsPage = () => {
     </div>
   );
 };export default AdminQuestionsPage;
-

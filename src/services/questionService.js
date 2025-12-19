@@ -405,6 +405,10 @@ export const questionService = {
     return cachedQuestions.map(normalizeQuestion);
   },
   loadAllQuestions: () => loadAllQuestions(),
+  refreshFromServer: async () => {
+    await reloadCache();
+    return cachedQuestions.map(normalizeQuestion);
+  },
   listAllForLanguage: (language = 'sv') => {
     if (!isInitialized && !loadPromise) {
       ensureCache().catch(() => {});

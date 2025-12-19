@@ -7,13 +7,20 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   const userId = url.searchParams.get('userId');
+  const taskId = url.searchParams.get('taskId');
   const limit = parseInt(url.searchParams.get('limit') || '100');
 
   try {
-    console.log('[getBackgroundTasks] Fetching tasks for user:', userId);
+    console.log('[getBackgroundTasks] Fetching tasks:', { userId, taskId });
 
     let query;
-    if (userId) {
+    if (taskId) {
+      query = env.DB.prepare(
+        `SELECT * FROM background_tasks
+         WHERE id = ?
+         LIMIT 1`
+      ).bind(taskId);
+    } else if (userId) {
       // Get tasks for specific user
       query = env.DB.prepare(
         `SELECT * FROM background_tasks 
