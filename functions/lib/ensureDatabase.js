@@ -5,6 +5,39 @@
 
 let dbInitialized = false;
 
+async function ensureTableColumns(db, tableName, columns) {
+  const info = await db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const existing = new Set((info.results || []).map((col) => col.name));
+
+  for (const column of columns) {
+    if (existing.has(column.name)) continue;
+    console.log(`[ensureDatabase] Adding missing column ${tableName}.${column.name}`);
+    await db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${column.ddl}`).run();
+  }
+}
+
+async function ensureQuestionsSchema(db) {
+  await ensureTableColumns(db, 'questions', [
+    { name: 'illustration_emoji', ddl: 'illustration_emoji TEXT' },
+    { name: 'ai_generated', ddl: 'ai_generated BOOLEAN DEFAULT FALSE' },
+    { name: 'ai_generation_provider', ddl: 'ai_generation_provider TEXT' },
+    { name: 'ai_generation_model', ddl: 'ai_generation_model TEXT' },
+    { name: 'validated', ddl: 'validated BOOLEAN DEFAULT FALSE' },
+    { name: 'ai_validated', ddl: 'ai_validated BOOLEAN DEFAULT FALSE' },
+    { name: 'ai_validation_result', ddl: 'ai_validation_result TEXT' },
+    { name: 'ai_validated_at', ddl: 'ai_validated_at INTEGER' },
+    { name: 'validation_generated_at', ddl: 'validation_generated_at INTEGER' },
+    { name: 'structure_validation_result', ddl: 'structure_validation_result TEXT' },
+    { name: 'created_by', ddl: 'created_by TEXT' },
+    { name: 'manually_approved_at', ddl: 'manually_approved_at INTEGER' },
+    { name: 'manually_rejected_at', ddl: 'manually_rejected_at INTEGER' },
+    { name: 'reported', ddl: 'reported BOOLEAN DEFAULT FALSE' },
+    { name: 'report_count', ddl: 'report_count INTEGER DEFAULT 0' },
+    { name: 'reports', ddl: 'reports TEXT' },
+    { name: 'report_resolved_at', ddl: 'report_resolved_at INTEGER' },
+  ]);
+}
+
 async function addMissingColumns(db) {
   try {
     // DRASTIC FIX: Drop and recreate ALL game tables to remove FK constraints
@@ -56,8 +89,16 @@ async function addMissingColumns(db) {
     `).run();
     
     console.log('[ensureDatabase] Game tables recreated successfully without FK constraints');
+
+    // Ensure questions table has all expected columns for API compatibility
+    await ensureQuestionsSchema(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
+    try {
+      await ensureQuestionsSchema(db);
+    } catch (schemaError) {
+      console.log('[ensureDatabase] Questions schema ensure error:', schemaError.message);
+    }
   }
 }
 
@@ -210,6 +251,9 @@ export async function ensureDatabase(db) {
     
     console.log('[ensureDatabase] Database initialized successfully');
     dbInitialized = true;
+
+    // Ensure schema is fully compatible even if older local schema existed
+    await ensureQuestionsSchema(db);
     
   } catch (error) {
     console.error('[ensureDatabase] Error:', error);

@@ -25,7 +25,9 @@ const subscribeToTask = (taskId, onUpdate) => {
     if (!isActive) return;
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/getBackgroundTasks?taskId=${encodeURIComponent(taskId)}`);
+      const response = await fetch(
+        `${API_BASE_URL}/api/getBackgroundTasks?taskId=${encodeURIComponent(taskId)}`
+      );
       if (!response.ok) {
         throw new Error(`Failed to fetch task: ${response.statusText}`);
       }
@@ -33,14 +35,18 @@ const subscribeToTask = (taskId, onUpdate) => {
       const data = await response.json();
       const task = data.tasks?.[0];
       
-      if (task) {
-        onUpdate(task);
-        
-        // Stop polling if task is complete
-        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
-          isActive = false;
-          return;
-        }
+      if (!task) {
+        onUpdate({ status: 'failed', error: 'Task not found' });
+        isActive = false;
+        return;
+      }
+
+      onUpdate(task);
+
+      // Stop polling if task is complete
+      if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+        isActive = false;
+        return;
       }
     } catch (error) {
       console.error('[taskService] Error polling task:', error);

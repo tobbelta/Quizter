@@ -9,6 +9,10 @@ export async function onRequestGet(context) {
   try {
     console.log('[listQuestions] Fetching questions from D1 database');
 
+    // Ensure schema is compatible (especially important if local DB was initialized with older schema)
+    const { ensureDatabase } = await import('../lib/ensureDatabase.js');
+    await ensureDatabase(env.DB);
+
     // Query all questions from D1 database
     const { results } = await env.DB.prepare(
       `SELECT * FROM questions ORDER BY created_at DESC`
