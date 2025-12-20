@@ -14,6 +14,8 @@ import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
 import { errorLogService } from '../services/errorLogService';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { categoryService } from '../services/categoryService';
+import { DEFAULT_CATEGORY_OPTIONS } from '../data/categoryOptions';
 import useQRCode from '../hooks/useQRCode';
 import useRunLocation from '../hooks/useRunLocation';
 import { useBreadcrumbs } from '../hooks/useBreadcrumbs';
@@ -40,18 +42,6 @@ const difficultyOptions = [
   { value: 'family', label: 'Familj (1/3 av varje)' },
 ];
 
-const categoryOptions = [
-  { value: 'Geografi', label: 'Geografi' },
-  { value: 'Historia', label: 'Historia' },
-  { value: 'Naturvetenskap', label: 'Naturvetenskap' },
-  { value: 'Kultur', label: 'Kultur' },
-  { value: 'Sport', label: 'Sport' },
-  { value: 'Natur', label: 'Natur' },
-  { value: 'Teknik', label: 'Teknik' },
-  { value: 'Djur', label: 'Djur' },
-  { value: 'Gåtor', label: 'Gåtor' },
-];
-
 const GenerateRunPage = () => {
   const navigate = useNavigate();
   const { currentUser, loginAsGuest } = useAuth();
@@ -74,6 +64,7 @@ const GenerateRunPage = () => {
   const [notificationPermission, setNotificationPermission] = useState(() => 
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+  const [categoryOptions, setCategoryOptions] = useState(DEFAULT_CATEGORY_OPTIONS);
 
   const joinLink = React.useMemo(() => (
     generatedRun ? buildJoinLink(generatedRun.joinCode) : ''
@@ -164,6 +155,38 @@ const GenerateRunPage = () => {
       if (shareTimeoutRef.current) {
         clearTimeout(shareTimeoutRef.current);
       }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let isActive = true;
+
+    const loadCategories = async () => {
+      try {
+        const categories = await categoryService.getCategories();
+        if (!isActive) return;
+        if (categories && categories.length > 0) {
+          const nextOptions = categories.map((category) => ({
+            value: category.name,
+            label: category.name,
+            description: category.description || ''
+          }));
+          setCategoryOptions(nextOptions);
+          const optionValues = new Set(nextOptions.map((option) => option.value));
+          setForm(prev => ({
+            ...prev,
+            categories: (prev.categories || []).filter((value) => optionValues.has(value))
+          }));
+        }
+      } catch (error) {
+        console.warn('[GenerateRunPage] Kunde inte ladda kategorier:', error);
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      isActive = false;
     };
   }, []);
 
@@ -801,6 +824,7 @@ const GenerateRunPage = () => {
                       key={cat.value}
                       type="button"
                       onClick={() => toggleCategory(cat.value)}
+                      title={cat.description || cat.label}
                       className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                         isSelected
                           ? 'bg-purple-500 text-black'
@@ -1093,8 +1117,6 @@ const GenerateRunPage = () => {
 };
 
 export default GenerateRunPage;
-
-
 
 
 

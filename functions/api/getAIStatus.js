@@ -3,40 +3,35 @@
  * Checks which AI providers are configured with API keys
  */
 
+import { getProviderSettingsSnapshot } from '../lib/providerSettings.js';
+
 export async function onRequestGet(context) {
   const { env } = context;
+
+  const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
   
-  // Debug logging
-  console.log('Environment variables check:');
-  console.log('OPENAI_API_KEY:', env.OPENAI_API_KEY ? 'SET' : 'NOT SET');
-  console.log('GEMINI_API_KEY:', env.GEMINI_API_KEY ? 'SET' : 'NOT SET');
-  console.log('ANTHROPIC_API_KEY:', env.ANTHROPIC_API_KEY ? 'SET' : 'NOT SET');
-  console.log('MISTRAL_API_KEY:', env.MISTRAL_API_KEY ? 'SET' : 'NOT SET');
+  const providers = Object.entries(providerMap).reduce((acc, [name, provider]) => {
+    const hasUsableKey = Boolean(provider.apiKey);
+    acc[name] = {
+      available: hasUsableKey,
+      configured: hasUsableKey,
+      message: hasUsableKey ? 'Konfigurerad' : 'Inte konfigurerad',
+      activeModel: provider.model,
+      label: provider.displayName || name,
+      models: [],
+    };
+    return acc;
+  }, {});
+
+  const availableProviders = Object.entries(providers)
+    .filter(([, info]) => info.available)
+    .map(([name]) => name);
   
-  const providers = {
-    openai: {
-      available: Boolean(env.OPENAI_API_KEY),
-      message: env.OPENAI_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
-      models: ['gpt-4o-mini', 'gpt-4o']
-    },
-    gemini: {
-      available: Boolean(env.GEMINI_API_KEY),
-      message: env.GEMINI_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
-      models: ['gemini-1.5-flash', 'gemini-1.5-pro']
-    },
-    anthropic: {
-      available: Boolean(env.ANTHROPIC_API_KEY),
-      message: env.ANTHROPIC_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
-      models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022']
-    },
-    mistral: {
-      available: Boolean(env.MISTRAL_API_KEY),
-      message: env.MISTRAL_API_KEY ? 'Konfigurerad' : 'Inte konfigurerad',
-      models: ['mistral-small-latest', 'mistral-large-latest']
-    }
-  };
-  
-  return new Response(JSON.stringify({ providers }), {
+  return new Response(JSON.stringify({ 
+    providers,
+    available: availableProviders.length > 0,
+    primaryProvider: availableProviders[0] || null
+  }), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',

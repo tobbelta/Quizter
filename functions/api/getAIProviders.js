@@ -4,12 +4,14 @@
  */
 
 import { AIProviderFactory } from '../lib/ai-providers/index.js';
+import { getProviderSettingsSnapshot } from '../lib/providerSettings.js';
 
 export async function onRequestGet(context) {
   const { env } = context;
   
   try {
-    const factory = new AIProviderFactory(env);
+    const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
+    const factory = new AIProviderFactory(env, providerMap);
     const providersInfo = factory.getProvidersInfo();
     const availableProviders = factory.getAvailableProviders();
     

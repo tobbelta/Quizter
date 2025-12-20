@@ -32,17 +32,139 @@ export async function onRequestPut(context) {
 
     console.log(`[questions/[id] PUT] Updating question ${questionId}`);
 
+    const hasField = (key) => Object.prototype.hasOwnProperty.call(updateData || {}, key);
+    const readField = (primary, fallback) => {
+      if (hasField(primary)) {
+        return { present: true, value: updateData[primary] };
+      }
+      if (fallback && hasField(fallback)) {
+        return { present: true, value: updateData[fallback] };
+      }
+      return { present: false, value: undefined };
+    };
+    const normalizeJsonArray = (value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (value === null) {
+        return null;
+      }
+      if (Array.isArray(value)) {
+        return JSON.stringify(value);
+      }
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          return JSON.stringify(parsed);
+        } catch {
+          return JSON.stringify([value]);
+        }
+      }
+      return JSON.stringify(value);
+    };
+
     const now = new Date().toISOString();
     const fields = [];
     const values = [];
 
     // Handle all possible update fields
+    const questionSv = readField('question_sv', 'questionSv');
+    if (questionSv.present) {
+      fields.push('question_sv = ?');
+      values.push(questionSv.value ?? null);
+    }
+    const questionEn = readField('question_en', 'questionEn');
+    if (questionEn.present) {
+      fields.push('question_en = ?');
+      values.push(questionEn.value ?? null);
+    }
+    const optionsSv = readField('options_sv', 'optionsSv');
+    const optionsSvValue = optionsSv.present ? normalizeJsonArray(optionsSv.value) : undefined;
+    if (optionsSvValue !== undefined) {
+      fields.push('options_sv = ?');
+      values.push(optionsSvValue);
+    }
+    const optionsEn = readField('options_en', 'optionsEn');
+    const optionsEnValue = optionsEn.present ? normalizeJsonArray(optionsEn.value) : undefined;
+    if (optionsEnValue !== undefined) {
+      fields.push('options_en = ?');
+      values.push(optionsEnValue);
+    }
+    const correctOption = readField('correct_option', 'correctOption');
+    if (correctOption.present) {
+      let value = correctOption.value;
+      if (typeof value === 'string') {
+        const parsed = parseInt(value, 10);
+        if (!Number.isNaN(parsed)) {
+          value = parsed;
+        }
+      }
+      fields.push('correct_option = ?');
+      values.push(value);
+    }
+    const explanationSv = readField('explanation_sv', 'explanationSv');
+    if (explanationSv.present) {
+      fields.push('explanation_sv = ?');
+      values.push(explanationSv.value ?? null);
+    }
+    const explanationEn = readField('explanation_en', 'explanationEn');
+    if (explanationEn.present) {
+      fields.push('explanation_en = ?');
+      values.push(explanationEn.value ?? null);
+    }
+    const backgroundSv = readField('background_sv', 'backgroundSv');
+    if (backgroundSv.present) {
+      fields.push('background_sv = ?');
+      values.push(backgroundSv.value ?? null);
+    }
+    const backgroundEn = readField('background_en', 'backgroundEn');
+    if (backgroundEn.present) {
+      fields.push('background_en = ?');
+      values.push(backgroundEn.value ?? null);
+    }
+    const categoriesField = readField('categories', 'category');
+    const categoriesValue = categoriesField.present ? normalizeJsonArray(categoriesField.value) : undefined;
+    if (categoriesValue !== undefined) {
+      fields.push('categories = ?');
+      values.push(categoriesValue);
+    }
+    const ageGroupsField = readField('age_groups', 'ageGroups');
+    const ageGroupsValue = ageGroupsField.present ? normalizeJsonArray(ageGroupsField.value) : undefined;
+    if (ageGroupsValue !== undefined) {
+      fields.push('age_groups = ?');
+      values.push(ageGroupsValue);
+    }
+    const difficultyField = readField('difficulty');
+    if (difficultyField.present) {
+      fields.push('difficulty = ?');
+      values.push(difficultyField.value ?? null);
+    }
+    const audienceField = readField('audience');
+    if (audienceField.present) {
+      fields.push('audience = ?');
+      values.push(audienceField.value ?? null);
+    }
+    const targetAudienceField = readField('target_audience', 'targetAudience');
+    if (targetAudienceField.present) {
+      fields.push('target_audience = ?');
+      values.push(targetAudienceField.value ?? null);
+    }
+    const sourceField = readField('source');
+    if (sourceField.present) {
+      fields.push('source = ?');
+      values.push(sourceField.value ?? null);
+    }
+    const illustrationEmoji = readField('illustration_emoji', 'emoji');
+    if (illustrationEmoji.present) {
+      fields.push('illustration_emoji = ?');
+      values.push(illustrationEmoji.value ?? null);
+    }
     if (updateData.validated !== undefined) {
       fields.push('validated = ?');
       values.push(updateData.validated ? 1 : 0);
     }
     if (updateData.aiValidated !== undefined) {
-      fields.push('validated = ?');
+      fields.push('ai_validated = ?');
       values.push(updateData.aiValidated ? 1 : 0);
     }
     if (updateData.aiValidationResult !== undefined) {
@@ -50,8 +172,12 @@ export async function onRequestPut(context) {
       values.push(updateData.aiValidationResult ? JSON.stringify(updateData.aiValidationResult) : null);
     }
     if (updateData.aiValidatedAt !== undefined) {
-      fields.push('validation_generated_at = ?');
+      fields.push('ai_validated_at = ?');
       values.push(updateData.aiValidatedAt ? new Date(updateData.aiValidatedAt).toISOString() : null);
+    }
+    if (updateData.validationGeneratedAt !== undefined) {
+      fields.push('validation_generated_at = ?');
+      values.push(updateData.validationGeneratedAt ? new Date(updateData.validationGeneratedAt).toISOString() : null);
     }
     if (updateData.structureValidationResult !== undefined) {
       fields.push('structure_validation_result = ?');
@@ -84,6 +210,14 @@ export async function onRequestPut(context) {
     if (updateData.illustrationGeneratedAt !== undefined) {
       fields.push('illustration_generated_at = ?');
       values.push(updateData.illustrationGeneratedAt ? new Date(updateData.illustrationGeneratedAt).toISOString() : null);
+    }
+    if (updateData.emojiProvider !== undefined) {
+      fields.push('illustration_provider = ?');
+      values.push(updateData.emojiProvider);
+    }
+    if (updateData.emojiGeneratedAt !== undefined) {
+      fields.push('illustration_generated_at = ?');
+      values.push(updateData.emojiGeneratedAt ? new Date(updateData.emojiGeneratedAt).toISOString() : null);
     }
     if (updateData.reported !== undefined) {
       fields.push('reported = ?');

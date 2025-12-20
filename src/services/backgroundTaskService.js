@@ -65,11 +65,56 @@ const fetchAllTasks = async () => {
   }
 };
 
-/**
- * Subscribe to user tasks with polling
- * Returns an unsubscribe function
- */
-const subscribeToUserTasks = (userId, callback, options = {}) => {
+const buildEventSourceUrl = (params = {}) => {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      searchParams.set(key, value);
+    }
+  });
+
+  const query = searchParams.toString();
+  return `${API_BASE_URL}/api/subscribeToTasks${query ? `?${query}` : ''}`;
+};
+
+const subscribeToTasksViaSSE = (params, callback, onError) => {
+  if (typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
+    return null;
+  }
+
+  const url = buildEventSourceUrl(params);
+  const source = new EventSource(url);
+  let isClosed = false;
+
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      if (!payload.success) {
+        callback([], new Error(payload.error || 'SSE update failed'));
+        return;
+      }
+      const tasks = (payload.tasks || []).map(transformTask);
+      callback(tasks, null);
+    } catch (error) {
+      callback([], error);
+    }
+  };
+
+  source.onerror = () => {
+    if (isClosed) return;
+    callback([], new Error('SSE connection error'));
+    if (typeof onError === 'function') {
+      onError();
+    }
+  };
+
+  return () => {
+    isClosed = true;
+    source.close();
+  };
+};
+
+const subscribeToUserTasksPolling = (userId, callback, options = {}) => {
   if (!userId) {
     callback([]);
     return () => {};
@@ -93,20 +138,14 @@ const subscribeToUserTasks = (userId, callback, options = {}) => {
     }
   };
   
-  // Start polling
   poll();
   
-  // Return unsubscribe function
   return () => {
     isActive = false;
   };
 };
 
-/**
- * Subscribe to all tasks with polling (superuser)
- * Returns an unsubscribe function
- */
-const subscribeToAllTasks = (callback, options = {}) => {
+const subscribeToAllTasksPolling = (callback, options = {}) => {
   const pollInterval = options.pollInterval || 3000; // Poll every 3 seconds
   let isActive = true;
   
@@ -125,12 +164,71 @@ const subscribeToAllTasks = (callback, options = {}) => {
     }
   };
   
-  // Start polling
   poll();
   
-  // Return unsubscribe function
   return () => {
     isActive = false;
+  };
+};
+
+/**
+ * Subscribe to user tasks (SSE first, fallback to polling)
+ * Returns an unsubscribe function
+ */
+const subscribeToUserTasks = (userId, callback, options = {}) => {
+  if (!userId) {
+    callback([]);
+    return () => {};
+  }
+
+  let pollUnsubscribe = null;
+  let sseUnsubscribe = null;
+
+  const handleSseError = () => {
+    if (pollUnsubscribe) return;
+    if (sseUnsubscribe) {
+      sseUnsubscribe();
+      sseUnsubscribe = null;
+    }
+    pollUnsubscribe = subscribeToUserTasksPolling(userId, callback, options);
+  };
+
+  sseUnsubscribe = subscribeToTasksViaSSE({ userId }, callback, handleSseError);
+  if (!sseUnsubscribe) {
+    return subscribeToUserTasksPolling(userId, callback, options);
+  }
+
+  return () => {
+    if (sseUnsubscribe) sseUnsubscribe();
+    if (pollUnsubscribe) pollUnsubscribe();
+  };
+};
+
+/**
+ * Subscribe to all tasks (SSE first, fallback to polling)
+ * Returns an unsubscribe function
+ */
+const subscribeToAllTasks = (callback, options = {}) => {
+  let pollUnsubscribe = null;
+  let sseUnsubscribe = null;
+
+  const handleSseError = () => {
+    if (pollUnsubscribe) return;
+    if (sseUnsubscribe) {
+      sseUnsubscribe();
+      sseUnsubscribe = null;
+    }
+    pollUnsubscribe = subscribeToAllTasksPolling(callback, options);
+  };
+
+  sseUnsubscribe = subscribeToTasksViaSSE({}, callback, handleSseError);
+  if (!sseUnsubscribe) {
+    return subscribeToAllTasksPolling(callback, options);
+  }
+
+  return () => {
+    if (sseUnsubscribe) sseUnsubscribe();
+    if (pollUnsubscribe) pollUnsubscribe();
   };
 };
 
@@ -140,5 +238,3 @@ export const backgroundTaskService = {
   subscribeToUserTasks,
   subscribeToAllTasks,
 };
-
-

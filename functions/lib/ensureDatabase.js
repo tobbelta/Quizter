@@ -3,6 +3,9 @@
  * Used in background tasks that don't go through middleware
  */
 
+import { ensureCategoriesTable } from './categories.js';
+import { ensureAudienceTables } from './audiences.js';
+
 let dbInitialized = false;
 
 async function ensureTableColumns(db, tableName, columns) {
@@ -18,6 +21,8 @@ async function ensureTableColumns(db, tableName, columns) {
 
 async function ensureQuestionsSchema(db) {
   await ensureTableColumns(db, 'questions', [
+    { name: 'background_sv', ddl: 'background_sv TEXT' },
+    { name: 'background_en', ddl: 'background_en TEXT' },
     { name: 'illustration_emoji', ddl: 'illustration_emoji TEXT' },
     { name: 'ai_generated', ddl: 'ai_generated BOOLEAN DEFAULT FALSE' },
     { name: 'ai_generation_provider', ddl: 'ai_generation_provider TEXT' },
@@ -35,6 +40,22 @@ async function ensureQuestionsSchema(db) {
     { name: 'report_count', ddl: 'report_count INTEGER DEFAULT 0' },
     { name: 'reports', ddl: 'reports TEXT' },
     { name: 'report_resolved_at', ddl: 'report_resolved_at INTEGER' },
+  ]);
+}
+
+async function ensureProviderSettingsSchema(db) {
+  await ensureTableColumns(db, 'provider_settings', [
+    { name: 'purpose_settings', ddl: 'purpose_settings TEXT' },
+    { name: 'model', ddl: 'model TEXT' },
+    { name: 'encrypted_api_key', ddl: 'encrypted_api_key TEXT' },
+    { name: 'api_key_hint', ddl: 'api_key_hint TEXT' },
+    { name: 'display_name', ddl: 'display_name TEXT' },
+    { name: 'base_url', ddl: 'base_url TEXT' },
+    { name: 'extra_headers', ddl: 'extra_headers TEXT' },
+    { name: 'supports_response_format', ddl: 'supports_response_format BOOLEAN DEFAULT TRUE' },
+    { name: 'max_questions_per_request', ddl: 'max_questions_per_request INTEGER' },
+    { name: 'provider_type', ddl: 'provider_type TEXT' },
+    { name: 'is_custom', ddl: 'is_custom BOOLEAN DEFAULT FALSE' },
   ]);
 }
 
@@ -92,10 +113,16 @@ async function addMissingColumns(db) {
 
     // Ensure questions table has all expected columns for API compatibility
     await ensureQuestionsSchema(db);
+    await ensureProviderSettingsSchema(db);
+    await ensureCategoriesTable(db);
+    await ensureAudienceTables(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
     try {
       await ensureQuestionsSchema(db);
+      await ensureProviderSettingsSchema(db);
+      await ensureCategoriesTable(db);
+      await ensureAudienceTables(db);
     } catch (schemaError) {
       console.log('[ensureDatabase] Questions schema ensure error:', schemaError.message);
     }
@@ -156,6 +183,8 @@ export async function ensureDatabase(db) {
         correct_option INTEGER NOT NULL,
         explanation_sv TEXT,
         explanation_en TEXT,
+        background_sv TEXT,
+        background_en TEXT,
         age_groups TEXT,
         categories TEXT,
         difficulty TEXT,
@@ -178,6 +207,43 @@ export async function ensureDatabase(db) {
         created_by TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER
+      )`,
+      `CREATE TABLE categories (
+        name TEXT PRIMARY KEY,
+        description TEXT,
+        prompt TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE age_groups (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        description TEXT,
+        prompt TEXT,
+        min_age INTEGER,
+        max_age INTEGER,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE target_audiences (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        description TEXT,
+        prompt TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE age_group_targets (
+        age_group_id TEXT NOT NULL,
+        target_audience_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (age_group_id, target_audience_id)
       )`,
       `CREATE TABLE runs (
         id TEXT PRIMARY KEY,
@@ -225,6 +291,17 @@ export async function ensureDatabase(db) {
         is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         is_available BOOLEAN NOT NULL DEFAULT TRUE,
         last_checked INTEGER,
+        purpose_settings TEXT,
+        model TEXT,
+        encrypted_api_key TEXT,
+        api_key_hint TEXT,
+        display_name TEXT,
+        base_url TEXT,
+        extra_headers TEXT,
+        supports_response_format BOOLEAN DEFAULT TRUE,
+        max_questions_per_request INTEGER,
+        provider_type TEXT,
+        is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
       )`,
       `CREATE TABLE background_tasks (
@@ -250,10 +327,12 @@ export async function ensureDatabase(db) {
     }
     
     console.log('[ensureDatabase] Database initialized successfully');
-    dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed
     await ensureQuestionsSchema(db);
+    await ensureCategoriesTable(db);
+    await ensureAudienceTables(db);
+    dbInitialized = true;
     
   } catch (error) {
     console.error('[ensureDatabase] Error:', error);

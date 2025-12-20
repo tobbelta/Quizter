@@ -40,6 +40,8 @@ async function initDatabaseIfNeeded(env) {
         correct_option INTEGER NOT NULL,
         explanation_sv TEXT,
         explanation_en TEXT,
+        background_sv TEXT,
+        background_en TEXT,
         age_groups TEXT,
         categories TEXT,
         difficulty TEXT,
@@ -62,6 +64,43 @@ async function initDatabaseIfNeeded(env) {
         created_by TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER
+      )`,
+      `CREATE TABLE categories (
+        name TEXT PRIMARY KEY,
+        description TEXT,
+        prompt TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE age_groups (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        description TEXT,
+        prompt TEXT,
+        min_age INTEGER,
+        max_age INTEGER,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE target_audiences (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        description TEXT,
+        prompt TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE age_group_targets (
+        age_group_id TEXT NOT NULL,
+        target_audience_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (age_group_id, target_audience_id)
       )`,
       `CREATE TABLE runs (
         id TEXT PRIMARY KEY,
@@ -113,6 +152,17 @@ async function initDatabaseIfNeeded(env) {
         is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         is_available BOOLEAN NOT NULL DEFAULT TRUE,
         last_checked INTEGER,
+        purpose_settings TEXT,
+        model TEXT,
+        encrypted_api_key TEXT,
+        api_key_hint TEXT,
+        display_name TEXT,
+        base_url TEXT,
+        extra_headers TEXT,
+        supports_response_format BOOLEAN DEFAULT TRUE,
+        max_questions_per_request INTEGER,
+        provider_type TEXT,
+        is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
       )`,
       `CREATE TABLE background_tasks (

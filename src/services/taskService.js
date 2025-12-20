@@ -2,13 +2,13 @@
  * Task Service
  * 
  * Provides utilities for working with background tasks.
- * Uses polling to monitor task completion since Cloudflare doesn't support real-time subscriptions.
+ * Uses SSE when available, with polling fallback.
  */
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 /**
- * Subscribe to a specific task's status updates via polling
+ * Subscribe to a specific task's status updates via SSE (fallback to polling)
  * @param {string} taskId - The task ID to monitor
  * @param {function} onUpdate - Callback called with task updates
  * @returns {function} Unsubscribe function
@@ -18,6 +18,81 @@ const subscribeToTask = (taskId, onUpdate) => {
     return () => {};
   }
 
+  let pollUnsubscribe = null;
+  const sseUnsubscribe = subscribeToTaskViaSSE(taskId, onUpdate, () => {
+    if (pollUnsubscribe) return;
+    pollUnsubscribe = subscribeToTaskPolling(taskId, onUpdate);
+  });
+
+  if (!sseUnsubscribe) {
+    pollUnsubscribe = subscribeToTaskPolling(taskId, onUpdate);
+  }
+
+  return () => {
+    if (sseUnsubscribe) sseUnsubscribe();
+    if (pollUnsubscribe) pollUnsubscribe();
+  };
+};
+
+const subscribeToTaskViaSSE = (taskId, onUpdate, onError) => {
+  if (typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
+    return null;
+  }
+
+  const url = `${API_BASE_URL}/api/subscribeToTask?taskId=${encodeURIComponent(taskId)}`;
+  const source = new EventSource(url);
+  let isClosed = false;
+
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      if (payload.task) {
+        let progress = payload.task.progress;
+        if (typeof progress === 'string') {
+          try {
+            progress = JSON.parse(progress);
+          } catch (error) {
+            progress = payload.task.progress;
+          }
+        }
+        const task = {
+          ...payload.task,
+          progress,
+        };
+        onUpdate(task);
+        if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+          source.close();
+          isClosed = true;
+        }
+        return;
+      }
+
+      if (payload.type === 'error' || payload.type === 'timeout') {
+        onUpdate({ status: 'failed', error: payload.error || 'Task failed' });
+        source.close();
+        isClosed = true;
+      }
+    } catch (error) {
+      console.error('[taskService] Failed to parse SSE update:', error);
+    }
+  };
+
+  source.onerror = () => {
+    if (isClosed) return;
+    source.close();
+    isClosed = true;
+    if (typeof onError === 'function') {
+      onError();
+    }
+  };
+
+  return () => {
+    isClosed = true;
+    source.close();
+  };
+};
+
+const subscribeToTaskPolling = (taskId, onUpdate) => {
   const pollInterval = 1000; // Poll every 1 second
   let isActive = true;
   
@@ -63,7 +138,6 @@ const subscribeToTask = (taskId, onUpdate) => {
   // Start polling
   poll();
   
-  // Return unsubscribe function
   return () => {
     isActive = false;
   };

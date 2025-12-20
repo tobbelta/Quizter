@@ -1,4 +1,3 @@
-const VALID_AGE_GROUPS = ['children', 'youth', 'adults'];
 const LEGACY_DIFFICULTY_MAP = {
   easy: ['children'],
   medium: ['youth'],
@@ -18,15 +17,6 @@ const LEGACY_AUDIENCE_MAP = {
   familj: ['children', 'adults'],
   family: ['children', 'adults'],
 };
-const VALID_TARGET_AUDIENCES = [
-  'swedish',
-  'english',
-  'international',
-  'global',
-  'german',
-  'norwegian',
-  'danish',
-];
 const MIN_TEXT_LENGTH = 10;
 const REQUIRED_OPTION_COUNT = 4;
 
@@ -44,13 +34,15 @@ const resolveLanguageBlock = (question, language) => {
   };
 };
 
-const resolveAgeGroups = (question) => {
+const resolveAgeGroups = (question, validAgeGroups = []) => {
+  const shouldFilter = Array.isArray(validAgeGroups) && validAgeGroups.length > 0;
   const groups = new Set();
 
   if (Array.isArray(question.ageGroups)) {
     question.ageGroups.forEach((value) => {
       const normalized = normalizeLower(value);
-      if (VALID_AGE_GROUPS.includes(normalized)) {
+      if (!normalized) return;
+      if (!shouldFilter || validAgeGroups.includes(normalized)) {
         groups.add(normalized);
       }
     });
@@ -105,8 +97,14 @@ const resolveCategories = (question) => {
  * @param {string} language - Språk att validera (sv eller en)
  * @returns {Object} { valid: boolean, errors: string[] }
  */
-export const validateQuestion = (question, language = 'sv') => {
+export const validateQuestion = (question, language = 'sv', options = {}) => {
   const errors = [];
+  const validAgeGroups = Array.isArray(options.validAgeGroups) && options.validAgeGroups.length > 0
+    ? options.validAgeGroups.map((value) => normalizeLower(value))
+    : [];
+  const validTargetAudiences = Array.isArray(options.validTargetAudiences) && options.validTargetAudiences.length > 0
+    ? options.validTargetAudiences.map((value) => normalizeLower(value))
+    : [];
 
   const langData = resolveLanguageBlock(question, language);
   if (!langData) {
@@ -114,30 +112,30 @@ export const validateQuestion = (question, language = 'sv') => {
     return { valid: false, errors };
   }
 
-  const { text, options, explanation } = langData;
+  const { text, options: answerOptions, explanation } = langData;
   const correctOption = question.correctOption;
 
   if (!text || text.trim().length < MIN_TEXT_LENGTH) {
     errors.push('Frågetexten måste vara minst 10 tecken lång');
   }
 
-  if (!Array.isArray(options)) {
+  if (!Array.isArray(answerOptions)) {
     errors.push('Frågan måste ha svarsalternativ');
-  } else if (options.length !== REQUIRED_OPTION_COUNT) {
-    errors.push(`Frågan måste ha exakt 4 svarsalternativ (har ${options.length})`);
+  } else if (answerOptions.length !== REQUIRED_OPTION_COUNT) {
+    errors.push(`Frågan måste ha exakt 4 svarsalternativ (har ${answerOptions.length})`);
   } else {
-    options.forEach((option, index) => {
+    answerOptions.forEach((option, index) => {
       if (!option || option.trim().length === 0) {
         errors.push(`Alternativ ${index + 1} är tomt`);
       }
     });
 
-    const uniqueOptions = new Set(options.map((option) => option.trim().toLowerCase()));
-    if (uniqueOptions.size !== options.length) {
+    const uniqueOptions = new Set(answerOptions.map((option) => option.trim().toLowerCase()));
+    if (uniqueOptions.size !== answerOptions.length) {
       errors.push('Flera svarsalternativ är identiska');
     }
 
-    const similarOptions = findSimilarOptions(options);
+    const similarOptions = findSimilarOptions(answerOptions);
     if (similarOptions.length > 0) {
       errors.push(`Varning: Dessa alternativ verkar liknande: ${similarOptions.join(', ')}`);
     }
@@ -145,24 +143,24 @@ export const validateQuestion = (question, language = 'sv') => {
 
   if (typeof correctOption !== 'number') {
     errors.push('Frågan måste ha ett korrekt svar angivet (correctOption)');
-  } else if (correctOption < 0 || correctOption >= (options?.length || 0)) {
-    errors.push(`Korrekt svar (${correctOption}) är utanför giltigt intervall (0-${(options?.length || 1) - 1})`);
+  } else if (correctOption < 0 || correctOption >= (answerOptions?.length || 0)) {
+    errors.push(`Korrekt svar (${correctOption}) är utanför giltigt intervall (0-${(answerOptions?.length || 1) - 1})`);
   }
 
   if (!explanation || explanation.trim().length < MIN_TEXT_LENGTH) {
     errors.push('Förklaringen måste vara minst 10 tecken lång');
   }
 
-  const ageGroups = resolveAgeGroups(question);
+  const ageGroups = resolveAgeGroups(question, validAgeGroups);
   if (ageGroups.length === 0) {
-    errors.push('Frågan måste ha minst en ageGroup (children/youth/adults)');
+    errors.push('Frågan måste ha minst en ageGroup');
   }
 
   const targetAudience = resolveTargetAudience(question);
   if (!targetAudience) {
     errors.push('Frågan måste ha en targetAudience (t.ex. swedish/english/international)');
-  } else if (!VALID_TARGET_AUDIENCES.includes(targetAudience)) {
-    errors.push(`Frågan måste ha en giltig targetAudience (${VALID_TARGET_AUDIENCES.join('/')})`);
+  } else if (validTargetAudiences.length > 0 && !validTargetAudiences.includes(targetAudience)) {
+    errors.push(`Frågan måste ha en giltig targetAudience (${validTargetAudiences.join('/')})`);
   }
 
   const categories = resolveCategories(question);
@@ -300,9 +298,9 @@ export const findDuplicates = (questions, language = 'sv', threshold = 0.85) => 
  * @param {string} language - Språk att validera
  * @returns {Object} { valid: number, invalid: number, errors: Array }
  */
-export const validateQuestions = (questions, language = 'sv') => {
+export const validateQuestions = (questions, language = 'sv', options = {}) => {
   const results = questions.map((question, index) => {
-    const validation = validateQuestion(question, language);
+    const validation = validateQuestion(question, language, options);
     return {
       index,
       questionId: question.id,

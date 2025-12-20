@@ -4,12 +4,14 @@
  */
 
 import { AIProviderFactory } from '../lib/ai-providers/index.js';
+import { getProviderSettingsSnapshot } from '../lib/providerSettings.js';
 
 export async function onRequestGet(context) {
   const { env } = context;
 
   try {
-    const factory = new AIProviderFactory(env);
+    const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
+    const factory = new AIProviderFactory(env, providerMap);
     const availableProviders = factory.getAvailableProviders();
     
     console.log('[getProviderStatus] Checking providers:', availableProviders);
@@ -20,6 +22,7 @@ export async function onRequestGet(context) {
         try {
           const provider = factory.getProvider(providerName);
           const info = provider.getInfo();
+          const displayName = info?.label || info?.name || providerName;
           
           // Check if provider has credits/tokens available
           console.log(`[getProviderStatus] Checking credits for ${providerName}...`);
@@ -39,6 +42,7 @@ export async function onRequestGet(context) {
             
             return {
               name: providerName,
+              label: displayName,
               available: false,
               status,
               errorType: creditCheck.error,
@@ -49,6 +53,7 @@ export async function onRequestGet(context) {
 
           return {
             name: providerName,
+            label: displayName,
             available: true,
             status: 'active',
             model: provider.model,
@@ -74,6 +79,7 @@ export async function onRequestGet(context) {
 
           return {
             name: providerName,
+            label: providerName,
             available: false,
             status,
             errorType,

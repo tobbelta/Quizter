@@ -115,11 +115,13 @@ function transformQuestionFromDb(row) {
         text: row.question_sv || '',
         options: optionsSv,
         explanation: row.explanation_sv || '',
+        background: row.background_sv || ''
       },
       en: {
         text: row.question_en || row.question_sv || '',
         options: optionsEn.length === 4 ? optionsEn : optionsSv,
         explanation: row.explanation_en || row.explanation_sv || '',
+        background: row.background_en || row.background_sv || ''
       }
     },
     correctOption: row.correct_option,

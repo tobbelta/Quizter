@@ -178,7 +178,7 @@ const BackgroundTasksDropdown = ({
                 type="button"
                 onClick={() => {
                   onClose();
-                  navigate('/superuser/tasks');
+                  navigate('/admin/tasks');
                 }}
                 className="text-cyan-300 hover:text-cyan-200 font-semibold"
               >

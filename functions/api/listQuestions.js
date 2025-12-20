@@ -26,19 +26,22 @@ export async function onRequestGet(context) {
       // Legacy fields for backwards compatibility
       question: row.question_sv || row.question,
       options: JSON.parse(row.options_sv || row.options || '[]'),
-      correctOption: row.correct_option || row.correctOption,
+      correctOption: row.correct_option ?? row.correctOption,
       explanation: row.explanation_sv || row.explanation || '',
+      background: row.background_sv || row.background || '',
       // Bilingual structure
       languages: {
         sv: {
           text: row.question_sv || row.question || '',
           options: JSON.parse(row.options_sv || row.options || '[]'),
-          explanation: row.explanation_sv || row.explanation || ''
+          explanation: row.explanation_sv || row.explanation || '',
+          background: row.background_sv || ''
         },
         en: row.question_en ? {
           text: row.question_en || '',
           options: JSON.parse(row.options_en || '[]'),
-          explanation: row.explanation_en || ''
+          explanation: row.explanation_en || '',
+          background: row.background_en || ''
         } : null
       },
       emoji: row.illustration_emoji || row.emoji || '❓',

@@ -6,6 +6,7 @@
 
 import { ensureDatabase } from '../lib/ensureDatabase.js';
 import { AIProviderFactory } from '../lib/ai-providers/index.js';
+import { getProviderSettingsSnapshot } from '../lib/providerSettings.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -39,7 +40,8 @@ export async function onRequestPost(context) {
     }
 
     // Skapa AI provider
-    const aiFactory = new AIProviderFactory(env);
+    const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
+    const aiFactory = new AIProviderFactory(env, providerMap);
     const aiProvider = aiFactory.getProvider(provider);
 
     // Generera ny emoji med AI

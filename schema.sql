@@ -15,6 +15,10 @@ DROP TABLE IF EXISTS answers;
 DROP TABLE IF EXISTS participants;
 DROP TABLE IF EXISTS runs;
 DROP TABLE IF EXISTS questions;
+DROP TABLE IF EXISTS age_group_targets;
+DROP TABLE IF EXISTS target_audiences;
+DROP TABLE IF EXISTS age_groups;
+DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS donations;
 DROP TABLE IF EXISTS provider_settings;
@@ -45,6 +49,8 @@ CREATE TABLE questions (
   correct_option INTEGER NOT NULL,
   explanation_sv TEXT,
   explanation_en TEXT,
+  background_sv TEXT,
+  background_en TEXT,
   age_groups TEXT,         -- JSON array: '["children", "adults"]'
   categories TEXT,         -- JSON array: '["Geografi", "Historia"]'
   difficulty TEXT,         -- 'easy', 'medium', 'hard'
@@ -61,6 +67,55 @@ CREATE TABLE questions (
   manually_rejected BOOLEAN DEFAULT FALSE,
   created_at INTEGER NOT NULL,
   updated_at INTEGER
+);
+
+-- ----------------------------------------------------------------------------
+-- `categories` table
+-- Defines configurable question categories and AI prompt guidance.
+-- ----------------------------------------------------------------------------
+CREATE TABLE categories (
+  name TEXT PRIMARY KEY,
+  description TEXT,
+  prompt TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+
+-- ----------------------------------------------------------------------------
+-- `age_groups` and `target_audiences`
+-- Configurable metadata for age groups and target audiences.
+-- ----------------------------------------------------------------------------
+CREATE TABLE age_groups (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  description TEXT,
+  prompt TEXT,
+  min_age INTEGER,
+  max_age INTEGER,
+  is_active BOOLEAN DEFAULT TRUE,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+
+CREATE TABLE target_audiences (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  description TEXT,
+  prompt TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER
+);
+
+CREATE TABLE age_group_targets (
+  age_group_id TEXT NOT NULL,
+  target_audience_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (age_group_id, target_audience_id)
 );
 
 -- ----------------------------------------------------------------------------
@@ -132,6 +187,17 @@ CREATE TABLE provider_settings (
   is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   is_available BOOLEAN NOT NULL DEFAULT TRUE,
   last_checked INTEGER,
+  purpose_settings TEXT, -- JSON per purpose settings
+  model TEXT,
+  encrypted_api_key TEXT,
+  api_key_hint TEXT,
+  display_name TEXT,
+  base_url TEXT,
+  extra_headers TEXT,
+  supports_response_format BOOLEAN DEFAULT TRUE,
+  max_questions_per_request INTEGER,
+  provider_type TEXT,
+  is_custom BOOLEAN DEFAULT FALSE,
   updated_at INTEGER
 );
 
@@ -151,4 +217,3 @@ CREATE TABLE background_tasks (
   started_at INTEGER,
   finished_at INTEGER
 );
-
