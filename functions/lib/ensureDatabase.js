@@ -21,8 +21,6 @@ async function ensureTableColumns(db, tableName, columns) {
 
 async function ensureQuestionsSchema(db) {
   await ensureTableColumns(db, 'questions', [
-    { name: 'background_sv', ddl: 'background_sv TEXT' },
-    { name: 'background_en', ddl: 'background_en TEXT' },
     { name: 'illustration_emoji', ddl: 'illustration_emoji TEXT' },
     { name: 'ai_generated', ddl: 'ai_generated BOOLEAN DEFAULT FALSE' },
     { name: 'ai_generation_provider', ddl: 'ai_generation_provider TEXT' },
@@ -40,22 +38,6 @@ async function ensureQuestionsSchema(db) {
     { name: 'report_count', ddl: 'report_count INTEGER DEFAULT 0' },
     { name: 'reports', ddl: 'reports TEXT' },
     { name: 'report_resolved_at', ddl: 'report_resolved_at INTEGER' },
-  ]);
-}
-
-async function ensureProviderSettingsSchema(db) {
-  await ensureTableColumns(db, 'provider_settings', [
-    { name: 'purpose_settings', ddl: 'purpose_settings TEXT' },
-    { name: 'model', ddl: 'model TEXT' },
-    { name: 'encrypted_api_key', ddl: 'encrypted_api_key TEXT' },
-    { name: 'api_key_hint', ddl: 'api_key_hint TEXT' },
-    { name: 'display_name', ddl: 'display_name TEXT' },
-    { name: 'base_url', ddl: 'base_url TEXT' },
-    { name: 'extra_headers', ddl: 'extra_headers TEXT' },
-    { name: 'supports_response_format', ddl: 'supports_response_format BOOLEAN DEFAULT TRUE' },
-    { name: 'max_questions_per_request', ddl: 'max_questions_per_request INTEGER' },
-    { name: 'provider_type', ddl: 'provider_type TEXT' },
-    { name: 'is_custom', ddl: 'is_custom BOOLEAN DEFAULT FALSE' },
   ]);
 }
 
@@ -113,16 +95,10 @@ async function addMissingColumns(db) {
 
     // Ensure questions table has all expected columns for API compatibility
     await ensureQuestionsSchema(db);
-    await ensureProviderSettingsSchema(db);
-    await ensureCategoriesTable(db);
-    await ensureAudienceTables(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
     try {
       await ensureQuestionsSchema(db);
-      await ensureProviderSettingsSchema(db);
-      await ensureCategoriesTable(db);
-      await ensureAudienceTables(db);
     } catch (schemaError) {
       console.log('[ensureDatabase] Questions schema ensure error:', schemaError.message);
     }
@@ -333,6 +309,9 @@ export async function ensureDatabase(db) {
     await ensureCategoriesTable(db);
     await ensureAudienceTables(db);
     dbInitialized = true;
+
+    // Ensure schema is fully compatible even if older local schema existed
+    await ensureQuestionsSchema(db);
     
   } catch (error) {
     console.error('[ensureDatabase] Error:', error);
