@@ -2062,6 +2062,12 @@ const AdminQuestionsPage = () => {
       }
       const completedTask = await taskService.waitForCompletion(taskId);
       await questionService.refreshFromServer();
+      const generatedQuestionIds = completedTask?.result?.questions
+        ?.map((question) => question.id)
+        .filter(Boolean);
+      if (generatedQuestionIds && generatedQuestionIds.length > 0) {
+        waitForValidationCompletion(generatedQuestionIds, completedTask?.result?.provider || aiProvider);
+      }
 
       const generatedCount =
         completedTask?.result?.questionsGenerated ??
