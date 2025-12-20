@@ -1,7 +1,7 @@
 /**
  * Admin-sida för åldersgrupper och målgrupper.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
@@ -73,15 +73,7 @@ const AdminAudienceSettingsPage = () => {
   const [success, setSuccess] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    if (!isSuperUser) {
-      navigate('/');
-      return;
-    }
-    loadConfig();
-  }, [isSuperUser, navigate]);
-
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -117,7 +109,15 @@ const AdminAudienceSettingsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    if (!isSuperUser) {
+      navigate('/');
+      return;
+    }
+    loadConfig();
+  }, [isSuperUser, navigate, loadConfig]);
 
   const handleAgeGroupChange = (index, field, value) => {
     setAgeGroups((prev) => {

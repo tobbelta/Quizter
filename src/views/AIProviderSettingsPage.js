@@ -2,7 +2,7 @@
  * AI Provider Settings Page
  * Superuser interface för att konfigurera vilka AI-providers som ska användas för olika ändamål
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
@@ -78,21 +78,7 @@ const AIProviderSettingsPage = () => {
   });
   const [customProviderError, setCustomProviderError] = useState(null);
 
-  useEffect(() => {
-    if (!isSuperUser) {
-      navigate('/');
-      return;
-    }
-
-    loadSettings();
-  }, [isSuperUser, navigate]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(AUTO_TEST_KEY, String(autoTestEnabled));
-  }, [autoTestEnabled]);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -134,7 +120,21 @@ const AIProviderSettingsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    if (!isSuperUser) {
+      navigate('/');
+      return;
+    }
+
+    loadSettings();
+  }, [isSuperUser, navigate, loadSettings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(AUTO_TEST_KEY, String(autoTestEnabled));
+  }, [autoTestEnabled]);
 
   const handleToggle = (purpose, provider) => {
     setSettings(prev => ({

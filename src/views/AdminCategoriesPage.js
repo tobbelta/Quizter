@@ -1,7 +1,7 @@
 /**
  * Admin-sida för att hantera frågekategorier och AI-instruktioner.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
@@ -39,16 +39,7 @@ const AdminCategoriesPage = () => {
   const [success, setSuccess] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    if (!isSuperUser) {
-      navigate('/');
-      return;
-    }
-
-    loadCategories();
-  }, [isSuperUser, navigate]);
-
-  const loadCategories = async () => {
+  const loadCategories = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -67,7 +58,16 @@ const AdminCategoriesPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    if (!isSuperUser) {
+      navigate('/');
+      return;
+    }
+
+    loadCategories();
+  }, [isSuperUser, navigate, loadCategories]);
 
   const handleCategoryChange = (index, field, value) => {
     setCategories(prev => {
