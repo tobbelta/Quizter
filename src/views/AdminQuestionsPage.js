@@ -9,11 +9,81 @@ import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import { aiService } from '../services/aiService';
 import { taskService } from '../services/taskService';
+import { categoryService } from '../services/categoryService';
+import { audienceService } from '../services/audienceService';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
 import { questionRepository } from '../repositories/questionRepository';
 import MessageDialog from '../components/shared/MessageDialog';
+import { DEFAULT_CATEGORY_OPTIONS } from '../data/categoryOptions';
+import { DEFAULT_AGE_GROUPS, DEFAULT_TARGET_AUDIENCES, formatAgeGroupLabel } from '../data/audienceOptions';
+
+const PROVIDER_LABELS = {
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  anthropic: 'Claude',
+  mistral: 'Mistral',
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  together: 'Together AI',
+  fireworks: 'Fireworks AI',
+};
+
+const formatProviderLabel = (value) => {
+  if (!value) return null;
+  const key = value.toLowerCase();
+  return PROVIDER_LABELS[key] || `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+};
+
+const normalizeOptionList = (options = []) => {
+  const normalized = Array.isArray(options) ? [...options] : [];
+  while (normalized.length < 4) {
+    normalized.push('');
+  }
+  return normalized.slice(0, 4);
+};
+
+const buildEditState = (question) => {
+  const baseSv = question.languages?.sv || {
+    text: question.text,
+    options: question.options,
+    explanation: question.explanation,
+    background: question.background || ''
+  };
+  const baseEn = question.languages?.en || {
+    text: '',
+    options: [],
+    explanation: '',
+    background: ''
+  };
+  const initialCategories = Array.isArray(question.categories)
+    ? question.categories
+    : question.category
+      ? [question.category]
+      : [];
+  const initialAgeGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
+  return {
+    sv: {
+      text: baseSv?.text || '',
+      options: normalizeOptionList(baseSv?.options || []),
+      explanation: baseSv?.explanation || '',
+      background: baseSv?.background || ''
+    },
+    en: {
+      text: baseEn?.text || '',
+      options: normalizeOptionList(baseEn?.options || []),
+      explanation: baseEn?.explanation || '',
+      background: baseEn?.background || ''
+    },
+    categories: initialCategories,
+    ageGroups: initialAgeGroups,
+    targetAudience: question.targetAudience || 'swedish',
+    difficulty: question.difficulty || 'medium',
+    correctOption: typeof question.correctOption === 'number' ? question.correctOption : 0,
+    emoji: question.emoji || ''
+  };
+};
 
 const QuestionCard = ({
   question,
@@ -35,13 +105,27 @@ const QuestionCard = ({
   onEmojiRegenerationStart,
   onEmojiRegenerationEnd,
   setIndividualValidationTasks,
-  setDialogConfig
+  setDialogConfig,
+  validationProviders,
+  validationProvidersLoading,
+  categoryOptions,
+  ageGroupOptions,
+  targetAudienceOptions
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editErrors, setEditErrors] = useState([]);
 
   // Hämta data för valt språk
-  const svLang = question.languages?.sv || { text: question.text, options: question.options, explanation: question.explanation };
+  const svLang = question.languages?.sv || {
+    text: question.text,
+    options: question.options,
+    explanation: question.explanation,
+    background: question.background || ''
+  };
   const enLang = question.languages?.en;
+  const [editData, setEditData] = useState(() => buildEditState(question));
 
   const isExpanded = expandedQuestion === question.id;
 
@@ -66,6 +150,29 @@ const QuestionCard = ({
     }
   });
   const targetAudience = question.targetAudience;
+  const providerLabel = formatProviderLabel(question.provider);
+  const createdByLabel = question.createdBy || 'system';
+  const createdByDisplay = providerLabel
+    ? `${createdByLabel} (${providerLabel})`
+    : createdByLabel;
+  const normalizedGenerator = question.provider ? question.provider.toLowerCase() : null;
+  const availableValidationProviders = Array.isArray(validationProviders) ? validationProviders : [];
+  const hasAlternativeValidationProvider = normalizedGenerator
+    ? availableValidationProviders.some(name => name !== normalizedGenerator)
+    : availableValidationProviders.length > 0;
+  const validationDisabledReason = validationProvidersLoading
+    ? 'Laddar valideringsproviders...'
+    : hasAlternativeValidationProvider
+      ? null
+      : 'Ingen alternativ valideringsprovider tillgänglig';
+  const isValidationBlocked = Boolean(validationDisabledReason);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setEditData(buildEditState(question));
+      setEditErrors([]);
+    }
+  }, [question, isEditing]);
 
   const handleRegenerateEmoji = async () => {
     if (regeneratingEmojis && regeneratingEmojis.has(question.id)) {
@@ -111,6 +218,116 @@ const QuestionCard = ({
       if (onEmojiRegenerationEnd) {
         onEmojiRegenerationEnd(question.id);
       }
+    }
+  };
+
+  const updateLangField = (lang, field, value) => {
+    setEditData((prev) => ({
+      ...prev,
+      [lang]: {
+        ...prev[lang],
+        [field]: value
+      }
+    }));
+  };
+
+  const updateLangOption = (lang, index, value) => {
+    setEditData((prev) => {
+      const options = normalizeOptionList(prev[lang]?.options || []);
+      options[index] = value;
+      return {
+        ...prev,
+        [lang]: {
+          ...prev[lang],
+          options
+        }
+      };
+    });
+  };
+
+  const toggleListValue = (key, value) => {
+    setEditData((prev) => {
+      const currentList = Array.isArray(prev[key]) ? prev[key] : [];
+      const nextSet = new Set(currentList);
+      if (nextSet.has(value)) {
+        nextSet.delete(value);
+      } else {
+        nextSet.add(value);
+      }
+      return {
+        ...prev,
+        [key]: Array.from(nextSet)
+      };
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditData(buildEditState(question));
+    setEditErrors([]);
+  };
+
+  const validateEditData = () => {
+    const errors = [];
+    if (!editData?.sv?.text || editData.sv.text.trim().length < 5) {
+      errors.push('Svensk frågetext måste vara minst 5 tecken.');
+    }
+    const svOptions = normalizeOptionList(editData?.sv?.options || []);
+    if (svOptions.length !== 4 || svOptions.some((option) => !option || option.trim().length === 0)) {
+      errors.push('Alla svenska svarsalternativ måste vara ifyllda (4 st).');
+    }
+    const correct = typeof editData?.correctOption === 'number' ? editData.correctOption : -1;
+    if (correct < 0 || correct >= svOptions.length) {
+      errors.push('Korrekt svar måste vara ett giltigt alternativ (A-D).');
+    }
+    if (!editData?.sv?.explanation || editData.sv.explanation.trim().length < 5) {
+      errors.push('Svensk förklaring måste vara minst 5 tecken.');
+    }
+    if (!Array.isArray(editData?.categories) || editData.categories.length === 0) {
+      errors.push('Välj minst en kategori.');
+    }
+    if (!Array.isArray(editData?.ageGroups) || editData.ageGroups.length === 0) {
+      errors.push('Välj minst en åldersgrupp.');
+    }
+    if (!editData?.targetAudience) {
+      errors.push('Välj en målgrupp.');
+    }
+    return errors;
+  };
+
+  const handleSaveEdits = async (shouldValidate = false) => {
+    if (isSaving) return;
+    const errors = validateEditData();
+    if (errors.length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+    setIsSaving(true);
+    setEditErrors([]);
+    try {
+      await questionService.updateQuestionContent(question.id, editData);
+      setIsEditing(false);
+      setDialogConfig({
+        isOpen: true,
+        title: '✅ Frågan uppdaterad',
+        message: shouldValidate
+          ? 'Frågan sparades och AI-validering startas.'
+          : 'Frågan sparades. AI-validering är nollställd tills du kör den igen.',
+        type: 'success'
+      });
+      if (shouldValidate) {
+        await handleValidateWithAI();
+      }
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte spara ändringar:', error);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid uppdatering',
+        message: `Kunde inte spara ändringar: ${error.message}`,
+        type: 'error'
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -184,17 +401,73 @@ const QuestionCard = ({
     (rawAiResult?.validationType === 'structure' ? rawAiResult : null);
   const aiResult =
     rawAiResult && rawAiResult.validationType !== 'structure' ? rawAiResult : null;
+  const aiResultValid = typeof aiResult?.valid === 'boolean'
+    ? aiResult.valid
+    : typeof aiResult?.isValid === 'boolean'
+      ? aiResult.isValid
+      : null;
+  const validationContext = aiResult?.validationContext || null;
 
   const hasStructurePass = structureResult?.valid === true;
   const hasStructureIssue = structureResult?.valid === false;
 
   const aiPassed =
     question.manuallyApproved === true ||
-    question.aiValidated === true ||
-    (aiResult?.valid === true);
+    aiResultValid === true ||
+    question.aiValidated === true;
   const hasAiIssue =
     question.manuallyRejected === true ||
-    (aiResult && aiResult.valid === false);
+    aiResultValid === false;
+  const aiValidationState = aiResultValid === true
+    ? 'passed'
+    : aiResultValid === false
+      ? 'failed'
+      : (question.aiValidated ? 'passed' : 'unknown');
+  const aiValidatedState = aiValidationState === 'passed'
+    ? true
+    : aiValidationState === 'failed'
+      ? false
+      : null;
+  const showSkippedValidationBadge = !aiResult && !aiValidatedState && !question.manuallyApproved
+    && !question.manuallyRejected && !validationProvidersLoading && !hasAlternativeValidationProvider;
+  const editingLang = editData?.[currentLang] || editData?.sv || { text: '', options: [], explanation: '', background: '' };
+  const baseCategoryChoices = Array.isArray(categoryOptions)
+    ? categoryOptions.map((option) => ({ value: option.value, label: option.label || option.value }))
+    : [];
+  const categoryChoiceValues = new Set(baseCategoryChoices.map((option) => option.value));
+  const extraCategories = (editData?.categories || []).filter((value) => !categoryChoiceValues.has(value));
+  const categoryChoices = [
+    ...baseCategoryChoices,
+    ...extraCategories.map((value) => ({ value, label: value }))
+  ];
+  const baseAgeGroupChoices = Array.isArray(ageGroupOptions)
+    ? ageGroupOptions.map((group) => ({
+      value: group.id,
+      label: formatAgeGroupLabel(group) || group.label || group.id
+    }))
+    : [];
+  const ageGroupChoiceValues = new Set(baseAgeGroupChoices.map((option) => option.value));
+  const extraAgeGroups = (editData?.ageGroups || []).filter((value) => !ageGroupChoiceValues.has(value));
+  const ageGroupChoices = [
+    ...baseAgeGroupChoices,
+    ...extraAgeGroups.map((value) => ({ value, label: value }))
+  ];
+  const baseTargetAudienceChoices = Array.isArray(targetAudienceOptions)
+    ? targetAudienceOptions.map((target) => ({
+      value: target.id,
+      label: target.label || target.id
+    }))
+    : [];
+  const targetChoiceValues = new Set(baseTargetAudienceChoices.map((option) => option.value));
+  const extraTargets = editData?.targetAudience && !targetChoiceValues.has(editData.targetAudience)
+    ? [{ value: editData.targetAudience, label: editData.targetAudience }]
+    : [];
+  const targetAudienceChoices = [...baseTargetAudienceChoices, ...extraTargets];
+  const baseDifficultyChoices = ['easy', 'medium', 'hard'];
+  const difficultyValue = editData?.difficulty || 'medium';
+  const difficultyChoices = baseDifficultyChoices.includes(difficultyValue)
+    ? baseDifficultyChoices
+    : [...baseDifficultyChoices, difficultyValue];
 
   return (
     <div className={`rounded-lg border transition-all duration-300 p-4 ${
@@ -261,13 +534,24 @@ const QuestionCard = ({
                   </span>
                 )}
                 {aiPassed && question.manuallyRejected !== true && (
-                  <span className="inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-300" title="AI-validerad - Alla providers godkände">
-                    ✓ AI-OK
+                  <span
+                    className="inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-300"
+                    title={`AI-validerad${aiResult?.provider ? ` med ${formatProviderLabel(aiResult.provider)}` : ''}`}
+                  >
+                    ✓ AI-OK{aiResult?.provider ? ` (${formatProviderLabel(aiResult.provider)})` : ''}
                   </span>
                 )}
                 {hasAiIssue && (
                   <span className="inline-flex items-center rounded-full bg-red-500/20 px-2.5 py-0.5 text-xs font-medium text-red-300" title="AI-validering - problem hittades">
                     ✗ AI-fel
+                  </span>
+                )}
+                {showSkippedValidationBadge && (
+                  <span
+                    className="inline-flex items-center rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-medium text-amber-200"
+                    title={`Validering hoppad över: ingen alternativ provider${providerLabel ? ` (skapad av ${providerLabel})` : ''}`}
+                  >
+                    ⏭ Ingen validering
                   </span>
                 )}
 
@@ -465,6 +749,225 @@ const QuestionCard = ({
             </div>
           </div>
 
+          {isEditing && (
+            <div className="rounded border border-cyan-500/30 bg-slate-900/60 p-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-cyan-200">✏️ Redigera fråga</p>
+                  <p className="text-xs text-gray-400">Sparar nollställer tidigare AI-validering.</p>
+                </div>
+                <div className="flex items-center rounded-full bg-slate-800 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentLang('sv')}
+                    className={`px-2 py-0.5 text-xs rounded-full ${currentLang === 'sv' ? 'bg-cyan-500 text-black' : 'text-gray-300'}`}
+                  >
+                    SV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentLang('en')}
+                    className={`px-2 py-0.5 text-xs rounded-full ${currentLang === 'en' ? 'bg-cyan-500 text-black' : 'text-gray-300'}`}
+                  >
+                    EN
+                  </button>
+                </div>
+              </div>
+
+              {editErrors.length > 0 && (
+                <div className="rounded border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+                  <p className="font-semibold mb-1">Åtgärda innan sparning:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {editErrors.map((error, idx) => (
+                      <li key={`edit-error-${question.id}-${idx}`}>{error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                    Frågetext ({currentLang.toUpperCase()})
+                  </label>
+                  <textarea
+                    value={editingLang.text}
+                    onChange={(e) => updateLangField(currentLang, 'text', e.target.value)}
+                    className="w-full min-h-[80px] rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    placeholder={`Skriv frågetext på ${currentLang === 'sv' ? 'svenska' : 'engelska'}...`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                    Svarsalternativ ({currentLang.toUpperCase()})
+                  </label>
+                  <div className="space-y-2">
+                    {normalizeOptionList(editingLang.options).map((option, optionIndex) => (
+                      <div key={`option-${question.id}-${currentLang}-${optionIndex}`} className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-gray-400 w-6">
+                          {String.fromCharCode(65 + optionIndex)}:
+                        </span>
+                        <input
+                          type="text"
+                          value={option}
+                          onChange={(e) => updateLangOption(currentLang, optionIndex, e.target.value)}
+                          className="flex-1 rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                          placeholder={`Alternativ ${optionIndex + 1}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                    Förklaring ({currentLang.toUpperCase()})
+                  </label>
+                  <textarea
+                    value={editingLang.explanation}
+                    onChange={(e) => updateLangField(currentLang, 'explanation', e.target.value)}
+                    className="w-full min-h-[70px] rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    placeholder="Skriv en kort förklaring..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                    Bakgrund ({currentLang.toUpperCase()})
+                  </label>
+                  <textarea
+                    value={editingLang.background}
+                    onChange={(e) => updateLangField(currentLang, 'background', e.target.value)}
+                    className="w-full min-h-[70px] rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    placeholder="Fördjupande bakgrund (valfritt)..."
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-300 mb-2">Kategorier</p>
+                  <div className="flex flex-wrap gap-2">
+                    {categoryChoices.map((option) => (
+                      <label key={`category-${question.id}-${option.value}`} className="inline-flex items-center gap-2 rounded border border-slate-700 bg-slate-800/60 px-2 py-1 text-xs text-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={editData.categories.includes(option.value)}
+                          onChange={() => toggleListValue('categories', option.value)}
+                          className="h-4 w-4 rounded border-gray-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-300 mb-2">Åldersgrupper</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ageGroupChoices.map((option) => (
+                      <label key={`age-${question.id}-${option.value}`} className="inline-flex items-center gap-2 rounded border border-slate-700 bg-slate-800/60 px-2 py-1 text-xs text-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={editData.ageGroups.includes(option.value)}
+                          onChange={() => toggleListValue('ageGroups', option.value)}
+                          className="h-4 w-4 rounded border-gray-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Målgrupp</label>
+                  <select
+                    value={editData.targetAudience}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, targetAudience: e.target.value }))}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  >
+                    {targetAudienceChoices.map((option) => (
+                      <option key={`target-${question.id}-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Svårighetsgrad</label>
+                  <select
+                    value={editData.difficulty}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, difficulty: e.target.value }))}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  >
+                    {difficultyChoices.map((value) => (
+                      <option key={`difficulty-${question.id}-${value}`} value={value}>
+                        {value === 'easy' ? 'Lätt' : value === 'medium' ? 'Medel' : value === 'hard' ? 'Svår' : value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Korrekt svar</label>
+                  <select
+                    value={editData.correctOption}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, correctOption: Number(e.target.value) }))}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  >
+                    {normalizeOptionList(editData.sv.options).map((option, optionIndex) => (
+                      <option key={`correct-${question.id}-${optionIndex}`} value={optionIndex}>
+                        {String.fromCharCode(65 + optionIndex)}: {option || 'Tomt'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Emoji (valfritt)</label>
+                  <input
+                    type="text"
+                    value={editData.emoji}
+                    onChange={(e) => setEditData((prev) => ({ ...prev, emoji: e.target.value }))}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    placeholder="Ex: 🎯"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSaveEdits(false)}
+                  disabled={isSaving}
+                  className="px-3 py-1 text-xs rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-700 disabled:text-gray-400"
+                >
+                  {isSaving ? '⏳ Sparar...' : '💾 Spara'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveEdits(true)}
+                  disabled={isSaving}
+                  className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white disabled:bg-slate-700 disabled:text-gray-400"
+                >
+                  {isSaving ? '⏳ Sparar...' : '🚀 Spara + AI-validera'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={isSaving}
+                  className="px-3 py-1 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-white disabled:bg-slate-800 disabled:text-gray-500"
+                >
+                  Avbryt
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Illustration (Emoji eller SVG) */}
           {question.emoji && (
             <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
@@ -538,34 +1041,43 @@ const QuestionCard = ({
             );
           })()}
 
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-gray-300 mb-2">Svarsalternativ ({currentLang.toUpperCase()}):</p>
-            {(displayLang?.options || []).map((option, optionIndex) => (
-              <div
-                key={optionIndex}
-                className={`flex items-center gap-3 rounded border px-3 py-2 ${
-                  optionIndex === question.correctOption
-                    ? 'border-emerald-500 bg-emerald-500/20 text-emerald-100'
-                    : 'border-slate-600 bg-slate-800/40 text-gray-300'
-                }`}
-              >
-                <span className="text-sm font-mono">
-                  {String.fromCharCode(65 + optionIndex)}:
-                </span>
-                <span>{option}</span>
-                {optionIndex === question.correctOption && (
-                  <span className="ml-auto text-xs font-semibold text-emerald-200">
-                    RÄTT SVAR
+          {!isEditing && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-gray-300 mb-2">Svarsalternativ ({currentLang.toUpperCase()}):</p>
+              {(displayLang?.options || []).map((option, optionIndex) => (
+                <div
+                  key={optionIndex}
+                  className={`flex items-center gap-3 rounded border px-3 py-2 ${
+                    optionIndex === question.correctOption
+                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-100'
+                      : 'border-slate-600 bg-slate-800/40 text-gray-300'
+                  }`}
+                >
+                  <span className="text-sm font-mono">
+                    {String.fromCharCode(65 + optionIndex)}:
                   </span>
-                )}
-              </div>
-            ))}
-          </div>
+                  <span>{option}</span>
+                  {optionIndex === question.correctOption && (
+                    <span className="ml-auto text-xs font-semibold text-emerald-200">
+                      RÄTT SVAR
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-          {displayLang?.explanation && (
+          {!isEditing && displayLang?.explanation && (
             <div className="p-3 bg-slate-800/40 rounded border border-slate-600">
               <p className="text-sm font-semibold text-gray-300 mb-1">Förklaring ({currentLang.toUpperCase()}):</p>
               <p className="text-sm text-gray-300">{displayLang.explanation}</p>
+            </div>
+          )}
+
+          {!isEditing && displayLang?.background && (
+            <div className="p-3 bg-slate-800/40 rounded border border-slate-600">
+              <p className="text-sm font-semibold text-gray-300 mb-1">Bakgrund ({currentLang.toUpperCase()}):</p>
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">{displayLang.background}</p>
             </div>
           )}
 
@@ -618,29 +1130,48 @@ const QuestionCard = ({
             </div>
           )}
 
+          {!aiResult && !aiValidatedState && !question.manuallyApproved && !question.manuallyRejected && !validationProvidersLoading && !hasAlternativeValidationProvider && (
+            <div
+              className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200"
+              title={`Validering hoppad över: ingen alternativ provider${providerLabel ? ` (skapad av ${providerLabel})` : ''}`}
+            >
+              Validering hoppad över: ingen alternativ provider.
+            </div>
+          )}
+
           {/* AI-Valideringsresultat */}
           {aiResult && (
             <div
               className={`p-4 rounded border ${
                 question.manuallyRejected
                   ? 'bg-orange-500/10 border-orange-500/30'
-                  : question.aiValidated
+                  : aiValidationState === 'passed'
                   ? question.manuallyApproved
                     ? 'bg-blue-500/10 border-blue-500/30'
                     : 'bg-green-500/10 border-green-500/30'
-                  : 'bg-red-500/10 border-red-500/30'
+                  : aiValidationState === 'failed'
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : 'bg-amber-500/10 border-amber-500/30'
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className={`text-sm font-bold ${
                   question.manuallyRejected ? 'text-orange-300' :
-                  question.aiValidated ? (question.manuallyApproved ? 'text-blue-300' : 'text-green-300') : 'text-red-300'
+                  aiValidationState === 'passed'
+                    ? (question.manuallyApproved ? 'text-blue-300' : 'text-green-300')
+                    : aiValidationState === 'failed'
+                      ? 'text-red-300'
+                      : 'text-amber-300'
                 }`}>
                   {question.manuallyRejected
                     ? '✗ Manuellt underkänd'
                     : aiResult.validationType === 'manual'
                     ? '✓ Manuellt godkänd'
-                    : (question.aiValidated ? '✓ AI-validering: GODKÄND' : '✗ AI-validering: UNDERKÄND')
+                    : aiValidationState === 'passed'
+                      ? '✓ AI-validering: GODKÄND'
+                      : aiValidationState === 'failed'
+                        ? '✗ AI-validering: UNDERKÄND'
+                        : '⏳ AI-validering: EJ KLAR'
                   }
                 </span>
                 {aiResult.providersChecked && (
@@ -661,7 +1192,7 @@ const QuestionCard = ({
                 </div>
               )}
 
-              {aiResult.suggestions && aiResult.suggestions.length > 0 && (
+                {aiResult.suggestions && aiResult.suggestions.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-blue-300 mb-1">Förbättringsförslag:</p>
                   <ul className="list-disc list-inside space-y-1">
@@ -680,6 +1211,94 @@ const QuestionCard = ({
                   <p className="text-xs text-gray-300 whitespace-pre-wrap">
                     {aiResult.feedback || aiResult.reasoning}
                   </p>
+                </div>
+              )}
+
+              {aiResult.background && (
+                <div className="mb-2">
+                  <p className="text-xs font-semibold text-gray-300 mb-1">Bakgrund:</p>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap">
+                    {aiResult.background}
+                  </p>
+                </div>
+              )}
+
+              {Array.isArray(aiResult.factSummary) && aiResult.factSummary.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-xs font-semibold text-gray-300 mb-1">Faktapunkter:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {aiResult.factSummary.map((fact, idx) => (
+                      <li key={idx} className="text-xs text-gray-300">{fact}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {validationContext && (
+                <div className="mt-3 rounded border border-slate-700 bg-slate-900/50 p-3">
+                  <p className="text-xs font-semibold text-gray-300 mb-2">Valideringsunderlag</p>
+                  <div className="space-y-1 text-xs text-gray-300">
+                    {validationContext.validationProvider && (
+                      <div>
+                        <span className="text-gray-400">Valideringsprovider:</span>{' '}
+                        {formatProviderLabel(validationContext.validationProvider)}
+                      </div>
+                    )}
+                    {validationContext.generatorProvider && (
+                      <div>
+                        <span className="text-gray-400">Generator:</span>{' '}
+                        {formatProviderLabel(validationContext.generatorProvider)}
+                      </div>
+                    )}
+                    {(validationContext.criteria?.category ||
+                      validationContext.criteria?.ageGroup ||
+                      validationContext.criteria?.difficulty) && (
+                      <div>
+                        <span className="text-gray-400">Kriterier:</span>{' '}
+                        {[validationContext.criteria?.category,
+                          validationContext.criteria?.ageGroup,
+                          validationContext.criteria?.difficulty]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    )}
+                    {validationContext.question?.targetAudience && (
+                      <div>
+                        <span className="text-gray-400">Målgrupp:</span>{' '}
+                        {validationContext.question.targetAudience}
+                      </div>
+                    )}
+                    {validationContext.question?.question_sv && (
+                      <div>
+                        <span className="text-gray-400">Fråga (SV):</span>{' '}
+                        {validationContext.question.question_sv}
+                      </div>
+                    )}
+                    {validationContext.question?.question_en && (
+                      <div>
+                        <span className="text-gray-400">Fråga (EN):</span>{' '}
+                        {validationContext.question.question_en}
+                      </div>
+                    )}
+                    {Array.isArray(validationContext.question?.options_sv) && (
+                      <div>
+                        <span className="text-gray-400">Alternativ (SV):</span>{' '}
+                        {validationContext.question.options_sv.join(' | ')}
+                      </div>
+                    )}
+                    {Array.isArray(validationContext.question?.options_en) && validationContext.question.options_en.length > 0 && (
+                      <div>
+                        <span className="text-gray-400">Alternativ (EN):</span>{' '}
+                        {validationContext.question.options_en.join(' | ')}
+                      </div>
+                    )}
+                    {typeof validationContext.question?.correctOption === 'number' && (
+                      <div>
+                        <span className="text-gray-400">Rätt svar:</span>{' '}
+                        {String.fromCharCode(65 + validationContext.question.correctOption)} ({validationContext.question.correctOption})
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -702,7 +1321,7 @@ const QuestionCard = ({
                   <p className="text-xs font-semibold text-gray-300 mb-2">Provider-resultat:</p>
                   <div className="space-y-2">
                     {Object.entries(aiResult.providerResults).map(([provider, result]) => {
-                      const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+                      const providerLabel = formatProviderLabel(provider);
                       let statusClass = 'text-amber-300';
                       let statusIcon = '⚠';
                       let statusText = result?.error || 'Otillgänglig';
@@ -792,23 +1411,34 @@ const QuestionCard = ({
           <div className="text-sm text-gray-400 space-y-1">
             <p>ID: {question.id}</p>
             {question.source && <p>Källa: {question.source}</p>}
-            {question.createdBy && <p>Skapad av: {question.createdBy}</p>}
+            <p>Skapad av: {createdByDisplay}</p>
           </div>
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-700">
+            {!isEditing && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="px-3 py-1 text-xs rounded-md bg-cyan-600 hover:bg-cyan-700 text-white transition-colors"
+              >
+                ✏️ Redigera
+              </button>
+            )}
             {/* Visa AI-valideringsknapp endast om frågan INTE är AI-validerad */}
             {!aiPassed && (
               <button
                 onClick={handleValidateWithAI}
-                disabled={validatingQuestions && validatingQuestions.has(question.id)}
+                disabled={isEditing || isValidationBlocked || (validatingQuestions && validatingQuestions.has(question.id))}
                 className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  validatingQuestions && validatingQuestions.has(question.id)
+                  isEditing || isValidationBlocked || (validatingQuestions && validatingQuestions.has(question.id))
                     ? 'bg-gray-600 text-gray-400 opacity-50 cursor-not-allowed' 
                     : 'bg-green-600 hover:bg-green-700 text-white'
                 }`}
+                title={isEditing ? 'Avsluta redigering för att validera' : (validationDisabledReason || 'AI-validera')}
               >
-                {validatingQuestions && validatingQuestions.has(question.id) ? '⏳ Validerar...' : '✅ AI-validera'}
+                {validatingQuestions && validatingQuestions.has(question.id)
+                  ? '⏳ Validerar...'
+                  : '✅ AI-validera'}
               </button>
             )}
 
@@ -856,7 +1486,7 @@ const QuestionCard = ({
 
 const AdminQuestionsPage = () => {
   const navigate = useNavigate();
-  const { isSuperUser } = useAuth();
+  const { isSuperUser, currentUser } = useAuth();
   const { registerTask } = useBackgroundTasks();
   const [questions, setQuestions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -868,9 +1498,16 @@ const AdminQuestionsPage = () => {
   const [aiAmount, setAiAmount] = useState(10);
   const [aiCategory, setAiCategory] = useState('');
   const [aiAgeGroup, setAiAgeGroup] = useState('');
-  const [aiProvider, setAiProvider] = useState('random'); // random, gemini, anthropic, openai
+  const [aiProvider, setAiProvider] = useState('random'); // random, gemini, anthropic, openai, mistral, groq, openrouter, together, fireworks
   const [aiStatus, setAiStatus] = useState(null); // Status för alla providers
   const [loadingAiStatus, setLoadingAiStatus] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState(DEFAULT_CATEGORY_OPTIONS);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [ageGroupOptions, setAgeGroupOptions] = useState(DEFAULT_AGE_GROUPS);
+  const [loadingAgeGroups, setLoadingAgeGroups] = useState(false);
+  const [targetAudienceOptions, setTargetAudienceOptions] = useState(DEFAULT_TARGET_AUDIENCES);
+  const [validationProviders, setValidationProviders] = useState(null);
+  const [validationProvidersLoading, setValidationProvidersLoading] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -881,7 +1518,18 @@ const AdminQuestionsPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const isMountedRef = useRef(true);
+  const validationPollRef = useRef(null);
+  const validationSourceRef = useRef(null);
+  const [validationSyncing, setValidationSyncing] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const availableProviders = aiStatus
+    ? Object.entries(aiStatus).filter(([, info]) => info?.available)
+    : [];
+  const getAgeGroupLabel = (value) => {
+    if (!value) return '';
+    const match = ageGroupOptions.find((group) => group.id === value);
+    return match ? formatAgeGroupLabel(match) : value;
+  };
 
   useEffect(() => {
     const loadQuestions = () => {
@@ -915,8 +1563,82 @@ const AdminQuestionsPage = () => {
   }, [isSuperUser, navigate]);
 
   useEffect(() => {
+    let isActive = true;
+
+    const loadCategories = async () => {
+      setLoadingCategories(true);
+      try {
+        const categories = await categoryService.getCategories();
+        if (!isActive) return;
+        if (categories && categories.length > 0) {
+          const nextOptions = categories.map((category) => ({
+            value: category.name,
+            label: category.name,
+            description: category.description || ''
+          }));
+          setCategoryOptions(nextOptions);
+          const optionValues = new Set(nextOptions.map((option) => option.value));
+          setAiCategory((prev) => (prev && optionValues.has(prev) ? prev : ''));
+        }
+      } catch (error) {
+        console.warn('[AdminQuestionsPage] Kunde inte ladda kategorier:', error);
+      } finally {
+        if (isActive) {
+          setLoadingCategories(false);
+        }
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadAgeGroups = async () => {
+      setLoadingAgeGroups(true);
+      try {
+        const config = await audienceService.getAudienceConfig();
+        if (!isActive) return;
+        if (config?.ageGroups && config.ageGroups.length > 0) {
+          setAgeGroupOptions(config.ageGroups);
+          const optionIds = new Set(config.ageGroups.map((group) => group.id));
+          setAiAgeGroup((prev) => (prev && optionIds.has(prev) ? prev : ''));
+        }
+        if (config?.targetAudiences && config.targetAudiences.length > 0) {
+          setTargetAudienceOptions(config.targetAudiences);
+        }
+      } catch (error) {
+        console.warn('[AdminQuestionsPage] Kunde inte ladda åldersgrupper:', error);
+      } finally {
+        if (isActive) {
+          setLoadingAgeGroups(false);
+        }
+      }
+    };
+
+    loadAgeGroups();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       isMountedRef.current = false;
+      if (validationPollRef.current) {
+        clearTimeout(validationPollRef.current);
+        validationPollRef.current = null;
+      }
+      if (validationSourceRef.current) {
+        validationSourceRef.current.close();
+        validationSourceRef.current = null;
+      }
     };
   }, []);
 
@@ -936,6 +1658,12 @@ const AdminQuestionsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAIDialog]);
 
+  useEffect(() => {
+    if (!isSuperUser || !currentUser?.email) return;
+    fetchValidationProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperUser, currentUser?.email]);
+
   const fetchAIStatus = async () => {
     setLoadingAiStatus(true);
     try {
@@ -951,7 +1679,8 @@ const AdminQuestionsPage = () => {
             status: p.status,
             model: p.model,
             error: p.error,
-            errorType: p.errorType
+            errorType: p.errorType,
+            label: p.label
           };
         });
         
@@ -969,10 +1698,175 @@ const AdminQuestionsPage = () => {
         gemini: { available: false, status: 'error', error: 'Kunde inte hämta status' },
         anthropic: { available: false, status: 'error', error: 'Kunde inte hämta status' },
         openai: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        mistral: { available: false, status: 'error', error: 'Kunde inte hämta status' }
+        mistral: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        groq: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        openrouter: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        together: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        fireworks: { available: false, status: 'error', error: 'Kunde inte hämta status' }
       });
     } finally {
       setLoadingAiStatus(false);
+    }
+  };
+
+  const fetchValidationProviders = async () => {
+    setValidationProvidersLoading(true);
+    try {
+      const response = await fetch('/api/getProviderSettings', {
+        headers: {
+          'x-user-email': currentUser?.email || ''
+        }
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Kunde inte hämta provider-inställningar');
+      }
+
+      const purposes = data.settings?.purposes?.validation || {};
+      const providers = data.settings?.providers || {};
+      const enabledValidationProviders = Object.entries(providers)
+        .filter(([, config]) => config?.hasKey)
+        .filter(([provider]) => purposes[provider] !== false)
+        .map(([provider]) => provider);
+
+      setValidationProviders(enabledValidationProviders);
+    } catch (error) {
+      console.error('Failed to fetch provider settings:', error);
+      setValidationProviders([]);
+    } finally {
+      setValidationProvidersLoading(false);
+    }
+  };
+
+  const waitForValidationCompletion = async (questionIds, generatorProvider) => {
+    if (!Array.isArray(questionIds) || questionIds.length === 0) return;
+
+    const normalizedGenerator = generatorProvider ? generatorProvider.toLowerCase() : null;
+    const configuredValidationProviders = Array.isArray(validationProviders) ? validationProviders : null;
+    const shouldExpectValidation = configuredValidationProviders
+      ? normalizedGenerator
+        ? configuredValidationProviders.some(name => name !== normalizedGenerator)
+        : configuredValidationProviders.length > 0
+      : true;
+
+    if (!shouldExpectValidation) return;
+
+    if (validationPollRef.current) {
+      clearTimeout(validationPollRef.current);
+      validationPollRef.current = null;
+    }
+    if (validationSourceRef.current) {
+      validationSourceRef.current.close();
+      validationSourceRef.current = null;
+    }
+    if (isMountedRef.current) {
+      setValidationSyncing(true);
+    }
+
+    const timeoutMs = 2 * 60 * 1000;
+    const startTime = Date.now();
+
+    const handleSnapshot = async (tasks) => {
+      if (!isMountedRef.current) return true;
+
+      const matchingTasks = (tasks || []).filter((task) => (
+        task.taskType === 'validate_questions' &&
+        Array.isArray(task.payload?.questionIds) &&
+        task.payload.questionIds.some((id) => questionIds.includes(id))
+      ));
+
+      const finalTask = matchingTasks.find((task) => (
+        task.status === 'completed' ||
+        task.status === 'failed' ||
+        task.status === 'cancelled'
+      ));
+
+      if (finalTask) {
+        await questionService.refreshFromServer();
+        if (isMountedRef.current) {
+          setValidationSyncing(false);
+        }
+        return true;
+      }
+
+      if (Date.now() - startTime >= timeoutMs && isMountedRef.current) {
+        setValidationSyncing(false);
+        return true;
+      }
+
+      return false;
+    };
+
+    const poll = async () => {
+      if (!isMountedRef.current) return;
+
+      try {
+        const response = await fetch('/api/getBackgroundTasks?limit=100');
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          const shouldStop = await handleSnapshot(data.tasks || []);
+          if (shouldStop) {
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to poll validation task:', error);
+      }
+
+      if (Date.now() - startTime < timeoutMs) {
+        validationPollRef.current = setTimeout(poll, 3000);
+      } else if (isMountedRef.current) {
+        setValidationSyncing(false);
+      }
+    };
+
+    if (typeof EventSource !== 'undefined') {
+      const source = new EventSource('/api/subscribeToTasks?taskType=validate_questions&limit=100');
+      validationSourceRef.current = source;
+
+      source.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data || '{}');
+          if (data.success) {
+            const shouldStop = await handleSnapshot(data.tasks || []);
+            if (shouldStop && validationSourceRef.current) {
+              validationSourceRef.current.close();
+              validationSourceRef.current = null;
+              if (validationPollRef.current) {
+                clearTimeout(validationPollRef.current);
+                validationPollRef.current = null;
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Failed to parse validation SSE payload:', error);
+        }
+      };
+
+      source.onerror = () => {
+        if (validationSourceRef.current) {
+          validationSourceRef.current.close();
+          validationSourceRef.current = null;
+        }
+        if (validationPollRef.current) {
+          clearTimeout(validationPollRef.current);
+          validationPollRef.current = null;
+        }
+        poll();
+      };
+
+      validationPollRef.current = setTimeout(() => {
+        if (validationSourceRef.current) {
+          validationSourceRef.current.close();
+          validationSourceRef.current = null;
+        }
+        if (isMountedRef.current) {
+          setValidationSyncing(false);
+        }
+      }, timeoutMs);
+    } else {
+      poll();
     }
   };
 
@@ -1008,7 +1902,7 @@ const AdminQuestionsPage = () => {
 
   const categories = ['all', ...Array.from(categorySet).sort((a, b) => a.localeCompare(b, 'sv'))];
   const ageGroupOrder = ['children', 'youth', 'adults'];
-  const ageGroupOptions = ['all', ...Array.from(ageGroupSet).sort((a, b) => {
+  const ageGroupFilterOptions = ['all', ...Array.from(ageGroupSet).sort((a, b) => {
     const order = ageGroupOrder.indexOf(a);
     const otherOrder = ageGroupOrder.indexOf(b);
     if (order === -1 || otherOrder === -1) {
@@ -1068,17 +1962,22 @@ const AdminQuestionsPage = () => {
       (rawAi?.validationType === 'structure' ? rawAi : null);
     const aiResult =
       rawAi && rawAi.validationType !== 'structure' ? rawAi : null;
+    const aiResultValid = typeof aiResult?.valid === 'boolean'
+      ? aiResult.valid
+      : typeof aiResult?.isValid === 'boolean'
+        ? aiResult.isValid
+        : null;
 
     const hasStructureResult = Boolean(structureResult);
     const structureValid = structureResult?.valid === true;
     const structureInvalid = structureResult?.valid === false;
     const aiValid =
       question.manuallyApproved === true ||
-      question.aiValidated === true ||
-      (aiResult?.valid === true);
+      aiResultValid === true ||
+      question.aiValidated === true;
     const aiInvalid =
       question.manuallyRejected === true ||
-      (aiResult && aiResult.valid === false);
+      aiResultValid === false;
 
     let matchesValidationStatus = true;
     if (validationStatusFilter === 'validated') {
@@ -1139,17 +2038,14 @@ const AdminQuestionsPage = () => {
       });
 
       if (taskId) {
-        const providerLabel = aiProvider === 'random' ? 'Blandade providers' : aiProvider.toUpperCase();
+        const providerLabel = aiProvider === 'random'
+          ? 'Blandade providers'
+          : (formatProviderLabel(aiProvider) || aiProvider.toUpperCase());
         const descriptorParts = [];
         descriptorParts.push(`${aiAmount} frågor`);
         if (aiCategory) descriptorParts.push(aiCategory);
         if (aiAgeGroup) {
-          const ageGroupLabels = {
-            'children': 'Barn',
-            'youth': 'Ungdomar',
-            'adults': 'Vuxna'
-          };
-          descriptorParts.push(ageGroupLabels[aiAgeGroup] || aiAgeGroup);
+          descriptorParts.push(getAgeGroupLabel(aiAgeGroup));
         }
         descriptorParts.push(providerLabel);
 
@@ -1166,6 +2062,12 @@ const AdminQuestionsPage = () => {
       }
       const completedTask = await taskService.waitForCompletion(taskId);
       await questionService.refreshFromServer();
+      const generatedQuestionIds = completedTask?.result?.questions
+        ?.map((question) => question.id)
+        .filter(Boolean);
+      if (generatedQuestionIds && generatedQuestionIds.length > 0) {
+        waitForValidationCompletion(generatedQuestionIds, completedTask?.result?.provider || aiProvider);
+      }
 
       const generatedCount =
         completedTask?.result?.questionsGenerated ??
@@ -1451,14 +2353,9 @@ const AdminQuestionsPage = () => {
                     onChange={(e) => setSelectedAgeGroup(e.target.value)}
                     className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
                   >
-                    {ageGroupOptions.map((group) => (
+                    {ageGroupFilterOptions.map((group) => (
                       <option key={group} value={group}>
-                        {group === 'all'
-                          ? 'Alla åldersgrupper'
-                          : (group === 'children' && 'Barn') ||
-                            (group === 'youth' && 'Ungdom') ||
-                            (group === 'adults' && 'Vuxna') ||
-                            group}
+                        {group === 'all' ? 'Alla åldersgrupper' : getAgeGroupLabel(group)}
                       </option>
                     ))}
                   </select>
@@ -1492,6 +2389,13 @@ const AdminQuestionsPage = () => {
                 </button>
               </div>
             </div>
+
+        {validationSyncing && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-100">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-300 border-t-transparent" />
+            <span>Validering pågår för nygenererade frågor. Listan uppdateras automatiskt.</span>
+          </div>
+        )}
 
         {/* Masshantering */}
         <div className="mb-4 flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-lg p-2">
@@ -1562,6 +2466,11 @@ const AdminQuestionsPage = () => {
                       onEmojiRegenerationEnd={handleEmojiRegenerationEnd}
                       setIndividualValidationTasks={setIndividualValidationTasks}
                       setDialogConfig={setDialogConfig}
+                      validationProviders={validationProviders}
+                      validationProvidersLoading={validationProvidersLoading}
+                      categoryOptions={categoryOptions}
+                      ageGroupOptions={ageGroupOptions}
+                      targetAudienceOptions={targetAudienceOptions}
                     />
                   );
                 })}
@@ -1609,7 +2518,7 @@ const AdminQuestionsPage = () => {
             ) : aiStatus && (
               <div className="space-y-2 mb-4">
                 {Object.entries(aiStatus).map(([provider, status]) => {
-                  const providerLabel = provider.charAt(0).toUpperCase() + provider.slice(1);
+                  const providerLabel = formatProviderLabel(provider);
                   return (
                   <div key={provider} className={`rounded-lg p-3 text-sm ${
                     status.available
@@ -1665,17 +2574,14 @@ const AdminQuestionsPage = () => {
                   value={aiCategory}
                   onChange={(e) => setAiCategory(e.target.value)}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  disabled={loadingCategories}
                 >
                   <option value="">Blandad</option>
-                  <option value="Geografi">Geografi</option>
-                  <option value="Historia">Historia</option>
-                  <option value="Naturvetenskap">Naturvetenskap</option>
-                  <option value="Kultur">Kultur</option>
-                  <option value="Sport">Sport</option>
-                  <option value="Natur">Natur</option>
-                  <option value="Teknik">Teknik</option>
-                  <option value="Djur">Djur</option>
-                  <option value="Gåtor">Gåtor</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category.value} value={category.value}>
+                      {category.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1688,11 +2594,14 @@ const AdminQuestionsPage = () => {
                   value={aiAgeGroup}
                   onChange={(e) => setAiAgeGroup(e.target.value)}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  disabled={loadingAgeGroups}
                 >
                   <option value="">Blandad</option>
-                  <option value="children">Barn (6-12 år)</option>
-                  <option value="youth">Ungdomar (13-25 år)</option>
-                  <option value="adults">Vuxna (25+ år)</option>
+                  {ageGroupOptions.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {formatAgeGroupLabel(group)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1705,29 +2614,26 @@ const AdminQuestionsPage = () => {
                   value={aiProvider}
                   onChange={(e) => setAiProvider(e.target.value)}
                   className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-                  disabled={!aiStatus || Object.values(aiStatus).every(s => !s.available)}
+                  disabled={!aiStatus || availableProviders.length === 0}
                 >
                   {/* Slumpmässig option - alltid tillgänglig om någon provider finns */}
-                  {aiStatus && Object.values(aiStatus).some(s => s.available) && (
+                  {aiStatus && availableProviders.length > 0 && (
                     <option value="random">🎲 Slumpmässig (rekommenderad)</option>
                   )}
-                  {aiStatus?.gemini?.available && (
-                    <option value="gemini">Gemini (Google) - Snabb & Gratis</option>
-                  )}
-                  {aiStatus?.anthropic?.available && (
-                    <option value="anthropic">Claude (Anthropic) - Hög kvalitet</option>
-                  )}
-                  {aiStatus?.openai?.available && (
-                    <option value="openai">GPT-4 (OpenAI) - Balanserad</option>
-                  )}
-                  {(!aiStatus || Object.values(aiStatus).every(s => !s.available)) && (
+                  {availableProviders.map(([name, info]) => (
+                    <option key={name} value={name}>
+                      {info.label || formatProviderLabel(name) || name}
+                      {info.model ? ` · ${info.model}` : ''}
+                    </option>
+                  ))}
+                  {(!aiStatus || availableProviders.length === 0) && (
                     <option value="">Ingen provider tillgänglig</option>
                   )}
                 </select>
               </div>
 
               {/* Info box - Dynamisk text baserat på vald provider */}
-              {aiProvider === 'random' && aiStatus && Object.values(aiStatus).some(s => s.available) && (
+              {aiProvider === 'random' && aiStatus && availableProviders.length > 0 && (
                 <div className="bg-gradient-to-r from-purple-500/10 to-cyan-500/10 border border-purple-500/30 rounded-lg p-3">
                   <p className="text-xs text-purple-200">
                     🎲 Slumpmässig provider ger bäst variation och kvalitet. Systemet väljer automatiskt mellan tillgängliga AI-providers för varje fråga.
@@ -1755,6 +2661,51 @@ const AdminQuestionsPage = () => {
                   </p>
                 </div>
               )}
+              {aiProvider === 'mistral' && aiStatus?.mistral?.available && (
+                <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3">
+                  <p className="text-xs text-rose-200">
+                    💡 Mistral är snabb och kostnadseffektiv, bra för enklare frågor och stora batcher.
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'groq' && aiStatus?.groq?.available && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                  <p className="text-xs text-yellow-200">
+                    💡 Groq är extremt snabb inference för Llama-modeller, perfekt för snabba batcher.
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'openrouter' && aiStatus?.openrouter?.available && (
+                <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+                  <p className="text-xs text-cyan-200">
+                    💡 OpenRouter låter dig välja modeller från flera leverantörer med en och samma nyckel.
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'together' && aiStatus?.together?.available && (
+                <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-3">
+                  <p className="text-xs text-indigo-200">
+                    💡 Together AI erbjuder open-source modeller med bra pris/prestanda.
+                  </p>
+                </div>
+              )}
+              {aiProvider === 'fireworks' && aiStatus?.fireworks?.available && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                  <p className="text-xs text-red-200">
+                    💡 Fireworks AI levererar snabba open-source modeller och smidiga endpoints.
+                  </p>
+                </div>
+              )}
+              {aiProvider !== 'random' &&
+                aiStatus?.[aiProvider]?.available &&
+                !['gemini', 'anthropic', 'openai', 'mistral', 'groq', 'openrouter', 'together', 'fireworks'].includes(aiProvider) && (
+                <div className="bg-slate-800/60 border border-slate-600 rounded-lg p-3">
+                  <p className="text-xs text-slate-200">
+                    💡 Custom provider: {aiStatus?.[aiProvider]?.label || formatProviderLabel(aiProvider) || aiProvider}
+                    {aiStatus?.[aiProvider]?.model ? ` · ${aiStatus[aiProvider].model}` : ''}
+                  </p>
+                </div>
+              )}
 
               {/* Buttons */}
               <div className="flex gap-3 pt-4">
@@ -1766,9 +2717,9 @@ const AdminQuestionsPage = () => {
                 </button>
                 <button
                   onClick={handleGenerateAIQuestions}
-                  disabled={!aiStatus || (aiProvider !== 'random' && !aiStatus[aiProvider]?.available) || (aiProvider === 'random' && !Object.values(aiStatus).some(s => s.available))}
+                  disabled={!aiStatus || (aiProvider !== 'random' && !aiStatus[aiProvider]?.available) || (aiProvider === 'random' && availableProviders.length === 0)}
                   className={`flex-1 rounded-lg px-4 py-2 font-semibold text-white transition-colors ${
-                    (aiStatus && ((aiProvider === 'random' && Object.values(aiStatus).some(s => s.available)) || aiStatus[aiProvider]?.available))
+                    (aiStatus && ((aiProvider === 'random' && availableProviders.length > 0) || aiStatus[aiProvider]?.available))
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
                       : 'bg-gray-600 cursor-not-allowed opacity-50'
                   }`}

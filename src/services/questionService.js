@@ -36,12 +36,15 @@ import { v4 as uuidv4 } from 'uuid';
 import { QUESTION_BANK } from '../data/questions';
 import { questionRepository } from '../repositories/questionRepository';
 import { aiService } from './aiService';
+import { audienceService } from './audienceService';
 import { validateQuestion, validateQuestions, findDuplicates } from './questionValidationService';
 
 let cachedQuestions = []; // Lokal cache med frågor från API
 let cachedQuestionMap = new Map();
 let isInitialized = false;
 let loadPromise = null;
+let validationOptionsCache = null;
+let validationOptionsPromise = null;
 
 const listeners = new Set();
 
@@ -55,6 +58,26 @@ const sortQuestions = (questions) => {
     const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
     return timeB - timeA; // Nyaste först
   });
+};
+
+const resolveValidationOptions = async () => {
+  if (validationOptionsCache) {
+    return validationOptionsCache;
+  }
+  if (!validationOptionsPromise) {
+    validationOptionsPromise = audienceService
+      .getAudienceConfig()
+      .then((config) => ({
+        validAgeGroups: (config?.ageGroups || []).map((group) => group.id),
+        validTargetAudiences: (config?.targetAudiences || []).map((target) => target.id)
+      }))
+      .catch(() => ({}))
+      .finally(() => {
+        validationOptionsPromise = null;
+      });
+  }
+  validationOptionsCache = await validationOptionsPromise;
+  return validationOptionsCache;
 };
 
 const syncCacheFromMap = () => {
@@ -205,7 +228,8 @@ const addQuestions = async (questions) => {
 
   try {
     // STEG 1: STRUKTURVALIDERING
-    const validationResults = validateQuestions(incomingWithIds, 'sv');
+    const validationOptions = await resolveValidationOptions();
+    const validationResults = validateQuestions(incomingWithIds, 'sv', validationOptions);
 
     // Tagga strukturellt ogiltiga frågor (men importera dem ändå med feltagg)
     const structurallyInvalidIds = new Set();
@@ -303,7 +327,8 @@ const normalizeQuestion = (question) => {
           sv: {
             text: question.text,
             options: question.options,
-            explanation: question.explanation || 'Ingen förklaring tillgänglig'
+            explanation: question.explanation || 'Ingen förklaring tillgänglig',
+            background: question.background || ''
           }
         }
       };
@@ -316,19 +341,22 @@ const normalizeQuestion = (question) => {
   const en = normalized.languages?.en || {
     text: sv.text,
     options: sv.options,
-    explanation: sv.explanation
+    explanation: sv.explanation,
+    background: sv.background
   };
 
   normalized.languages = {
     sv: {
       text: sv.text || en.text || '',
       options: Array.isArray(sv.options) && sv.options.length === 4 ? sv.options : en.options || [],
-      explanation: sv.explanation || en.explanation || ''
+      explanation: sv.explanation || en.explanation || '',
+      background: sv.background || en.background || ''
     },
     en: {
       text: en.text || sv.text || '',
       options: Array.isArray(en.options) && en.options.length === 4 ? en.options : sv.options || [],
-      explanation: en.explanation || sv.explanation || ''
+      explanation: en.explanation || sv.explanation || '',
+      background: en.background || sv.background || ''
     }
   };
 
@@ -394,7 +422,13 @@ const getQuestionForLanguage = (question, language = 'sv') => {
   if (!langData) {
     return { ...normalized, text: 'Frågan kunde inte laddas', options: [], explanation: '' };
   }
-  return { ...normalized, text: langData.text, options: langData.options, explanation: langData.explanation };
+  return {
+    ...normalized,
+    text: langData.text,
+    options: langData.options,
+    explanation: langData.explanation,
+    background: langData.background || ''
+  };
 };
 
 export const questionService = {
@@ -477,6 +511,104 @@ export const questionService = {
     removeCachedQuestions(questionId);
     return true;
   },
+  updateQuestionContent: async (questionId, editData, options = {}) => {
+    await ensureCache();
+    if (!questionId) {
+      throw new Error('questionId is required');
+    }
+    if (!editData) {
+      throw new Error('editData is required');
+    }
+
+    const sv = editData.sv || {};
+    const en = editData.en || {};
+    const categories = Array.isArray(editData.categories) ? editData.categories : [];
+    const ageGroups = Array.isArray(editData.ageGroups) ? editData.ageGroups : [];
+    const targetAudience = editData.targetAudience || null;
+    const difficulty = editData.difficulty || null;
+    const correctOption = typeof editData.correctOption === 'number' ? editData.correctOption : 0;
+
+    const updateData = {
+      question_sv: sv.text || '',
+      question_en: en.text || null,
+      options_sv: Array.isArray(sv.options) ? sv.options : [],
+      options_en: Array.isArray(en.options) ? en.options : [],
+      correct_option: correctOption,
+      explanation_sv: sv.explanation || '',
+      explanation_en: en.explanation || null,
+      background_sv: sv.background || '',
+      background_en: en.background || null,
+      categories,
+      age_groups: ageGroups,
+      difficulty,
+      target_audience: targetAudience
+    };
+
+    if (editData.emoji !== undefined) {
+      updateData.illustration_emoji = editData.emoji;
+    }
+
+    if (!options.keepValidation) {
+      updateData.aiValidated = false;
+      updateData.aiValidationResult = null;
+      updateData.aiValidatedAt = null;
+      updateData.structureValidationResult = null;
+      updateData.manuallyApproved = false;
+      updateData.manuallyRejected = false;
+      updateData.manuallyApprovedAt = null;
+      updateData.manuallyRejectedAt = null;
+    }
+
+    await questionRepository.updateQuestion(questionId, updateData);
+
+    const now = new Date();
+    updateCachedQuestion(questionId, (current) => {
+      if (!current) return current;
+
+      const nextCategories = categories.length > 0 ? categories : current.categories || [];
+      const nextAgeGroups = ageGroups.length > 0 ? ageGroups : current.ageGroups || [];
+
+      return {
+        ...current,
+        languages: {
+          sv: {
+            text: sv.text || '',
+            options: Array.isArray(sv.options) ? sv.options : [],
+            explanation: sv.explanation || '',
+            background: sv.background || ''
+          },
+          en: {
+            text: en.text || '',
+            options: Array.isArray(en.options) ? en.options : [],
+            explanation: en.explanation || '',
+            background: en.background || ''
+          }
+        },
+        text: sv.text || '',
+        options: Array.isArray(sv.options) ? sv.options : [],
+        explanation: sv.explanation || '',
+        background: sv.background || '',
+        categories: nextCategories,
+        category: nextCategories[0] || current.category,
+        ageGroups: nextAgeGroups,
+        targetAudience,
+        difficulty,
+        correctOption,
+        emoji: editData.emoji !== undefined ? editData.emoji : current.emoji,
+        aiValidated: options.keepValidation ? current.aiValidated : false,
+        aiValidationResult: options.keepValidation ? current.aiValidationResult : null,
+        aiValidatedAt: options.keepValidation ? current.aiValidatedAt : null,
+        structureValidationResult: options.keepValidation ? current.structureValidationResult : null,
+        manuallyApproved: options.keepValidation ? current.manuallyApproved : false,
+        manuallyRejected: options.keepValidation ? current.manuallyRejected : false,
+        manuallyApprovedAt: options.keepValidation ? current.manuallyApprovedAt : null,
+        manuallyRejectedAt: options.keepValidation ? current.manuallyRejectedAt : null,
+        updatedAt: now
+      };
+    });
+
+    return true;
+  },
   subscribe: (listener) => {
     listeners.add(listener);
     if (isInitialized) {
@@ -489,8 +621,12 @@ export const questionService = {
     return () => listeners.delete(listener);
   },
   // Nya valideringsfunktioner
-  validateQuestion: (question, language = 'sv') => validateQuestion(question, language),
-  validateQuestions: (questions, language = 'sv') => validateQuestions(questions, language),
+  validateQuestion: (question, language = 'sv', options = {}) => (
+    validateQuestion(question, language, { ...(validationOptionsCache || {}), ...options })
+  ),
+  validateQuestions: (questions, language = 'sv', options = {}) => (
+    validateQuestions(questions, language, { ...(validationOptionsCache || {}), ...options })
+  ),
   findDuplicates: (language = 'sv', threshold = 0.85) => findDuplicates(cachedQuestions, language, threshold),
 
   // AI-validera en enskild fråga
@@ -503,8 +639,7 @@ export const questionService = {
       }
 
       const response = await aiService.startAIValidation({
-        questionId: questionId,
-        provider: 'openai' // Default provider
+        questionId: questionId
       });
 
       // Update question in cache with validation result

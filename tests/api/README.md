@@ -17,6 +17,7 @@ node tests/api/game-flow.test.js
 node tests/api/error-handling.test.js
 node tests/api/concurrent-operations.test.js
 node tests/api/data-integrity.test.js
+node tests/api/provider-settings.test.js
 ```
 
 ## 📋 Befintliga test-suiter
@@ -52,6 +53,12 @@ Testar dataintegritet:
 - ✅ Unique constraints (join codes)
 - ✅ Delete operationer fungerar
 - 🧹 Städar upp alla test-runs
+
+### 5. **provider-settings.test.js**
+Testar admin-inställningar för AI-providers:
+- ✅ Avvisar obehöriga anrop
+- ✅ Uppdaterar modell/purpose för OpenAI
+- 🧹 Återställer inställningar efter test
 
 ## ➕ Lägga till nya tester
 

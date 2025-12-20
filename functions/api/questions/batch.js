@@ -37,7 +37,12 @@ export async function onRequestPost(context) {
       const id = question.id || `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Extract language data
-      const langSv = question.languages?.sv || { text: question.text || '', options: question.options || [], explanation: question.explanation || '' };
+      const langSv = question.languages?.sv || {
+        text: question.text || '',
+        options: question.options || [],
+        explanation: question.explanation || '',
+        background: question.background || ''
+      };
       const langEn = question.languages?.en || langSv;
 
       const categories = JSON.stringify(question.categories || ['Allmänt']);
@@ -48,14 +53,14 @@ export async function onRequestPost(context) {
       await env.DB.prepare(`
         INSERT INTO questions (
           id, question_sv, question_en, options_sv, options_en,
-          explanation_sv, explanation_en, correct_option,
+          explanation_sv, explanation_en, background_sv, background_en, correct_option,
           categories, age_groups, target_audience, difficulty,
           illustration_svg, illustration_provider, illustration_generated_at,
           ai_generated, ai_generation_provider, ai_generation_model,
           validated, ai_validation_result, validation_generated_at,
           structure_validation_result,
           created_at, updated_at, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         id,
         langSv.text,
@@ -64,6 +69,8 @@ export async function onRequestPost(context) {
         optionsEn,
         langSv.explanation,
         langEn.explanation,
+        langSv.background || '',
+        langEn.background || langSv.background || '',
         question.correctOption || 0,
         categories,
         ageGroups,

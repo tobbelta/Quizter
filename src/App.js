@@ -21,6 +21,9 @@ import RunAdminPage from './views/RunAdminPage';
 import RunResultsPage from './views/RunResultsPage';
 import MyRunsPage from './views/MyRunsPage';
 import AdminQuestionsPage from './views/AdminQuestionsPage';
+import AdminDashboardPage from './views/AdminDashboardPage';
+import AdminCategoriesPage from './views/AdminCategoriesPage';
+import AdminAudienceSettingsPage from './views/AdminAudienceSettingsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
@@ -74,7 +77,7 @@ const AppRoutes = () => (
 
     {/* SuperUser-routes */}
     <Route
-      path="/superuser/all-runs"
+      path="/admin/all-runs"
       element={(
         <RequireSuperUser>
           <SuperUserAllRunsPage />
@@ -82,10 +85,18 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/users"
+      path="/admin/users"
       element={(
         <RequireSuperUser>
           <SuperUserUsersPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/admin/dashboard"
+      element={(
+        <RequireSuperUser>
+          <AdminDashboardPage />
         </RequireSuperUser>
       )}
     />
@@ -98,7 +109,23 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/analytics"
+      path="/admin/categories"
+      element={(
+        <RequireSuperUser>
+          <AdminCategoriesPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/admin/audiences"
+      element={(
+        <RequireSuperUser>
+          <AdminAudienceSettingsPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/admin/analytics"
       element={(
         <RequireSuperUser>
           <SuperUserAnalyticsPage />
@@ -106,7 +133,7 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/messages"
+      path="/admin/messages"
       element={(
         <RequireSuperUser>
           <SuperUserMessagesPage />
@@ -114,7 +141,7 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/tasks"
+      path="/admin/tasks"
       element={(
         <RequireSuperUser>
           <SuperUserTasksPage />
@@ -122,7 +149,7 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/notifications"
+      path="/admin/notifications"
       element={(
         <RequireSuperUser>
           <SuperUserNotificationsPage />
@@ -130,7 +157,7 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/logs"
+      path="/admin/logs"
       element={(
         <RequireSuperUser>
           <SuperUserErrorLogsPage />
@@ -138,13 +165,24 @@ const AppRoutes = () => (
       )}
     />
     <Route
-      path="/superuser/ai-providers"
+      path="/admin/ai-providers"
       element={(
         <RequireSuperUser>
           <AIProviderSettingsPage />
         </RequireSuperUser>
       )}
     />
+
+    <Route path="/superuser/all-runs" element={<Navigate to="/admin/all-runs" replace />} />
+    <Route path="/superuser/users" element={<Navigate to="/admin/users" replace />} />
+    <Route path="/superuser/analytics" element={<Navigate to="/admin/analytics" replace />} />
+    <Route path="/superuser/messages" element={<Navigate to="/admin/messages" replace />} />
+    <Route path="/superuser/tasks" element={<Navigate to="/admin/tasks" replace />} />
+    <Route path="/superuser/notifications" element={<Navigate to="/admin/notifications" replace />} />
+    <Route path="/superuser/logs" element={<Navigate to="/admin/logs" replace />} />
+    <Route path="/superuser/ai-providers" element={<Navigate to="/admin/ai-providers" replace />} />
+    <Route path="/superuser/categories" element={<Navigate to="/admin/categories" replace />} />
+    <Route path="/superuser/audiences" element={<Navigate to="/admin/audiences" replace />} />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

@@ -3,13 +3,82 @@
  * Model: claude-3-5-sonnet-20241022
  */
 
+const buildCategoryContext = (categoryDetails) => {
+  if (!categoryDetails) return '';
+  const lines = [];
+  if (categoryDetails.description) {
+    lines.push(`- Kort beskrivning: ${categoryDetails.description}`);
+  }
+  if (categoryDetails.prompt) {
+    lines.push(`- Instruktioner: ${categoryDetails.prompt}`);
+  }
+  if (lines.length === 0) return '';
+  return `\nKATEGORIINSTRUKTIONER:\n${lines.join('\n')}\n`;
+};
+
+const TARGET_AUDIENCE_HINTS = {
+  swedish: 'Fokusera på svensk kultur, historia och geografi där det är relevant.',
+  english: 'Håll frågorna neutrala och internationellt begripliga.',
+  international: 'Fokusera på global kunskap och internationella perspektiv.',
+  global: 'Fokusera på global kunskap och internationella perspektiv.',
+  german: 'Anpassa exempel till tyskt sammanhang när relevant.',
+  norwegian: 'Anpassa exempel till norsk kontext när relevant.',
+  danish: 'Anpassa exempel till dansk kontext när relevant.'
+};
+
+const buildAudienceContext = (targetAudiences = [], targetAudienceDetails = []) => {
+  const effectiveTargets = Array.isArray(targetAudiences) && targetAudiences.length > 0
+    ? targetAudiences
+    : ['swedish'];
+  const detailMap = new Map(
+    (targetAudienceDetails || []).map((detail) => [detail.id, detail])
+  );
+  const detailPrompts = effectiveTargets
+    .map((id) => detailMap.get(id)?.prompt)
+    .filter(Boolean);
+  const fallbackHints = effectiveTargets
+    .map((id) => TARGET_AUDIENCE_HINTS[id])
+    .filter(Boolean);
+  const hints = Array.from(new Set(detailPrompts.length > 0 ? detailPrompts : fallbackHints));
+  const listText = effectiveTargets.join(', ');
+  let context = '';
+
+  if (effectiveTargets.length === 1) {
+    context = hints[0] || '';
+  } else {
+    context = `Variera mellan målgrupperna: ${listText}.`;
+    if (hints.length > 0) {
+      context += ` ${hints.join(' ')}`;
+    }
+  }
+
+  return {
+    effectiveTargets,
+    listText,
+    context,
+    example: effectiveTargets[0]
+  };
+};
+
+const formatAgeRange = (ageGroupDetails) => {
+  if (!ageGroupDetails) return '';
+  const { minAge, maxAge } = ageGroupDetails;
+  if (Number.isFinite(minAge) && Number.isFinite(maxAge)) {
+    return `${minAge}-${maxAge} år`;
+  }
+  if (Number.isFinite(minAge) && !Number.isFinite(maxAge)) {
+    return `${minAge}+ år`;
+  }
+  return '';
+};
+
 export class AnthropicProvider {
-  constructor(apiKey) {
+  constructor(apiKey, model) {
     if (!apiKey) {
       throw new Error('Anthropic API key is required');
     }
     this.apiKey = apiKey;
-    this.model = 'claude-3-5-sonnet-20241022';
+    this.model = model || 'claude-3-5-sonnet-20241022';
     this.name = 'anthropic';
   }
 
@@ -17,9 +86,31 @@ export class AnthropicProvider {
    * Generate questions using Anthropic Claude
    */
   async generateQuestions(params) {
-    const { amount, category, ageGroup, difficulty, targetAudience, language = 'sv' } = params;
+    const {
+      amount,
+      category,
+      categoryDetails,
+      ageGroup,
+      ageGroupDetails,
+      difficulty,
+      targetAudience,
+      targetAudiences,
+      targetAudienceDetails,
+      language = 'sv'
+    } = params;
     
-    const prompt = this.buildPrompt(category, ageGroup, difficulty, targetAudience, amount, language);
+    const prompt = this.buildPrompt(
+      category,
+      categoryDetails,
+      ageGroup,
+      ageGroupDetails,
+      difficulty,
+      targetAudience,
+      targetAudiences,
+      targetAudienceDetails,
+      amount,
+      language
+    );
     
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -111,32 +202,46 @@ export class AnthropicProvider {
   /**
    * Build prompt for question generation
    */
-  buildPrompt(category, ageGroup, difficulty, targetAudience, amount, language) {
+  buildPrompt(
+    category,
+    categoryDetails,
+    ageGroup,
+    ageGroupDetails,
+    difficulty,
+    targetAudience,
+    targetAudiences,
+    targetAudienceDetails,
+    amount,
+    language
+  ) {
     const difficultyMap = {
       'easy': 'lätt',
       'medium': 'medel',
       'hard': 'svår'
     };
 
-    const ageGroupInfo = {
-      'children': '6-12 år (barn)',
-      'youth': '13-25 år (ungdomar)',
-      'adults': '25+ år (vuxna)'
-    };
-
     // Default values for optional parameters
     const effectiveCategory = category || 'Allmän kunskap';
-    const effectiveAgeGroup = ageGroup || 'adults';
     const effectiveDifficulty = difficulty || 'medium';
-    const effectiveTargetAudience = targetAudience || 'swedish';
+    const audienceInfo = buildAudienceContext(
+      targetAudiences && targetAudiences.length > 0 ? targetAudiences : [targetAudience].filter(Boolean),
+      targetAudienceDetails
+    );
 
-    const audienceContext = effectiveTargetAudience === 'swedish' 
-      ? 'Fokusera på svensk kultur, historia och geografi där det är relevant.'
-      : 'Fokusera på global kunskap och internationella perspektiv.';
+    const categoryContext = buildCategoryContext(categoryDetails);
+    const ageGroupContext = ageGroupDetails?.prompt
+      ? `\nÅLDERSGRUPPSINSTRUKTIONER:\n- ${ageGroupDetails.prompt}\n`
+      : '';
 
-    return `Skapa ${amount} quizfrågor om ${effectiveCategory} för åldersgrupp ${ageGroupInfo[effectiveAgeGroup] || effectiveAgeGroup} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
+    const label = ageGroupDetails?.label || ageGroup || 'vuxna';
+    const range = formatAgeRange(ageGroupDetails);
+    const labelText = range ? `${label} (${range})` : label;
 
-${audienceContext}
+    return `Skapa ${amount} quizfrågor om ${effectiveCategory} för åldersgrupp ${labelText} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
+
+${audienceInfo.context}
+${categoryContext}
+${ageGroupContext}
 
 VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - question_sv: Frågan på svenska
@@ -145,14 +250,17 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - options_en: 4 svarsalternativ på engelska
 - explanation_sv: Förklaring på svenska
 - explanation_en: Förklaring på engelska
+- background_sv: Kort bakgrund/fördjupning på svenska (2-4 meningar)
+- background_en: Kort bakgrund/fördjupning på engelska (2-4 meningar)
 
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
 - 4 svarsalternativ per språk (varav ETT är korrekt)
 - Korrekt svar angivet som index (0-3)
 - Pedagogisk förklaring på båda språken
+- Kort bakgrund/fördjupning på båda språken (2-4 meningar)
 - En passande emoji som visuell illustration
-- Target audience: "${effectiveTargetAudience}"
+- Target audience: en av (${audienceInfo.listText || 'swedish'})
 
 Returnera JSON i exakt följande format:
 {
@@ -165,8 +273,10 @@ Returnera JSON i exakt följande format:
       "correctOption": 0,
       "explanation_sv": "Förklaring på svenska",
       "explanation_en": "Explanation in English",
+      "background_sv": "Kort bakgrund på svenska.",
+      "background_en": "Short background in English.",
       "emoji": "🎯",
-      "targetAudience": "${effectiveTargetAudience}"
+      "targetAudience": "${audienceInfo.example || 'swedish'}"
     }
   ]
 }`;
@@ -209,10 +319,12 @@ Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
   "confidence": 0-100,
   "issues": ["eventuella problem på svenska"],
   "suggestions": ["eventuella förbättringsförslag på svenska"],
-  "feedback": "Kort sammanfattning av valideringen på svenska"
+  "feedback": "Kort sammanfattning av valideringen på svenska",
+  "background": "2-4 meningar fördjupning/kontext om ämnet som hjälper spelaren att förstå svaret",
+  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"]
 }
 
-VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
+VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE vara på SVENSKA.`;
   }
 
   /**
@@ -237,9 +349,17 @@ VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
         console.warn('[Anthropic] Skipping question with invalid correctOption:', q);
         return false;
       }
+      const backgroundSv = q.background_sv || q.background;
+      const backgroundEn = q.background_en || q.background;
+      if (!backgroundSv || !backgroundEn) {
+        console.warn('[Anthropic] Skipping question without bilingual background:', q);
+        return false;
+      }
       return true;
     }).map(q => ({
       ...q,
+      background_sv: q.background_sv || q.background || '',
+      background_en: q.background_en || q.background || '',
       provider: this.name,
       model: this.model
     }));

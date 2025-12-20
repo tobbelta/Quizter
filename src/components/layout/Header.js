@@ -600,19 +600,19 @@ const Header = ({ title = 'Quizter', children }) => {
                     <>
                       <div className="my-2 border-t border-slate-700" />
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/notifications'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/notifications'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Systemnotiser
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/all-runs'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/all-runs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Alla rundor
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/users'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/users'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Alla användare
@@ -624,19 +624,37 @@ const Header = ({ title = 'Quizter', children }) => {
                         Frågebank
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/analytics'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/categories'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Kategorier
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/audiences'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Ålders-/målgrupper
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/dashboard'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        AI Dashboard
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/analytics'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Besöksstatistik
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/messages'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Meddelanden
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/tasks'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/tasks'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300 flex items-center justify-between"
                       >
                         <span>Bakgrundsjobb</span>
@@ -647,7 +665,13 @@ const Header = ({ title = 'Quizter', children }) => {
                         )}
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/superuser/logs'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        AI-providerinställningar
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/logs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         🔴 Error Logs
@@ -798,6 +822,3 @@ const Header = ({ title = 'Quizter', children }) => {
 };
 
 export default Header;
-
-
-

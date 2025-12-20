@@ -82,18 +82,22 @@ export const aiService = {
    * @param {{ questionId: string, provider?: string }} params
    * @returns {Promise<{success: boolean, result: object}>}
    */
-  startAIValidation: async ({ questionId, provider = 'openai' }) => {
+  startAIValidation: async ({ questionId, provider } = {}) => {
     try {
       const url = `${API_BASE_URL}/api/validateQuestionWithAI`;
       
       console.log(`[aiService] Validating question synchronously:`, { questionId, provider });
+      const payload = { questionId };
+      if (provider) {
+        payload.provider = provider;
+      }
       
       const response = await fetch(url, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ questionId, provider })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {

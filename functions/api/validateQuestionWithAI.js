@@ -6,6 +6,35 @@
 
 import { ensureDatabase } from '../lib/ensureDatabase.js';
 import { AIProviderFactory } from '../lib/ai-providers/index.js';
+import { getProviderSettingsSnapshot } from '../lib/providerSettings.js';
+
+const summarizeText = (value, limit = 160) => {
+  if (!value) return null;
+  const text = String(value);
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}…`;
+};
+
+const buildValidationContext = ({ questionData, criteria, generatorProvider, validationProvider }) => ({
+  generatorProvider: generatorProvider || null,
+  validationProvider: validationProvider || null,
+  criteria: {
+    category: criteria?.category || null,
+    ageGroup: criteria?.ageGroup || null,
+    difficulty: criteria?.difficulty || null
+  },
+  question: {
+    question_sv: summarizeText(questionData?.question_sv),
+    question_en: summarizeText(questionData?.question_en),
+    background_sv: summarizeText(questionData?.background_sv),
+    background_en: summarizeText(questionData?.background_en),
+    options_sv: questionData?.options_sv || null,
+    options_en: questionData?.options_en || null,
+    correctOption: questionData?.correctOption ?? null,
+    targetAudience: questionData?.targetAudience || null,
+    emoji: questionData?.emoji || null
+  }
+});
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -13,7 +42,7 @@ export async function onRequestPost(context) {
   try {
     await ensureDatabase(env.DB);
     
-    const { questionId, provider = 'openai' } = await request.json();
+    const { questionId, provider } = await request.json();
     
     if (!questionId) {
       return new Response(JSON.stringify({
@@ -39,10 +68,35 @@ export async function onRequestPost(context) {
     }
 
     // Skapa AI provider
-    const aiFactory = new AIProviderFactory(env);
-    const aiProvider = aiFactory.getProvider(provider);
-    
-    console.log(`[validateQuestionWithAI] Validating question ${questionId} with ${provider}`);
+    const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
+    const aiFactory = new AIProviderFactory(env, providerMap);
+    const generationProviderRaw = question.ai_generation_provider || question.provider || '';
+    const generationProvider = generationProviderRaw ? generationProviderRaw.toLowerCase() : null;
+    const availableProviders = aiFactory.getAvailableProviders('validation');
+    const candidates = availableProviders.filter(name => name !== generationProvider);
+    const requestedProvider = provider ? provider.toLowerCase() : null;
+
+    let validationProviders = candidates;
+
+    if (requestedProvider) {
+      if (requestedProvider === generationProvider) {
+        console.warn('[validateQuestionWithAI] Requested provider matches generator, ignoring request.');
+      } else if (candidates.includes(requestedProvider)) {
+        validationProviders = [
+          requestedProvider,
+          ...candidates.filter(name => name !== requestedProvider)
+        ];
+      }
+    }
+
+    if (validationProviders.length === 0) {
+      return new Response(JSON.stringify({
+        error: 'No alternative AI providers available for validation'
+      }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
     
     // Förbered frågan för validering
     const questionForValidation = {
@@ -53,7 +107,10 @@ export async function onRequestPost(context) {
       correctOption: question.correct_option || question.correctOption,
       explanation_sv: question.explanation_sv || question.explanation,
       explanation_en: question.explanation_en,
-      emoji: question.illustration_emoji || question.emoji
+      background_sv: question.background_sv || '',
+      background_en: question.background_en || question.background_sv || '',
+      emoji: question.illustration_emoji || question.emoji,
+      targetAudience: question.target_audience || question.targetAudience
     };
 
     // Validera frågan med AI
@@ -63,152 +120,102 @@ export async function onRequestPost(context) {
       difficulty: question.difficulty || 'medium'
     };
 
-    // Skapa validationsprompt
-    const validationPrompt = `Validera följande quizfråga enligt dessa kriterier:
-
-FRÅGA:
-${JSON.stringify(questionForValidation, null, 2)}
-
-KONTEXT:
-- Kategori: ${validationCriteria.category}
-- Åldersgrupp: ${validationCriteria.ageGroup}
-- Svårighetsgrad: ${validationCriteria.difficulty}
-
-Kontrollera:
-1. Är frågan faktiskt korrekt?
-2. Är svarsalternativen rimliga och inte vilseledande?
-3. Är det markerade svaret verkligen korrekt?
-4. Är förklaringen pedagogisk och korrekt?
-5. Finns både svenska och engelska versioner?
-6. Är översättningarna korrekta?
-7. Är svårighetsgraden lämplig för målgruppen (${validationCriteria.ageGroup})?
-8. Passar frågan kategorin ${validationCriteria.category}?
-
-Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
-{
-  "isValid": true/false,
-  "confidence": 0-100,
-  "issues": ["eventuella problem på svenska"],
-  "suggestions": ["eventuella förbättringsförslag på svenska"],
-  "feedback": "Kort sammanfattning av valideringen på svenska"
-}
-
-VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
-
-    try {
-      // Anropa AI för validering
-      const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: validationPrompt }],
-          max_tokens: 1000,
-          temperature: 0.3
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`AI validation failed: ${response.status}`);
+    const validationLog = {
+      questionId,
+      generatorProvider: generationProvider,
+      requestedProvider,
+      availableValidationProviders: availableProviders,
+      candidateProviders: candidates,
+      criteria: validationCriteria,
+      question: {
+        question_sv: summarizeText(questionForValidation.question_sv),
+        question_en: summarizeText(questionForValidation.question_en),
+        background_sv: summarizeText(questionForValidation.background_sv),
+        background_en: summarizeText(questionForValidation.background_en),
+        options_sv: questionForValidation.options_sv,
+        options_en: questionForValidation.options_en,
+        correctOption: questionForValidation.correctOption,
+        emoji: questionForValidation.emoji
       }
+    };
+    console.log('[validateQuestionWithAI] Validation context:', validationLog);
 
-      const aiResponse = await response.json();
-      const aiContent = aiResponse.choices[0]?.message?.content;
-      
-      let validationResult;
+    let validationResult;
+    let selectedProviderName = null;
+    let lastError = null;
+
+    for (const providerName of validationProviders) {
       try {
-        validationResult = JSON.parse(aiContent);
-      } catch (parseError) {
-        console.warn('[validateQuestionWithAI] Could not parse AI response, using fallback');
-        validationResult = {
-          isValid: true,
-          confidence: 75,
-          issues: [],
-          suggestions: [],
-          feedback: 'AI-validering genomförd - ingen detaljerad analys kunde extraheras'
-        };
+        selectedProviderName = providerName;
+        const selectedProvider = aiFactory.getProvider(providerName);
+        console.log(`[validateQuestionWithAI] Validating question ${questionId} with ${providerName}`);
+        validationResult = await selectedProvider.validateQuestion(questionForValidation, validationCriteria);
+        break;
+      } catch (aiError) {
+        lastError = aiError;
+        console.warn(`[validateQuestionWithAI] Provider ${providerName} failed:`, aiError.message);
       }
+    }
 
-      const isValid = validationResult.isValid;
-      const feedback = validationResult.feedback || 'Fråga validerad med AI';
-      const fullResult = {
-        ...validationResult,
-        provider,
-        validatedAt: new Date().toISOString()
-      };
-      
-      console.log(`[validateQuestionWithAI] Question ${questionId} validated as: ${isValid ? 'VALID' : 'INVALID'}`);
-      console.log(`[validateQuestionWithAI] AI Feedback: ${feedback}`);
-
-      // Uppdatera frågan i databasen
-      await env.DB.prepare(`
-        UPDATE questions 
-        SET ai_validation_result = ?, 
-            ai_validated = ?,
-            ai_validated_at = ?,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(JSON.stringify(fullResult), isValid ? 1 : 0, Date.now(), questionId).run();
-
-      console.log(`[validateQuestionWithAI] Successfully validated question ${questionId}`);
-
+    if (!validationResult) {
       return new Response(JSON.stringify({
-        success: true,
-        result: {
-          isValid,
-          feedback,
-          provider,
-          details: fullResult
-        },
-        questionId: questionId
+        error: 'No AI providers could validate the question',
+        details: lastError ? lastError.message : null
       }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-    } catch (aiError) {
-      console.warn('[validateQuestionWithAI] AI validation failed, using fallback:', aiError);
-      // Fallback om AI-anrop misslyckas
-      const isValid = true;
-      const feedback = 'Fråga validerad med AI (förenklad validering)';
-      const fullResult = {
-        isValid,
-        feedback,
-        provider,
-        confidence: 50,
-        issues: [],
-        suggestions: [],
-        validatedAt: new Date().toISOString(),
-        note: 'Förenklad validering på grund av AI-fel'
-      };
-
-      // Uppdatera frågan i databasen med fallback-resultat
-      await env.DB.prepare(`
-        UPDATE questions 
-        SET ai_validation_result = ?, 
-            ai_validated = ?,
-            ai_validated_at = ?,
-            updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(JSON.stringify(fullResult), isValid ? 1 : 0, Date.now(), questionId).run();
-
-      return new Response(JSON.stringify({
-        success: true,
-        result: {
-          isValid,
-          feedback,
-          provider,
-          details: fullResult
-        },
-        questionId: questionId
-      }), {
-        status: 200,
+        status: 502,
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    const normalizedValid = typeof validationResult.isValid === 'boolean'
+      ? validationResult.isValid
+      : typeof validationResult.valid === 'boolean'
+        ? validationResult.valid
+        : false;
+    const feedback = validationResult.feedback || 'Fråga validerad med AI';
+    const fullResult = {
+      ...validationResult,
+      provider: selectedProviderName,
+      valid: normalizedValid,
+      isValid: normalizedValid,
+      validationType: validationResult.validationType || 'ai',
+      validationContext: buildValidationContext({
+        questionData: questionForValidation,
+        criteria: validationCriteria,
+        generatorProvider: generationProvider,
+        validationProvider: selectedProviderName
+      }),
+      validatedAt: new Date().toISOString()
+    };
+    
+    console.log(`[validateQuestionWithAI] Question ${questionId} validated as: ${normalizedValid ? 'VALID' : 'INVALID'}`);
+    console.log(`[validateQuestionWithAI] AI Feedback: ${feedback}`);
+
+    // Uppdatera frågan i databasen
+    await env.DB.prepare(`
+      UPDATE questions 
+      SET ai_validation_result = ?, 
+          ai_validated = ?,
+          ai_validated_at = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(JSON.stringify(fullResult), normalizedValid ? 1 : 0, Date.now(), questionId).run();
+
+    console.log(`[validateQuestionWithAI] Successfully validated question ${questionId}`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      result: {
+        isValid: normalizedValid,
+        feedback,
+        provider: selectedProviderName,
+        details: fullResult
+      },
+      questionId: questionId
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('[validateQuestionWithAI] Error:', error);

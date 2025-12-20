@@ -1,57 +1,203 @@
 /**
- * OpenAI Provider for Question Generation
+ * OpenAI-compatible Provider for Question Generation
  * Model: gpt-4o-mini
  */
 
+const PROVIDER_LABELS = {
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+  groq: 'Groq',
+  together: 'Together AI',
+  fireworks: 'Fireworks AI',
+};
+
+const formatProviderLabel = (name) => (
+  PROVIDER_LABELS[name] || `${name.charAt(0).toUpperCase()}${name.slice(1)}`
+);
+
+const buildCategoryContext = (categoryDetails) => {
+  if (!categoryDetails) return '';
+  const lines = [];
+  if (categoryDetails.description) {
+    lines.push(`- Kort beskrivning: ${categoryDetails.description}`);
+  }
+  if (categoryDetails.prompt) {
+    lines.push(`- Instruktioner: ${categoryDetails.prompt}`);
+  }
+  if (lines.length === 0) return '';
+  return `\nKATEGORIINSTRUKTIONER:\n${lines.join('\n')}\n`;
+};
+
+const TARGET_AUDIENCE_HINTS = {
+  swedish: 'Fokusera på svensk kultur, historia och geografi där det är relevant.',
+  english: 'Håll frågorna neutrala och internationellt begripliga.',
+  international: 'Fokusera på global kunskap och internationella perspektiv.',
+  global: 'Fokusera på global kunskap och internationella perspektiv.',
+  german: 'Anpassa exempel till tyskt sammanhang när relevant.',
+  norwegian: 'Anpassa exempel till norsk kontext när relevant.',
+  danish: 'Anpassa exempel till dansk kontext när relevant.'
+};
+
+const buildAudienceContext = (targetAudiences = [], targetAudienceDetails = []) => {
+  const effectiveTargets = Array.isArray(targetAudiences) && targetAudiences.length > 0
+    ? targetAudiences
+    : ['swedish'];
+  const detailMap = new Map(
+    (targetAudienceDetails || []).map((detail) => [detail.id, detail])
+  );
+  const detailPrompts = effectiveTargets
+    .map((id) => detailMap.get(id)?.prompt)
+    .filter(Boolean);
+  const fallbackHints = effectiveTargets
+    .map((id) => TARGET_AUDIENCE_HINTS[id])
+    .filter(Boolean);
+  const hints = Array.from(new Set(detailPrompts.length > 0 ? detailPrompts : fallbackHints));
+  const listText = effectiveTargets.join(', ');
+  let context = '';
+
+  if (effectiveTargets.length === 1) {
+    context = hints[0] || '';
+  } else {
+    context = `Variera mellan målgrupperna: ${listText}.`;
+    if (hints.length > 0) {
+      context += ` ${hints.join(' ')}`;
+    }
+  }
+
+  return {
+    effectiveTargets,
+    listText,
+    context,
+    example: effectiveTargets[0]
+  };
+};
+
+const formatAgeRange = (ageGroupDetails) => {
+  if (!ageGroupDetails) return '';
+  const { minAge, maxAge } = ageGroupDetails;
+  if (Number.isFinite(minAge) && Number.isFinite(maxAge)) {
+    return `${minAge}-${maxAge} år`;
+  }
+  if (Number.isFinite(minAge) && !Number.isFinite(maxAge)) {
+    return `${minAge}+ år`;
+  }
+  return '';
+};
+
 export class OpenAIProvider {
-  constructor(apiKey) {
+  constructor(apiKey, model, options = {}) {
+    const providerName = options.name || 'openai';
+    const providerLabel = options.label || formatProviderLabel(providerName);
+
     if (!apiKey) {
-      throw new Error('OpenAI API key is required');
+      throw new Error(`${providerLabel} API key is required`);
     }
     this.apiKey = apiKey;
-    this.model = 'gpt-4o-mini';
-    this.name = 'openai';
+    this.model = model || 'gpt-4o-mini';
+    this.name = providerName;
+    this.label = providerLabel;
+    this.logPrefix = `[${providerLabel}]`;
+    this.baseUrl = options.baseUrl || 'https://api.openai.com/v1/chat/completions';
+    this.extraHeaders = options.extraHeaders || {};
+    this.supportsResponseFormat = options.supportsResponseFormat !== false;
+    this.maxQuestionsPerRequest = options.maxQuestionsPerRequest || 50;
+  }
+
+  getHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+      ...this.extraHeaders,
+    };
+  }
+
+  buildRequestBody(messages, temperature, extra = {}, { useResponseFormat } = {}) {
+    const body = {
+      model: this.model,
+      messages,
+      temperature,
+      ...extra,
+    };
+
+    const allowResponseFormat = typeof useResponseFormat === 'boolean'
+      ? useResponseFormat
+      : this.supportsResponseFormat;
+
+    if (allowResponseFormat) {
+      body.response_format = { type: 'json_object' };
+    }
+
+    return body;
+  }
+
+  async requestChatCompletion(messages, temperature, extra = {}, allowResponseFormat = this.supportsResponseFormat) {
+    const response = await fetch(this.baseUrl, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(this.buildRequestBody(
+        messages,
+        temperature,
+        extra,
+        { useResponseFormat: allowResponseFormat }
+      ))
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      if (allowResponseFormat && errorText.toLowerCase().includes('response_format')) {
+        return this.requestChatCompletion(messages, temperature, extra, false);
+      }
+      throw new Error(`${this.label} API error (${response.status}): ${errorText}`);
+    }
+
+    return response.json();
   }
 
   /**
-   * Generate questions using OpenAI
+   * Generate questions using provider
    */
   async generateQuestions(params) {
-    const { amount, category, ageGroup, difficulty, targetAudience, language = 'sv' } = params;
+    const {
+      amount,
+      category,
+      categoryDetails,
+      ageGroup,
+      ageGroupDetails,
+      difficulty,
+      targetAudience,
+      targetAudiences,
+      targetAudienceDetails,
+      language = 'sv'
+    } = params;
     
-    const prompt = this.buildPrompt(category, ageGroup, difficulty, targetAudience, amount, language);
+    const prompt = this.buildPrompt(
+      category,
+      categoryDetails,
+      ageGroup,
+      ageGroupDetails,
+      difficulty,
+      targetAudience,
+      targetAudiences,
+      targetAudienceDetails,
+      amount,
+      language
+    );
     
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { 
-              role: 'system', 
-              content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.' 
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          response_format: { type: 'json_object' }
-        })
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`OpenAI API error (${response.status}): ${error}`);
-      }
-      
-      const data = await response.json();
+      const data = await this.requestChatCompletion(
+        [
+          { 
+            role: 'system', 
+            content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        0.7
+      );
       const content = JSON.parse(data.choices[0].message.content);
       
-      console.log('[OpenAI] Successfully parsed response');
-      console.log('[OpenAI] Questions received:', content.questions?.length || 0);
+      console.log(`${this.logPrefix} Successfully parsed response`);
+      console.log(`${this.logPrefix} Questions received:`, content.questions?.length || 0);
       
       // Return questions with provider/model info (skip strict validation for now)
       if (content.questions && content.questions.length > 0) {
@@ -62,48 +208,32 @@ export class OpenAIProvider {
         }));
       }
       
-      console.warn('[OpenAI] No questions in response');
+      console.warn(`${this.logPrefix} No questions in response`);
       return [];
       
     } catch (error) {
-      console.error('[OpenAI] Generation error:', error);
-      throw new Error(`OpenAI generation failed: ${error.message}`);
+      console.error(`${this.logPrefix} Generation error:`, error);
+      throw new Error(`${this.label} generation failed: ${error.message}`);
     }
   }
 
   /**
-   * Validate a question using OpenAI
+   * Validate a question using provider
    */
   async validateQuestion(question, validationCriteria) {
     const prompt = this.buildValidationPrompt(question, validationCriteria);
     
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { 
-              role: 'system', 
-              content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.' 
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.3,
-          response_format: { type: 'json_object' }
-        })
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`OpenAI validation error (${response.status}): ${error}`);
-      }
-      
-      const data = await response.json();
+      const data = await this.requestChatCompletion(
+        [
+          { 
+            role: 'system', 
+            content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        0.3
+      );
       const validation = JSON.parse(data.choices[0].message.content);
       
       return {
@@ -117,49 +247,63 @@ export class OpenAIProvider {
       };
       
     } catch (error) {
-      console.error('[OpenAI] Validation error:', error);
-      throw new Error(`OpenAI validation failed: ${error.message}`);
+      console.error(`${this.logPrefix} Validation error:`, error);
+      throw new Error(`${this.label} validation failed: ${error.message}`);
     }
   }
 
   /**
    * Build prompt for question generation
    */
-  buildPrompt(category, ageGroup, difficulty, targetAudience, amount, language) {
+  buildPrompt(
+    category,
+    categoryDetails,
+    ageGroup,
+    ageGroupDetails,
+    difficulty,
+    targetAudience,
+    targetAudiences,
+    targetAudienceDetails,
+    amount,
+    language
+  ) {
     const difficultyMap = {
       'easy': 'lätt',
       'medium': 'medel',
       'hard': 'svår'
     };
 
-    const ageGroupInfo = {
-      'children': '6-12 år (barn)',
-      'youth': '13-25 år (ungdomar)',
-      'adults': '25+ år (vuxna)'
-    };
-
     // Default values for optional parameters
     const effectiveCategory = category || 'Allmän kunskap';
     const effectiveDifficulty = difficulty || 'medium';
-    const effectiveTargetAudience = targetAudience || 'swedish';
+    const audienceInfo = buildAudienceContext(
+      targetAudiences && targetAudiences.length > 0 ? targetAudiences : [targetAudience].filter(Boolean),
+      targetAudienceDetails
+    );
 
-    const audienceContext = effectiveTargetAudience === 'swedish' 
-      ? 'Fokusera på svensk kultur, historia och geografi där det är relevant.'
-      : 'Fokusera på global kunskap och internationella perspektiv.';
+    const categoryContext = buildCategoryContext(categoryDetails);
+    const ageGroupContext = ageGroupDetails?.prompt
+      ? `\nÅLDERSGRUPPSINSTRUKTIONER:\n- ${ageGroupDetails.prompt}\n`
+      : '';
 
     // Handle mixed age groups
     let ageGroupInstruction;
     if (!ageGroup || ageGroup === '') {
-      ageGroupInstruction = `Variera svårighetsgraden och rikta olika frågor till olika åldersgrupper: barn (6-12 år), ungdomar (13-25 år) och vuxna (25+). Fördela frågorna jämnt mellan åldersgrupperna.`;
+      ageGroupInstruction = 'Variera svårighetsgraden och rikta olika frågor till olika åldersgrupper: barn (6-12 år), ungdomar (13-17 år) och vuxna (18+). Fördela frågorna jämnt mellan åldersgrupperna.';
     } else {
-      ageGroupInstruction = `Alla frågor ska vara riktade till åldersgrupp ${ageGroupInfo[ageGroup] || ageGroup}.`;
+      const label = ageGroupDetails?.label || ageGroup;
+      const range = formatAgeRange(ageGroupDetails);
+      const labelText = range ? `${label} (${range})` : label;
+      ageGroupInstruction = `Alla frågor ska vara riktade till åldersgrupp ${labelText}.`;
     }
 
     return `Skapa ${amount} quizfrågor om ${effectiveCategory} med svårighetsgrad ${difficultyMap[effectiveDifficulty] || effectiveDifficulty}.
 
 ${ageGroupInstruction}
 
-${audienceContext}
+${audienceInfo.context}
+${categoryContext}
+${ageGroupContext}
 
 VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - question_sv: Frågan på svenska
@@ -168,15 +312,18 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - options_en: 4 svarsalternativ på engelska
 - explanation_sv: Förklaring på svenska
 - explanation_en: Förklaring på engelska
-- ageGroup: Vilken åldersgrupp frågan riktar sig till ("children", "youth" eller "adults")
+- background_sv: Kort bakgrund/fördjupning på svenska (2-4 meningar)
+- background_en: Kort bakgrund/fördjupning på engelska (2-4 meningar)
+- ageGroup: Vilken åldersgrupp frågan riktar sig till (använd ageGroup-id)
 
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
 - 4 svarsalternativ per språk (varav ETT är korrekt)
 - Korrekt svar angivet som index (0-3)
 - Pedagogisk förklaring på båda språken
+- Kort bakgrund/fördjupning på båda språken (2-4 meningar)
 - En passande emoji som visuell illustration
-- Target audience: "${effectiveTargetAudience}"
+- Target audience: en av (${audienceInfo.listText || 'swedish'})
 - Age group: specificera "children", "youth" eller "adults" för varje fråga
 
 Returnera JSON i exakt följande format:
@@ -190,8 +337,10 @@ Returnera JSON i exakt följande format:
       "correctOption": 0,
       "explanation_sv": "Förklaring på svenska",
       "explanation_en": "Explanation in English",
+      "background_sv": "Kort bakgrund på svenska.",
+      "background_en": "Short background in English.",
       "emoji": "🎯",
-      "targetAudience": "${effectiveTargetAudience}",
+      "targetAudience": "${audienceInfo.example || 'swedish'}",
       "ageGroup": "children"
     }
   ]
@@ -235,27 +384,29 @@ Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
   "confidence": 0-100,
   "issues": ["eventuella problem på svenska"],
   "suggestions": ["eventuella förbättringsförslag på svenska"],
-  "feedback": "Kort sammanfattning av valideringen på svenska"
+  "feedback": "Kort sammanfattning av valideringen på svenska",
+  "background": "2-4 meningar fördjupning/kontext om ämnet som hjälper spelaren att förstå svaret",
+  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"]
 }
 
-VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
+VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE vara på SVENSKA.`;
   }
 
   /**
    * Validate and format questions from AI response
    */
   validateAndFormatQuestions(questions) {
-    console.log('[OpenAI] Validating', questions.length, 'questions');
-    console.log('[OpenAI] First question keys:', questions[0] ? Object.keys(questions[0]) : 'no questions');
+    console.log(`${this.logPrefix} Validating`, questions.length, 'questions');
+    console.log(`${this.logPrefix} First question keys:`, questions[0] ? Object.keys(questions[0]) : 'no questions');
     
     const validated = questions.filter(q => {
       // Log full question structure
-      console.log('[OpenAI] Checking question:', JSON.stringify(q, null, 2));
+      console.log(`${this.logPrefix} Checking question:`, JSON.stringify(q, null, 2));
       
       // Basic validation - check both new format (question_sv/en) and potential old format
       const hasQuestion = (q.question_sv && q.question_en) || q.question;
       if (!hasQuestion) {
-        console.warn('[OpenAI] Skipping question without question field');
+        console.warn(`${this.logPrefix} Skipping question without question field`);
         return false;
       }
       
@@ -263,22 +414,30 @@ VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
                          Array.isArray(q.options_en) && q.options_en.length === 4) ||
                         (Array.isArray(q.options) && q.options.length === 4);
       if (!hasOptions) {
-        console.warn('[OpenAI] Skipping question with invalid options');
+        console.warn(`${this.logPrefix} Skipping question with invalid options`);
         return false;
       }
       
       if (typeof q.correctOption !== 'number' || q.correctOption < 0 || q.correctOption > 3) {
-        console.warn('[OpenAI] Skipping question with invalid correctOption');
+        console.warn(`${this.logPrefix} Skipping question with invalid correctOption`);
+        return false;
+      }
+      const backgroundSv = q.background_sv || q.background;
+      const backgroundEn = q.background_en || q.background;
+      if (!backgroundSv || !backgroundEn) {
+        console.warn(`${this.logPrefix} Skipping question without bilingual background`);
         return false;
       }
       return true;
     }).map(q => ({
       ...q,
+      background_sv: q.background_sv || q.background || '',
+      background_en: q.background_en || q.background || '',
       provider: this.name,
       model: this.model
     }));
     
-    console.log('[OpenAI] Validated', validated.length, 'of', questions.length, 'questions');
+    console.log(`${this.logPrefix} Validated`, validated.length, 'of', questions.length, 'questions');
     return validated;
   }
 
@@ -288,12 +447,9 @@ VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
    */
   async checkCredits() {
     try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(this.baseUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({
           model: this.model,
           messages: [{ role: 'user', content: 'Hi' }],
@@ -321,7 +477,7 @@ VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
       return { available: true };
       
     } catch (error) {
-      console.error('[OpenAI] Credit check error:', error);
+      console.error(`${this.logPrefix} Credit check error:`, error);
       return { 
         available: false, 
         error: 'connection_error',
@@ -336,10 +492,11 @@ VIKTIGT: All feedback, issues och suggestions MÅSTE vara på SVENSKA.`;
   getInfo() {
     return {
       name: this.name,
+      label: this.label,
       model: this.model,
       capabilities: ['generation', 'validation'],
       supportsLanguages: ['sv', 'en'],
-      maxQuestionsPerRequest: 50
+      maxQuestionsPerRequest: this.maxQuestionsPerRequest
     };
   }
 }
