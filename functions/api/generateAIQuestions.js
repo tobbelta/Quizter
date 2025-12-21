@@ -91,7 +91,8 @@ export async function onRequestPost(context) {
         category,
         ageGroup,
         difficulty: difficulty || 'medium',
-        provider
+        provider,
+        userEmail
       })
     );
     
@@ -122,7 +123,8 @@ export async function onRequestPost(context) {
 
 // Background generation function
 async function generateQuestionsInBackground(env, taskId, params) {
-  const { amount, category, ageGroup, difficulty, provider } = params;
+  const { amount, category, ageGroup, difficulty, provider, userEmail } = params;
+  const taskUserId = userEmail || 'system';
   
   console.log(`[Task ${taskId}] Params received:`, params);
   console.log(`[Task ${taskId}] Destructured values:`, { amount, category, ageGroup, difficulty, provider });
@@ -318,7 +320,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         validationTaskId,
-        null,
+        taskUserId,
         'validate_questions',
         'running',
         'AI-validering',
