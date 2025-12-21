@@ -7,6 +7,29 @@
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
+const normalizeTimestamp = (value) => {
+  if (typeof value === 'number') {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  return value;
+};
+
+const normalizeRun = (run) => {
+  if (!run) return run;
+  const questionIds = run.questionIds || run.question_ids || [];
+  const joinCode = run.joinCode || run.join_code || null;
+  const createdAt = run.createdAt ?? normalizeTimestamp(run.created_at);
+  const updatedAt = run.updatedAt ?? normalizeTimestamp(run.updated_at);
+
+  return {
+    ...run,
+    joinCode,
+    questionIds,
+    createdAt,
+    updatedAt
+  };
+};
+
 // Helper för API-anrop
 const apiCall = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
@@ -33,7 +56,7 @@ export const runRepository = {
   listRuns: async () => {
     try {
       const data = await apiCall('/api/runs');
-      return data.runs || [];
+      return (data.runs || []).map(normalizeRun);
     } catch (error) {
       console.error('[runRepository] Failed to list runs:', error);
       throw error;
@@ -46,7 +69,7 @@ export const runRepository = {
   getRun: async (runId) => {
     try {
       const data = await apiCall(`/api/runs/${runId}`);
-      return data.run;
+      return normalizeRun(data.run);
     } catch (error) {
       console.error('[runRepository] Failed to get run:', error);
       throw error;
@@ -59,7 +82,7 @@ export const runRepository = {
   getRunByCode: async (joinCode) => {
     try {
       const data = await apiCall(`/api/runs/${joinCode}/by-code`);
-      return data.run;
+      return normalizeRun(data.run);
     } catch (error) {
       console.error('[runRepository] Failed to get run by code:', error);
       throw error;
@@ -79,7 +102,7 @@ export const runRepository = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      return data.run;
+      return normalizeRun(data.run);
     } catch (error) {
       console.error('[runRepository] Failed to create run:', error);
       throw error;
@@ -114,7 +137,7 @@ export const runRepository = {
         method: 'PUT',
         body: JSON.stringify(updates),
       });
-      return data.run;
+      return normalizeRun(data.run);
     } catch (error) {
       console.error('[runRepository] Failed to update run:', error);
       throw error;
