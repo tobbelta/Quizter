@@ -316,8 +316,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
       await env.DB.prepare(`
         INSERT INTO background_tasks (
           id, user_id, task_type, status, label, description,
-          payload, progress, created_at, started_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          payload, progress, created_at, updated_at, started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         validationTaskId,
         taskUserId,
@@ -334,6 +334,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
           difficulty
         }),
         JSON.stringify({ completed: 0, total: 100, phase: 'Startar validering' }),
+        Date.now(),
         Date.now(),
         Date.now()
       ).run();
