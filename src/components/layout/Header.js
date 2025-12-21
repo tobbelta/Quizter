@@ -19,7 +19,6 @@ import { Capacitor } from '@capacitor/core';
 
 import { VERSION, BUILD_DATE } from '../../version';
 import { useBackgroundTasks } from '../../context/BackgroundTaskContext';
-import BackgroundTasksDropdown from '../backgroundTasks/BackgroundTasksDropdown';
 
 const Header = ({ title = 'Quizter', children }) => {
   const navigate = useNavigate();
@@ -29,15 +28,10 @@ const Header = ({ title = 'Quizter', children }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const {
-    myTrackedTasks,
-    unreadTaskIds,
     unreadCount: taskUnreadCount,
     hasActiveTrackedTasks,
-    markTaskAsSeen,
-    markAllTasksAsSeen,
   } = useBackgroundTasks();
   const [guestAlias, setGuestAlias] = useState(() => {
     if (typeof window === 'undefined') return '';
@@ -270,21 +264,9 @@ const Header = ({ title = 'Quizter', children }) => {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setShowTasks(false);
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (showMessages) {
-      setShowTasks(false);
-    }
-  }, [showMessages]);
-
-  useEffect(() => {
-    if (showTasks) {
       setShowMessages(false);
     }
-  }, [showTasks]);
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     logout();
@@ -498,25 +480,6 @@ const Header = ({ title = 'Quizter', children }) => {
                       </span>
                     )}
                   </button>
-
-                  {/* Bakgrundsjobb - endast för superusers */}
-                  {isSuperUser && (
-                    <button
-                      onClick={() => { setIsMenuOpen(false); setShowTasks(true); }}
-                      className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
-                    >
-                      <span className="text-gray-200">Bakgrundsjobb (snabbvy)</span>
-                      {taskUnreadCount > 0 ? (
-                        <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
-                          {taskUnreadCount}
-                        </span>
-                      ) : hasActiveTrackedTasks ? (
-                        <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded text-[11px] font-semibold">
-                          Pågår
-                        </span>
-                      ) : null}
-                    </button>
-                  )}
 
                   {/* Mina rundor */}
                   <button
@@ -786,28 +749,6 @@ const Header = ({ title = 'Quizter', children }) => {
 
     {/* About Dialog - måste vara utanför header */}
     <AboutDialog isOpen={showAbout} onClose={() => setShowAbout(false)} />
-
-    {/* Background task dropdown - endast för superusers */}
-    {showTasks && isSuperUser && (
-      <>
-        <div
-          className="fixed inset-0 z-[60]"
-          onClick={() => setShowTasks(false)}
-        />
-        <BackgroundTasksDropdown
-          isOpen={showTasks}
-          tasks={myTrackedTasks}
-          unreadTaskIds={unreadTaskIds}
-          onMarkTaskSeen={markTaskAsSeen}
-          onMarkAllSeen={() => {
-            markAllTasksAsSeen();
-            setShowTasks(false);
-          }}
-          onClose={() => setShowTasks(false)}
-          isSuperUser={isSuperUser}
-        />
-      </>
-    )}
 
     {/* Messages Dropdown */}
     {showMessages && (
