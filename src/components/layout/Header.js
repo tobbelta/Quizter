@@ -505,7 +505,7 @@ const Header = ({ title = 'Quizter', children }) => {
                       onClick={() => { setIsMenuOpen(false); setShowTasks(true); }}
                       className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors flex items-center justify-between"
                     >
-                      <span className="text-gray-200">Bakgrundsjobb</span>
+                      <span className="text-gray-200">Bakgrundsjobb (snabbvy)</span>
                       {taskUnreadCount > 0 ? (
                         <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
                           {taskUnreadCount}
@@ -599,24 +599,9 @@ const Header = ({ title = 'Quizter', children }) => {
                   {isSuperUser && (
                     <>
                       <div className="my-2 border-t border-slate-700" />
-                      <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/notifications'); }}
-                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
-                      >
-                        Systemnotiser
-                      </button>
-                      <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/all-runs'); }}
-                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
-                      >
-                        Alla rundor
-                      </button>
-                      <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/users'); }}
-                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
-                      >
-                        Alla användare
-                      </button>
+                      <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                        ADMIN · INNEHÅLL
+                      </div>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/questions'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
@@ -635,6 +620,11 @@ const Header = ({ title = 'Quizter', children }) => {
                       >
                         Ålders-/målgrupper
                       </button>
+
+                      <div className="my-2 border-t border-slate-700" />
+                      <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                        ADMIN · AI
+                      </div>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/dashboard'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
@@ -642,22 +632,21 @@ const Header = ({ title = 'Quizter', children }) => {
                         AI Dashboard
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/analytics'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
-                        Besöksstatistik
+                        AI-providerinställningar
                       </button>
-                      <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}
-                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
-                      >
-                        Meddelanden
-                      </button>
+
+                      <div className="my-2 border-t border-slate-700" />
+                      <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                        ADMIN · DRIFT
+                      </div>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/tasks'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300 flex items-center justify-between"
                       >
-                        <span>Bakgrundsjobb</span>
+                        <span>Bakgrundsjobb (översikt)</span>
                         {taskUnreadCount > 0 && (
                           <span className="px-2 py-0.5 bg-amber-500 rounded text-xs font-bold text-black">
                             {taskUnreadCount}
@@ -665,16 +654,45 @@ const Header = ({ title = 'Quizter', children }) => {
                         )}
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
-                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
-                      >
-                        AI-providerinställningar
-                      </button>
-                      <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/logs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
-                        🔴 Error Logs
+                        Fel-loggar
+                      </button>
+
+                      <div className="my-2 border-t border-slate-700" />
+                      <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
+                        ADMIN · SYSTEM
+                      </div>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/notifications'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Systemnotiser
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Admin-meddelanden
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/all-runs'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Alla rundor
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/users'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Alla användare
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/analytics'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Besöksstatistik
                       </button>
 
                       {/* Developer Tools - Endast localhost */}
