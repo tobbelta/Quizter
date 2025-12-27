@@ -84,28 +84,6 @@ const formatAgeRange = (ageGroupDetails) => {
   return '';
 };
 
-const isChildrenAgeGroup = (ageGroup, ageGroupDetails = null) => {
-  const id = (ageGroupDetails?.id || ageGroup || '').toLowerCase();
-  if (id === 'children' || id === 'barn' || id === 'kids') {
-    return true;
-  }
-  const maxAge = ageGroupDetails?.maxAge;
-  return Number.isFinite(maxAge) && maxAge > 0 && maxAge <= 12;
-};
-
-const buildChildGuardrails = (ageGroup, ageGroupDetails) => {
-  if (!isChildrenAgeGroup(ageGroup, ageGroupDetails)) {
-    return '';
-  }
-  return `
-EXTRA BARNREGLER:
-- Håll frågorna konkreta, vardagsnära och på lågstadienivå.
-- Undvik konsthistoria, politik, krig, ekonomi och avancerad naturvetenskap.
-- Undvik konstnärer, historiska epoker och annan nischad kulturkunskap.
-- Om frågan nämner nationalitet (svensk/norsk osv) måste det vara korrekt, annars underkänn.
-- Om du är osäker, välj ett enklare ämne eller markera frågan som ogiltig.`;
-};
-
 export class OpenAIProvider {
   constructor(apiKey, model, options = {}) {
     const providerName = options.name || 'openai';
@@ -189,8 +167,6 @@ export class OpenAIProvider {
       targetAudience,
       targetAudiences,
       targetAudienceDetails,
-      freshnessPrompt,
-      answerInQuestionPrompt,
       language = 'sv'
     } = params;
     
@@ -204,9 +180,7 @@ export class OpenAIProvider {
       targetAudiences,
       targetAudienceDetails,
       amount,
-      language,
-      freshnessPrompt,
-      answerInQuestionPrompt
+      language
     );
     
     try {
@@ -291,81 +265,6 @@ export class OpenAIProvider {
     }
   }
 
-  async checkAnswerAmbiguity(question, _validationCriteria) {
-    const prompt = this.buildAmbiguityPrompt(question);
-
-    try {
-      const data = await this.requestChatCompletion(
-        [
-          {
-            role: 'system',
-            content: 'Du är en expert på att upptäcka tvetydiga quizfrågor.'
-          },
-          { role: 'user', content: prompt }
-        ],
-        0
-      );
-      const result = JSON.parse(data.choices[0].message.content);
-      const alternatives = Array.isArray(result.alternativeCorrectOptions)
-        ? result.alternativeCorrectOptions.filter(Boolean)
-        : result.alternativeCorrectOptions
-          ? [result.alternativeCorrectOptions]
-          : [];
-      const suggestions = Array.isArray(result.suggestions)
-        ? result.suggestions.filter(Boolean)
-        : result.suggestions
-          ? [result.suggestions]
-          : [];
-
-      return {
-        multipleCorrectOptions: result.multipleCorrectOptions === true
-          || result.multipleCorrectOptions === 'true'
-          || result.multipleCorrectOptions === 1,
-        alternativeCorrectOptions: alternatives,
-        reason: result.reason || '',
-        suggestions
-      };
-    } catch (error) {
-      console.error(`${this.logPrefix} Ambiguity check error:`, error);
-      throw new Error(`${this.label} ambiguity check failed: ${error.message}`);
-    }
-  }
-
-  async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
-    const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
-
-    try {
-      const data = await this.requestChatCompletion(
-        [
-          {
-            role: 'system',
-            content: 'Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta.'
-          },
-          { role: 'user', content: prompt }
-        ],
-        0.2
-      );
-      const result = JSON.parse(data.choices[0].message.content);
-      const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
-        ? result.proposedEdits
-        : null;
-      const suggestions = Array.isArray(result?.suggestions)
-        ? result.suggestions.filter(Boolean)
-        : result?.suggestions
-          ? [result.suggestions]
-          : [];
-
-      return {
-        proposedEdits,
-        suggestions,
-        reason: result?.reason || ''
-      };
-    } catch (error) {
-      console.error(`${this.logPrefix} Proposed edits error:`, error);
-      throw new Error(`${this.label} proposed edits failed: ${error.message}`);
-    }
-  }
-
   /**
    * Build prompt for question generation
    */
@@ -379,9 +278,7 @@ export class OpenAIProvider {
     targetAudiences,
     targetAudienceDetails,
     amount,
-    language,
-    freshnessPrompt,
-    answerInQuestionPrompt
+    language
   ) {
     const difficultyMap = {
       'easy': 'lätt',
@@ -401,8 +298,6 @@ export class OpenAIProvider {
     const ageGroupContext = ageGroupDetails?.prompt
       ? `\nÅLDERSGRUPPSINSTRUKTIONER:\n- ${ageGroupDetails.prompt}\n`
       : '';
-    const childGuardrails = buildChildGuardrails(ageGroup, ageGroupDetails);
-    const answerPrompt = answerInQuestionPrompt ? `\n${answerInQuestionPrompt}\n` : '';
 
     // Handle mixed age groups
     let ageGroupInstruction;
@@ -422,9 +317,6 @@ ${ageGroupInstruction}
 ${audienceInfo.context}
 ${categoryContext}
 ${ageGroupContext}
-${childGuardrails}
-${answerPrompt}
-${freshnessPrompt ? `\n${freshnessPrompt}\n` : ''}
 
 VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - question_sv: Frågan på svenska
@@ -436,8 +328,6 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - background_sv: Kort bakgrund/fördjupning på svenska (2-4 meningar)
 - background_en: Kort bakgrund/fördjupning på engelska (2-4 meningar)
 - ageGroup: Vilken åldersgrupp frågan riktar sig till (använd ageGroup-id)
-- timeSensitive: true om frågan är tidskänslig, annars false
-- bestBeforeDate: "YYYY-MM-DD" om timeSensitive=true, annars null
 
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
@@ -448,7 +338,7 @@ Varje fråga ska ha:
 - Kort bakgrund/fördjupning på båda språken (2-4 meningar)
 - En passande emoji som visuell illustration
 - Target audience: en av (${audienceInfo.listText || 'swedish'})
-- Age group: använd ageGroup-id (om vald åldersgrupp är angiven, använd exakt "${ageGroup || 'children'}")
+- Age group: specificera "children", "youth" eller "adults" för varje fråga
 
 Returnera JSON i exakt följande format:
 {
@@ -465,9 +355,7 @@ Returnera JSON i exakt följande format:
       "background_en": "Short background in English.",
       "emoji": "🎯",
       "targetAudience": "${audienceInfo.example || 'swedish'}",
-      "ageGroup": "${ageGroup || 'children'}",
-      "timeSensitive": false,
-      "bestBeforeDate": null
+      "ageGroup": "children"
     }
   ]
 }`;
@@ -530,22 +418,7 @@ Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
   "suggestions": ["eventuella förbättringsförslag på svenska"],
   "feedback": "Kort sammanfattning av valideringen på svenska",
   "background": "2-4 meningar fördjupning/kontext om ämnet som hjälper spelaren att förstå svaret",
-  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"],
-  "multipleCorrectOptions": true/false,
-  "alternativeCorrectOptions": ["valfritt: andra alternativ som kan vara korrekta"],
-  "proposedEdits": {
-    "question_sv": "valfritt",
-    "question_en": "valfritt",
-    "options_sv": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "options_en": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "correctOption": 0,
-    "explanation_sv": "valfritt",
-    "explanation_en": "valfritt",
-    "background_sv": "valfritt",
-    "background_en": "valfritt"
-  },
-  "timeSensitive": true/false,
-  "bestBeforeDate": "YYYY-MM-DD eller null"
+  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"]
 }
 
 VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE vara på SVENSKA.`;
@@ -592,8 +465,6 @@ VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE va
       ...q,
       background_sv: q.background_sv || q.background || '',
       background_en: q.background_en || q.background || '',
-      timeSensitive: q.timeSensitive === true,
-      bestBeforeDate: q.bestBeforeDate || null,
       provider: this.name,
       model: this.model
     }));

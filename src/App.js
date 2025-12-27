@@ -24,7 +24,6 @@ import AdminQuestionsPage from './views/AdminQuestionsPage';
 import AdminDashboardPage from './views/AdminDashboardPage';
 import AdminCategoriesPage from './views/AdminCategoriesPage';
 import AdminAudienceSettingsPage from './views/AdminAudienceSettingsPage';
-import AdminPaymentsPage from './views/AdminPaymentsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
@@ -203,6 +202,17 @@ const AppRoutes = () => (
     <Route path="/superuser/categories" element={<Navigate to="/admin/categories" replace />} />
     <Route path="/superuser/audiences" element={<Navigate to="/admin/audiences" replace />} />
     <Route path="/superuser/payments" element={<Navigate to="/admin/payments" replace />} />
+
+    <Route path="/superuser/all-runs" element={<Navigate to="/admin/all-runs" replace />} />
+    <Route path="/superuser/users" element={<Navigate to="/admin/users" replace />} />
+    <Route path="/superuser/analytics" element={<Navigate to="/admin/analytics" replace />} />
+    <Route path="/superuser/messages" element={<Navigate to="/admin/messages" replace />} />
+    <Route path="/superuser/tasks" element={<Navigate to="/admin/tasks" replace />} />
+    <Route path="/superuser/notifications" element={<Navigate to="/admin/notifications" replace />} />
+    <Route path="/superuser/logs" element={<Navigate to="/admin/logs" replace />} />
+    <Route path="/superuser/ai-providers" element={<Navigate to="/admin/ai-providers" replace />} />
+    <Route path="/superuser/categories" element={<Navigate to="/admin/categories" replace />} />
+    <Route path="/superuser/audiences" element={<Navigate to="/admin/audiences" replace />} />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

@@ -208,21 +208,6 @@ const GenerateRunPage = () => {
     };
   }, []);
 
-  React.useEffect(() => {
-    let isActive = true;
-    paymentService.getPaymentConfig().then((config) => {
-      if (!isActive) return;
-      setPaymentConfig(config);
-      const amounts = config?.donations?.amounts;
-      if (Array.isArray(amounts) && amounts.length > 0) {
-        setDonationAmount(amounts[0]);
-      }
-    });
-    return () => {
-      isActive = false;
-    };
-  }, []);
-
 
   // Funktioner för att be om tillstånd
   const requestGeolocation = React.useCallback(() => {
@@ -1392,3 +1377,21 @@ const GenerateRunPage = () => {
 };
 
 export default GenerateRunPage;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

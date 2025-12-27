@@ -72,28 +72,6 @@ const formatAgeRange = (ageGroupDetails) => {
   return '';
 };
 
-const isChildrenAgeGroup = (ageGroup, ageGroupDetails = null) => {
-  const id = (ageGroupDetails?.id || ageGroup || '').toLowerCase();
-  if (id === 'children' || id === 'barn' || id === 'kids') {
-    return true;
-  }
-  const maxAge = ageGroupDetails?.maxAge;
-  return Number.isFinite(maxAge) && maxAge > 0 && maxAge <= 12;
-};
-
-const buildChildGuardrails = (ageGroup, ageGroupDetails) => {
-  if (!isChildrenAgeGroup(ageGroup, ageGroupDetails)) {
-    return '';
-  }
-  return `
-EXTRA BARNREGLER:
-- Håll frågorna konkreta, vardagsnära och på lågstadienivå.
-- Undvik konsthistoria, politik, krig, ekonomi och avancerad naturvetenskap.
-- Undvik konstnärer, historiska epoker och annan nischad kulturkunskap.
-- Om frågan nämner nationalitet (svensk/norsk osv) måste det vara korrekt, annars underkänn.
-- Om du är osäker, välj ett enklare ämne eller markera frågan som ogiltig.`;
-};
-
 export class MistralProvider {
   constructor(apiKey, model) {
     if (!apiKey) {
@@ -118,8 +96,6 @@ export class MistralProvider {
       targetAudience,
       targetAudiences,
       targetAudienceDetails,
-      freshnessPrompt,
-      answerInQuestionPrompt,
       language = 'sv'
     } = params;
     
@@ -133,9 +109,7 @@ export class MistralProvider {
       targetAudiences,
       targetAudienceDetails,
       amount,
-      language,
-      freshnessPrompt,
-      answerInQuestionPrompt
+      language
     );
     
     try {
@@ -359,9 +333,7 @@ export class MistralProvider {
     targetAudiences,
     targetAudienceDetails,
     amount,
-    language,
-    freshnessPrompt,
-    answerInQuestionPrompt
+    language
   ) {
     const difficultyMap = {
       'easy': 'lätt',
@@ -381,8 +353,6 @@ export class MistralProvider {
     const ageGroupContext = ageGroupDetails?.prompt
       ? `\nÅLDERSGRUPPSINSTRUKTIONER:\n- ${ageGroupDetails.prompt}\n`
       : '';
-    const childGuardrails = buildChildGuardrails(ageGroup, ageGroupDetails);
-    const answerPrompt = answerInQuestionPrompt ? `\n${answerInQuestionPrompt}\n` : '';
 
     const label = ageGroupDetails?.label || ageGroup || 'vuxna';
     const range = formatAgeRange(ageGroupDetails);
@@ -393,9 +363,6 @@ export class MistralProvider {
 ${audienceInfo.context}
 ${categoryContext}
 ${ageGroupContext}
-${childGuardrails}
-${answerPrompt}
-${freshnessPrompt ? `\n${freshnessPrompt}\n` : ''}
 
 VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - question_sv: Frågan på svenska
@@ -406,9 +373,6 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - explanation_en: Förklaring på engelska
 - background_sv: Kort bakgrund/fördjupning på svenska (2-4 meningar)
 - background_en: Kort bakgrund/fördjupning på engelska (2-4 meningar)
-- ageGroup: använd ageGroup-id (om vald åldersgrupp är angiven, använd exakt "${ageGroup || 'children'}")
-- timeSensitive: true om frågan är tidskänslig, annars false
-- bestBeforeDate: "YYYY-MM-DD" om timeSensitive=true, annars null
 
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
@@ -434,10 +398,7 @@ Returnera JSON i exakt följande format:
       "background_sv": "Kort bakgrund på svenska.",
       "background_en": "Short background in English.",
       "emoji": "🎯",
-      "targetAudience": "${audienceInfo.example || 'swedish'}",
-      "ageGroup": "${ageGroup || 'children'}",
-      "timeSensitive": false,
-      "bestBeforeDate": null
+      "targetAudience": "${audienceInfo.example || 'swedish'}"
     }
   ]
 }`;
@@ -500,112 +461,10 @@ Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
   "suggestions": ["eventuella förbättringsförslag på svenska"],
   "feedback": "Kort sammanfattning av valideringen på svenska",
   "background": "2-4 meningar fördjupning/kontext om ämnet som hjälper spelaren att förstå svaret",
-  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"],
-  "multipleCorrectOptions": true/false,
-  "alternativeCorrectOptions": ["valfritt: andra alternativ som kan vara korrekta"],
-  "proposedEdits": {
-    "question_sv": "valfritt",
-    "question_en": "valfritt",
-    "options_sv": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "options_en": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "correctOption": 0,
-    "explanation_sv": "valfritt",
-    "explanation_en": "valfritt",
-    "background_sv": "valfritt",
-    "background_en": "valfritt"
-  },
-  "timeSensitive": true/false,
-  "bestBeforeDate": "YYYY-MM-DD eller null"
+  "factSummary": ["2-4 korta faktapunkter som styrker svaret eller rättar till felaktigheter"]
 }
 
 VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE vara på SVENSKA.`;
-  }
-
-  buildAmbiguityPrompt(question) {
-    const questionText = question?.question_sv || question?.question || '';
-    const options = question?.options_sv || question?.options || [];
-    const correctIndex = Number.isFinite(question?.correctOption) ? question.correctOption : null;
-    const correctText = Number.isFinite(correctIndex) && options[correctIndex] ? options[correctIndex] : null;
-
-    return `Bedöm om fler än ett svarsalternativ kan vara korrekt för frågan nedan.
-
-FRÅGA (SV):
-${questionText}
-
-SVARSALTERNATIV (SV):
-${JSON.stringify(options)}
-
-Markerat rätt svar (index): ${Number.isFinite(correctIndex) ? correctIndex : 'okänt'}
-Markerat rätt svar (text): ${correctText || 'okänt'}
-
-Regler:
-- Om två eller fler alternativ kan vara korrekta, sätt multipleCorrectOptions=true.
-- Lista då ALLA alternativ som kan vara korrekta (exakt som de står i listan).
-- Om frågan är vag ("känd för", "populär", "vackra", "välkänd") och flera alternativ passar, markera true.
-- Om du är osäker, markera true.
-
-Returnera ENDAST JSON:
-{
-  "multipleCorrectOptions": true/false,
-  "alternativeCorrectOptions": ["exakt alternativtext", "..."],
-  "reason": "kort förklaring på svenska",
-  "suggestions": ["1-3 korta förbättringsförslag för att göra frågan entydig"]
-}`;
-  }
-
-  buildProposedEditsPrompt(question, criteria = {}, analysis = {}) {
-    const { category, ageGroup, difficulty } = criteria;
-    const issues = Array.isArray(analysis.issues) ? analysis.issues : [];
-    const suggestions = Array.isArray(analysis.suggestions) ? analysis.suggestions : [];
-    const blockingRules = Array.isArray(analysis.blockingRules) ? analysis.blockingRules : [];
-    const issuesBlock = issues.length > 0 ? issues.map((issue) => `- ${issue}`).join('\n') : '- (inga)';
-    const suggestionsBlock = suggestions.length > 0 ? suggestions.map((item) => `- ${item}`).join('\n') : '- (inga)';
-    const rulesBlock = blockingRules.length > 0 ? blockingRules.map((rule) => `- ${rule}`).join('\n') : '- (inga)';
-    const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
-
-    return `Du ska föreslå konkreta ändringar så att frågan blir entydig och godkänd.
-
-KONTEXT:
-- Kategori: ${category || 'Allmän'}
-- Åldersgrupp: ${ageGroup || 'adults'}
-- Svårighetsgrad: ${difficulty || 'medium'}
-
-PROBLEM:
-${issuesBlock}
-
-FÖRSLAG:
-${suggestionsBlock}
-${answerPrompt}
-
-BLOCKERANDE REGLER:
-${rulesBlock}
-
-FRÅGA (JSON):
-${JSON.stringify(question, null, 2)}
-
-Regler:
-- Ändra så lite som möjligt.
-- Behåll 4 svarsalternativ per språk.
-- Om du ändrar svarsalternativ måste correctOption uppdateras.
-- Returnera bara fält som ska ändras; utelämna fält som inte behöver ändras.
-- Om du inte kan ge säkra ändringar, sätt proposedEdits till null.
-
-Returnera ENDAST JSON:
-{
-  "proposedEdits": {
-    "question_sv": "valfritt",
-    "question_en": "valfritt",
-    "options_sv": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "options_en": ["valfritt", "valfritt", "valfritt", "valfritt"],
-    "correctOption": 0,
-    "explanation_sv": "valfritt",
-    "explanation_en": "valfritt",
-    "background_sv": "valfritt",
-    "background_en": "valfritt"
-  },
-  "reason": "kort förklaring på svenska",
-  "suggestions": ["1-3 korta förbättringsförslag (valfritt)"]
-}`;
   }
 
   /**
@@ -641,8 +500,6 @@ Returnera ENDAST JSON:
       ...q,
       background_sv: q.background_sv || q.background || '',
       background_en: q.background_en || q.background || '',
-      timeSensitive: q.timeSensitive === true,
-      bestBeforeDate: q.bestBeforeDate || null,
       provider: this.name,
       model: this.model
     }));

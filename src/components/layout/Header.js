@@ -566,19 +566,19 @@ const Header = ({ title = 'Quizter', children }) => {
                         ADMIN · INNEHÅLL
                       </div>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/questions'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/notifications'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Frågebank
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/categories'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/all-runs'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Kategorier
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/audiences'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/users'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         Ålders-/målgrupper
@@ -595,13 +595,31 @@ const Header = ({ title = 'Quizter', children }) => {
                         AI Dashboard
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/categories'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Kategorier
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/audiences'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Ålders-/målgrupper
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/dashboard'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        AI Dashboard
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/analytics'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         AI-providerinställningar
                       </button>
                       <button
-                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-rules'); }}
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         AI-regler
@@ -621,6 +639,12 @@ const Header = ({ title = 'Quizter', children }) => {
                             {taskUnreadCount}
                           </span>
                         )}
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        AI-providerinställningar
                       </button>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/logs'); }}

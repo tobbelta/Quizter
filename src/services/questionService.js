@@ -555,10 +555,6 @@ export const questionService = {
     const targetAudience = editData.targetAudience || null;
     const difficulty = editData.difficulty || null;
     const correctOption = typeof editData.correctOption === 'number' ? editData.correctOption : 0;
-    const timeSensitive = editData.timeSensitive === true;
-    const bestBeforeDate = editData.bestBeforeDate || null;
-    const parsedBestBefore = bestBeforeDate ? Date.parse(bestBeforeDate) : null;
-    const bestBeforeAt = Number.isNaN(parsedBestBefore) ? null : parsedBestBefore;
 
     const updateData = {
       question_sv: sv.text || '',
@@ -573,20 +569,8 @@ export const questionService = {
       categories,
       age_groups: ageGroups,
       difficulty,
-      target_audience: targetAudience,
-      timeSensitive,
-      bestBeforeAt
+      target_audience: targetAudience
     };
-
-    if (bestBeforeAt && bestBeforeAt > Date.now()) {
-      updateData.quarantined = false;
-      updateData.quarantinedAt = null;
-      updateData.quarantineReason = null;
-    } else if (!bestBeforeAt && !timeSensitive) {
-      updateData.quarantined = false;
-      updateData.quarantinedAt = null;
-      updateData.quarantineReason = null;
-    }
 
     if (editData.emoji !== undefined) {
       updateData.illustration_emoji = editData.emoji;
@@ -611,7 +595,6 @@ export const questionService = {
 
       const nextCategories = categories.length > 0 ? categories : current.categories || [];
       const nextAgeGroups = ageGroups.length > 0 ? ageGroups : current.ageGroups || [];
-      const shouldClearQuarantine = (!bestBeforeAt && !timeSensitive) || (bestBeforeAt && bestBeforeAt > Date.now());
 
       return {
         ...current,
@@ -640,14 +623,6 @@ export const questionService = {
         difficulty,
         correctOption,
         emoji: editData.emoji !== undefined ? editData.emoji : current.emoji,
-        timeSensitive,
-        bestBeforeAt,
-        isExpired: bestBeforeAt ? bestBeforeAt <= Date.now() : false,
-        quarantined: shouldClearQuarantine
-          ? false
-          : (bestBeforeAt ? bestBeforeAt <= Date.now() : current.quarantined),
-        quarantinedAt: shouldClearQuarantine ? null : current.quarantinedAt,
-        quarantineReason: shouldClearQuarantine ? null : current.quarantineReason,
         aiValidated: options.keepValidation ? current.aiValidated : false,
         aiValidationResult: options.keepValidation ? current.aiValidationResult : null,
         aiValidatedAt: options.keepValidation ? current.aiValidatedAt : null,
@@ -657,50 +632,6 @@ export const questionService = {
         manuallyApprovedAt: options.keepValidation ? current.manuallyApprovedAt : null,
         manuallyRejectedAt: options.keepValidation ? current.manuallyRejectedAt : null,
         updatedAt: now
-      };
-    });
-
-    return true;
-  },
-  updateQuestionMeta: async (questionId, updates = {}) => {
-    await ensureCache();
-    if (!questionId) {
-      throw new Error('questionId is required');
-    }
-
-    await questionRepository.updateQuestion(questionId, updates);
-
-    const bestBeforeRaw = updates.bestBeforeAt !== undefined
-      ? updates.bestBeforeAt
-      : (updates.best_before_at !== undefined ? updates.best_before_at : undefined);
-    const resolveTimestamp = (value) => {
-      if (value === undefined) return undefined;
-      if (value === null || value === '') return null;
-      if (typeof value === 'number' && Number.isFinite(value)) return value;
-      if (value instanceof Date) {
-        const time = value.getTime();
-        return Number.isNaN(time) ? null : time;
-      }
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) return numeric;
-      const parsed = Date.parse(String(value));
-      return Number.isNaN(parsed) ? null : parsed;
-    };
-    const resolvedBestBeforeAt = resolveTimestamp(bestBeforeRaw);
-    updateCachedQuestion(questionId, (current) => {
-      if (!current) return current;
-      const nextBestBeforeAt = resolvedBestBeforeAt !== undefined ? resolvedBestBeforeAt : current.bestBeforeAt;
-      const nextIsExpired = nextBestBeforeAt ? nextBestBeforeAt <= Date.now() : false;
-      return {
-        ...current,
-        ...updates,
-        timeSensitive: updates.timeSensitive !== undefined ? updates.timeSensitive : current.timeSensitive,
-        bestBeforeAt: nextBestBeforeAt,
-        quarantined: updates.quarantined !== undefined ? updates.quarantined : (nextIsExpired ? true : current.quarantined),
-        quarantinedAt: updates.quarantinedAt !== undefined ? updates.quarantinedAt : current.quarantinedAt,
-        quarantineReason: updates.quarantineReason !== undefined ? updates.quarantineReason : current.quarantineReason,
-        isExpired: nextIsExpired,
-        updatedAt: new Date()
       };
     });
 

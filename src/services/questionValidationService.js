@@ -145,15 +145,6 @@ export const validateQuestion = (question, language = 'sv', options = {}) => {
     errors.push('Frågan måste ha ett korrekt svar angivet (correctOption)');
   } else if (correctOption < 0 || correctOption >= (answerOptions?.length || 0)) {
     errors.push(`Korrekt svar (${correctOption}) är utanför giltigt intervall (0-${(answerOptions?.length || 1) - 1})`);
-  } else if (Array.isArray(answerOptions) && typeof text === 'string') {
-    const correctOptionText = answerOptions[correctOption];
-    if (correctOptionText && correctOptionText.trim().length >= 4) {
-      const normalizedText = text.toLowerCase();
-      const normalizedAnswer = correctOptionText.trim().toLowerCase();
-      if (normalizedText.includes(normalizedAnswer)) {
-        errors.push('Frågan avslöjar svaret i frågetexten');
-      }
-    }
   }
 
   if (!explanation || explanation.trim().length < MIN_TEXT_LENGTH) {

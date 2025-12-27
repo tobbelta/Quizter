@@ -62,23 +62,6 @@ export async function onRequestPut(context) {
       }
       return JSON.stringify(value);
     };
-    const normalizeTimestamp = (value) => {
-      if (value === undefined) {
-        return undefined;
-      }
-      if (value === null) {
-        return null;
-      }
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-      }
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        return numeric;
-      }
-      const parsed = Date.parse(value);
-      return Number.isNaN(parsed) ? null : parsed;
-    };
 
     const now = new Date().toISOString();
     const fields = [];

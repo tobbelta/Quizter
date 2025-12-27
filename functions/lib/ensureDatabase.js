@@ -5,7 +5,6 @@
 
 import { ensureCategoriesTable } from './categories.js';
 import { ensureAudienceTables } from './audiences.js';
-import { ensureAiRulesTable } from './aiRules.js';
 
 let dbInitialized = false;
 
@@ -219,105 +218,6 @@ async function ensurePaymentsSchema(db) {
     await db.prepare(`
       CREATE TABLE subscriptions (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        provider_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        amount INTEGER NOT NULL,
-        currency TEXT NOT NULL,
-        period TEXT NOT NULL,
-        started_at INTEGER NOT NULL,
-        expires_at INTEGER NOT NULL,
-        provider_payment_id TEXT,
-        metadata TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER
-      )
-    `).run();
-  }
-
-  await ensureTableColumns(db, 'subscriptions', [
-    { name: 'user_id', ddl: 'user_id TEXT' },
-    { name: 'provider_id', ddl: 'provider_id TEXT' },
-    { name: 'status', ddl: 'status TEXT' },
-    { name: 'amount', ddl: 'amount INTEGER' },
-    { name: 'currency', ddl: 'currency TEXT' },
-    { name: 'period', ddl: 'period TEXT' },
-    { name: 'started_at', ddl: 'started_at INTEGER' },
-    { name: 'expires_at', ddl: 'expires_at INTEGER' },
-    { name: 'provider_payment_id', ddl: 'provider_payment_id TEXT' },
-    { name: 'metadata', ddl: 'metadata TEXT' },
-    { name: 'created_at', ddl: 'created_at INTEGER' },
-    { name: 'updated_at', ddl: 'updated_at INTEGER' },
-  ]);
-}
-
-async function addMissingColumns(db) {
-  try {
-    await ensureRunsSchema(db);
-    await ensureParticipantsSchema(db);
-    await ensureAnswersSchema(db);
-    await ensureQuestionsSchema(db);
-    await ensureCategoriesTable(db);
-    await ensureAudienceTables(db);
-    await ensureAiRulesTable(db);
-    await ensurePaymentsSchema(db);
-  } catch (error) {
-    console.log('[ensureDatabase] Table recreation error:', error.message);
-    try {
-      await ensureQuestionsSchema(db);
-    } catch (schemaError) {
-      console.log('[ensureDatabase] Questions schema ensure error:', schemaError.message);
-    }
-  }
-}
-
-export async function ensureDatabase(db) {
-  if (dbInitialized) return;
-  
-  try {
-    // Check if tables exist
-    const result = await db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='background_tasks'"
-    ).first();
-    
-    if (result) {
-      // Tables exist, but check if we need to add missing columns
-      await addMissingColumns(db);
-      dbInitialized = true;
-      return;
-    }
-    
-    console.log('[ensureDatabase] Initializing database...');
-    
-    // DRASTIC FIX: Drop ALL tables that might be corrupted and recreate them
-    const dropTables = [
-      'DROP TABLE IF EXISTS answers',
-      'DROP TABLE IF EXISTS participants', 
-      'DROP TABLE IF EXISTS runs'
-    ];
-    
-    for (const dropSql of dropTables) {
-      try {
-        await db.prepare(dropSql).run();
-        console.log(`✅ Dropped table: ${dropSql}`);
-      } catch (error) {
-        console.log(`⚠️ Could not drop table (might not exist): ${error.message}`);
-      }
-    }
-    
-    console.log('📋 Creating fresh tables...');
-
-    // Create all tables
-    const schema = [
-      `CREATE TABLE users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE,
-        display_name TEXT,
-        created_at INTEGER NOT NULL,
-        is_super_user BOOLEAN DEFAULT FALSE
-      )`,
-      `CREATE TABLE questions (
-        id TEXT PRIMARY KEY,
         question_sv TEXT NOT NULL,
         question_en TEXT,
         options_sv TEXT NOT NULL,
@@ -450,9 +350,22 @@ export async function ensureDatabase(db) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
         FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE SET NULL
       )`,
-      `CREATE TABLE payment_settings (
-        id TEXT PRIMARY KEY,
-        config TEXT NOT NULL,
+      `CREATE TABLE provider_settings (
+        provider_id TEXT PRIMARY KEY,
+        is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        is_available BOOLEAN NOT NULL DEFAULT TRUE,
+        last_checked INTEGER,
+        purpose_settings TEXT,
+        model TEXT,
+        encrypted_api_key TEXT,
+        api_key_hint TEXT,
+        display_name TEXT,
+        base_url TEXT,
+        extra_headers TEXT,
+        supports_response_format BOOLEAN DEFAULT TRUE,
+        max_questions_per_request INTEGER,
+        provider_type TEXT,
+        is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
       )`,
       `CREATE TABLE payments (
@@ -509,21 +422,6 @@ export async function ensureDatabase(db) {
         scope_id TEXT NOT NULL,
         config TEXT NOT NULL,
         updated_at INTEGER,
-        PRIMARY KEY (scope_type, scope_id)
-      )`,
-      `CREATE TABLE background_tasks (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        task_type TEXT NOT NULL,
-        status TEXT NOT NULL,
-        label TEXT,
-        description TEXT,
-        payload TEXT,
-        progress TEXT,
-        result TEXT,
-        error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER,
         started_at INTEGER,
         finished_at INTEGER
       )`
@@ -539,7 +437,6 @@ export async function ensureDatabase(db) {
     await ensureQuestionsSchema(db);
     await ensureCategoriesTable(db);
     await ensureAudienceTables(db);
-    await ensurePaymentsSchema(db);
     dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed
