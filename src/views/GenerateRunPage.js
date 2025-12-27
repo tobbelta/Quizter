@@ -21,6 +21,8 @@ import useRunLocation from '../hooks/useRunLocation';
 import { useBreadcrumbs } from '../hooks/useBreadcrumbs';
 import FullscreenQRCode from '../components/shared/FullscreenQRCode';
 import FullscreenMap from '../components/shared/FullscreenMap';
+import PaymentModal from '../components/payment/PaymentModal';
+import { paymentService } from '../services/paymentService';
 
 const defaultForm = {
   name: '',
@@ -29,6 +31,7 @@ const defaultForm = {
   categories: [],
   lengthMeters: 3000,
   questionCount: 9,
+  expectedPlayers: 4,
   distanceBetweenQuestions: 500, // För distance-based
   minutesBetweenQuestions: 5, // För time-based
   preferGreenAreas: false,
@@ -45,7 +48,7 @@ const difficultyOptions = [
 const GenerateRunPage = () => {
   const navigate = useNavigate();
   const { currentUser, loginAsGuest } = useAuth();
-  const { generateRun } = useRun();
+  const { generateRun, joinRunByCode } = useRun();
   const { coords, status: gpsStatus, trackingEnabled } = useRunLocation();
   const { logFormSubmit, logStateChange } = useBreadcrumbs();
   const [form, setForm] = useState(defaultForm);
@@ -54,6 +57,14 @@ const GenerateRunPage = () => {
   const [aliasCommitted, setAliasCommitted] = useState(() => Boolean(initialAlias.trim()));
   const [showAliasDialog, setShowAliasDialog] = useState(false);
   const [error, setError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [showRunPaymentModal, setShowRunPaymentModal] = useState(false);
+  const [pendingRunPayload, setPendingRunPayload] = useState(null);
+  const [pendingCreator, setPendingCreator] = useState(null);
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [donationAmount, setDonationAmount] = useState(2000);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [generatedRun, setGeneratedRun] = useState(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRunSaved, setIsRunSaved] = useState(false);
@@ -77,17 +88,23 @@ const GenerateRunPage = () => {
       return {
         id: currentUser.id,
         name: currentUser.name || '',
+        user: currentUser
       };
     }
 
     const aliasValue = alias?.trim() || form.name?.trim() || 'G?st';
+    const storedContact = userPreferencesService.getContact();
 
     try {
-    userPreferencesService.saveAlias(aliasValue);
-    setAlias(aliasValue);
-    setAliasCommitted(true);
+      userPreferencesService.saveAlias(aliasValue);
+      setAlias(aliasValue);
+      setAliasCommitted(true);
+      if (storedContact) {
+        userPreferencesService.saveContact(storedContact);
+      }
       const guestUser = await loginAsGuest({
-        alias: aliasValue
+        alias: aliasValue,
+        contact: storedContact || undefined
       });
 
       if (!guestUser) {
@@ -96,7 +113,8 @@ const GenerateRunPage = () => {
 
       return {
         id: guestUser.uid || guestUser.id || 'anonymous',
-        name: guestUser.displayName || guestUser.name || aliasValue || 'G?st'
+        name: guestUser.displayName || guestUser.name || aliasValue || 'G?st',
+        user: guestUser
       };
     } catch (guestError) {
       console.error('[GenerateRunPage] Kunde inte skapa g?stidentitet:', guestError);
@@ -302,6 +320,22 @@ const GenerateRunPage = () => {
     return trackingEnabled && (coords !== null || gpsStatus === 'active' || gpsStatus === 'pending');
   }, [trackingEnabled, coords, gpsStatus]);
 
+  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.createRun);
+  const donationCurrency = paymentConfig?.currency || 'sek';
+  const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
+    ? paymentConfig.donations.amounts
+    : [];
+  const formatDonation = (value) => `${(Number(value || 0) / 100).toFixed(2)} ${donationCurrency.toUpperCase()}`;
+  const subscriptionEnabled = Boolean(paymentConfig?.subscription?.enabled);
+  const subscriptionAmount = paymentConfig?.subscription?.amount || 0;
+  const subscriptionPeriod = paymentConfig?.subscription?.period || 'month';
+  const requiresPlayerPricing = paymentConfig?.payer && paymentConfig.payer !== 'host';
+  const requiresHostPayment = Boolean(
+    paymentConfig?.paymentsEnabled
+    && paymentConfig?.perRun?.enabled !== false
+    && (paymentConfig?.payer === 'host' || paymentConfig?.payer === 'split')
+  );
+
   // Auto-switch to time-based if geolocation is not enabled
   React.useEffect(() => {
     if (!isGeolocationAvailable && (form.runType === 'route-based' || form.runType === 'distance-based')) {
@@ -385,6 +419,12 @@ const GenerateRunPage = () => {
         return next;
       }
 
+      if (name === 'expectedPlayers') {
+        const numericValue = Math.max(1, Number(parsedValue) || 1);
+        next.expectedPlayers = numericValue;
+        return next;
+      }
+
       if (name === 'difficulty') {
         next.difficulty = parsedValue;
         if (parsedValue === 'family') {
@@ -426,9 +466,62 @@ const GenerateRunPage = () => {
     setIsRunSaved(true);
   };
 
+  const executeRunCreation = async (payload, creatorIdentity, paymentIdOverride) => {
+    const run = await generateRun({
+      ...payload,
+      expectedPlayers: payload.expectedPlayers,
+      paymentId: paymentIdOverride || null
+    }, creatorIdentity);
+
+    if (run) {
+      setGeneratedRun(run);
+      analyticsService.logVisit('create_run', {
+        runId: run.id,
+        difficulty: form.difficulty,
+        categories: form.categories,
+        questionCount: form.questionCount,
+      });
+
+      // Logga lyckad generering
+      await errorLogService.logInfo('Route generated successfully', {
+        runId: run.id,
+        usedGPS: !!userPosition,
+        originPosition: payload.origin || FALLBACK_POSITION,
+      });
+
+      const participantUser = creatorIdentity?.user || currentUser;
+      const participantAlias = participantUser?.name || alias?.trim() || form.name?.trim() || 'G?st';
+      const participantContact = participantUser?.contact || userPreferencesService.getContact() || '';
+      const participantPayload = {
+        userId: participantUser?.isAnonymous ? null : participantUser?.id,
+        alias: participantAlias,
+        contact: participantContact || null,
+        isAnonymous: participantUser?.isAnonymous ?? true
+      };
+      const shouldPersistLocal = !participantUser || participantUser.isAnonymous;
+
+      if (shouldPersistLocal) {
+        localStorageService.addCreatedRun(run);
+      }
+
+      try {
+        const { participant } = await joinRunByCode(run.joinCode, participantPayload);
+        if (shouldPersistLocal) {
+          localStorageService.addJoinedRun(run, participant);
+        }
+        navigate(`/run/${run.id}/play`, { replace: true });
+      } catch (joinError) {
+        console.error('[GenerateRunPage] Kunde inte ansluta till rundan:', joinError);
+        setError(`Kunde inte ansluta till rundan: ${joinError.message}`);
+        setIsRunSaved(false);
+      }
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+    setPaymentError('');
 
     // Om användaren är anonym och inte har angett alias, visa dialog
     if (currentUser?.isAnonymous && !alias.trim()) {
@@ -454,9 +547,13 @@ const GenerateRunPage = () => {
       // Om användaren är anonym, uppdatera profilen med alias
       if (currentUser?.isAnonymous && alias.trim()) {
         const cleanAlias = alias.trim();
+        const storedContact = userPreferencesService.getContact();
         userPreferencesService.saveAlias(cleanAlias);
         setAliasCommitted(true);
-        await loginAsGuest({ alias: cleanAlias });
+        if (storedContact) {
+          userPreferencesService.saveContact(storedContact);
+        }
+        await loginAsGuest({ alias: cleanAlias, contact: storedContact || undefined });
       }
 
       // Använd GPS-position om tillgänglig, annars fallback
@@ -520,37 +617,26 @@ const GenerateRunPage = () => {
           seed,
           preferGreenAreas: form.preferGreenAreas
         };
-      }      const run = await generateRun(payload, creatorIdentity);
-
-      if (run) {
-        setGeneratedRun(run);
-        analyticsService.logVisit('create_run', {
-          runId: run.id,
-          difficulty: form.difficulty,
-          categories: form.categories,
-          questionCount: form.questionCount,
-        });
-
-        // Logga lyckad generering
-        await errorLogService.logInfo('Route generated successfully', {
-          runId: run.id,
-          usedGPS: !!userPosition,
-          originPosition,
-        });
-
-        // Om allowRouteSelection är false, använd join-flödet för att gå direkt till spel
-        if (!form.allowRouteSelection) {
-          // Spara rundan lokalt om användaren inte är inloggad
-          if (!currentUser) {
-            localStorageService.addCreatedRun(run);
-          }
-          // Använd join-flödet som hanterar participant-registrering korrekt
-          navigate(`/join?code=${run.joinCode}`, { replace: true });
-        } else {
-          // Om allowRouteSelection är true, visa "Förslag på runda"
-          setIsRunSaved(false);
-        }
       }
+
+      if (requiresPlayerPricing && !form.expectedPlayers) {
+        setError('Ange förväntat antal spelare för denna runda.');
+        return;
+      }
+
+      const payloadWithPlayers = {
+        ...payload,
+        expectedPlayers: Number(form.expectedPlayers || 0)
+      };
+
+      if (requiresHostPayment) {
+        setPendingRunPayload(payloadWithPlayers);
+        setPendingCreator(creatorIdentity);
+        setShowRunPaymentModal(true);
+        return;
+      }
+
+      await executeRunCreation(payloadWithPlayers, creatorIdentity, null);
     } catch (generationError) {
       console.error('❌ Fel vid generering:', generationError);
       const displayMessage = generationError?.code === 'permission-denied'
@@ -568,6 +654,26 @@ const GenerateRunPage = () => {
         userPosition,
       });
     }
+  };
+
+  const handleRunPaymentSuccess = async (paymentResult) => {
+    setShowRunPaymentModal(false);
+    if (!pendingRunPayload || !pendingCreator) return;
+    try {
+      await executeRunCreation(pendingRunPayload, pendingCreator, paymentResult?.paymentId || null);
+    } catch (error) {
+      console.error('[GenerateRunPage] Betalning klar men rundan kunde inte skapas:', error);
+      setPaymentError('Betalningen gick igenom men rundan kunde inte skapas. Försök igen.');
+    } finally {
+      setPendingRunPayload(null);
+      setPendingCreator(null);
+    }
+  };
+
+  const handleRunPaymentCancel = () => {
+    setShowRunPaymentModal(false);
+    setPendingRunPayload(null);
+    setPendingCreator(null);
   };
 
 
@@ -650,6 +756,11 @@ const GenerateRunPage = () => {
           {error && (
             <div className="rounded-2xl border border-red-500/40 bg-red-900/40 px-4 py-3 text-red-100">
               {error}
+            </div>
+          )}
+          {paymentError && (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-900/30 px-4 py-3 text-amber-100">
+              {paymentError}
             </div>
           )}
 
@@ -839,6 +950,24 @@ const GenerateRunPage = () => {
               <p className="text-xs text-gray-400">Välj kategorier eller lämna tomt för alla.</p>
             </div>
 
+            {requiresPlayerPricing && (
+              <div className="space-y-1.5">
+                <label className="block text-sm font-semibold text-purple-200">Förväntat antal spelare</label>
+                <input
+                  type="number"
+                  name="expectedPlayers"
+                  min={1}
+                  max={500}
+                  value={form.expectedPlayers}
+                  onChange={handleChange}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                />
+                <p className="text-xs text-gray-400">
+                  Används för att räkna ut pris när spelare är med och betalar.
+                </p>
+              </div>
+            )}
+
             {/* Rutt-baserad: Visa längd och preferGreenAreas */}
             {form.runType === 'route-based' && (
               <>
@@ -906,23 +1035,44 @@ const GenerateRunPage = () => {
               </>
             )}
 
-            {/* Tids-baserad: Visa intervall mellan frågor */}
+            {/* Tids-baserad: Visa intervall och antal frågor */}
             {form.runType === 'time-based' && (
               <>
-                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-purple-200">Minuter mellan frågor</label>
-                  <input
-                    type="number"
-                    name="minutesBetweenQuestions"
-                    min={1}
-                    max={180}
-                    value={form.minutesBetweenQuestions}
-                    onChange={handleChange}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
-                  />
-                  <p className="text-xs text-gray-400">
-                    Ange hur många minuter som ska gå innan nästa fråga låses upp automatiskt.
-                  </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Minuter mellan frågor</label>
+                    <input
+                      type="number"
+                      name="minutesBetweenQuestions"
+                      min={1}
+                      max={180}
+                      value={form.minutesBetweenQuestions}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                    <p className="text-xs text-gray-400">
+                      Ange hur många minuter som ska gå innan nästa fråga låses upp automatiskt.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-purple-200">Antal frågor</label>
+                    <input
+                      type="number"
+                      name="questionCount"
+                      min={3}
+                      max={20}
+                      step={form.difficulty === 'family' ? 3 : 1}
+                      value={form.questionCount}
+                      onChange={handleChange}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-purple-400 focus:outline-none"
+                    />
+                    {form.difficulty === 'family' && (
+                      <p className="text-xs text-gray-400">
+                        Familjeläge använder en tredjedel per åldersgrupp. Antal frågor rundas till närmaste
+                        multipel av tre.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -976,6 +1126,75 @@ const GenerateRunPage = () => {
               Skapa runda
             </button>
           </form>
+          {donationEnabled && (
+            <div className="mt-6 rounded-2xl border border-emerald-500/30 bg-emerald-900/10 p-5 space-y-4 text-center">
+              <div>
+                <h2 className="text-lg font-semibold text-emerald-200">Stöd Quizter</h2>
+                <p className="text-sm text-gray-300">
+                  Donera valfritt belopp för att hjälpa oss fortsätta utveckla Quizter.
+                </p>
+              </div>
+              {donationAmounts.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-2">
+                  {donationAmounts.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDonationAmount(value)}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                        donationAmount === value
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-slate-800 text-emerald-100 hover:bg-slate-700'
+                      }`}
+                    >
+                      {formatDonation(value)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+                <input
+                  type="number"
+                  min="0"
+                  value={Number.isFinite(Number(donationAmount)) ? donationAmount / 100 : 0}
+                  onChange={(event) => {
+                    const value = Math.max(0, Number(event.target.value) || 0);
+                    setDonationAmount(Math.round(value * 100));
+                  }}
+                  className="w-32 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-emerald-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDonationModal(true)}
+                  className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
+                >
+                  Donera {formatDonation(donationAmount)}
+                </button>
+              </div>
+            </div>
+          )}
+          {subscriptionEnabled && (
+            <div className="mt-6 rounded-2xl border border-indigo-500/30 bg-indigo-900/10 p-5 space-y-3 text-center">
+              <h2 className="text-lg font-semibold text-indigo-200">Prenumeration</h2>
+              <p className="text-sm text-gray-300">
+                Lås upp obegränsade rundor med en {subscriptionPeriod === 'year' ? 'års' : 'månads'}-prenumeration.
+              </p>
+              <p className="text-sm text-indigo-200 font-semibold">
+                {formatDonation(subscriptionAmount)} / {subscriptionPeriod === 'year' ? 'år' : 'månad'}
+              </p>
+              {currentUser && !currentUser.isAnonymous ? (
+                <button
+                  type="button"
+                  onClick={() => setShowSubscriptionModal(true)}
+                  className="rounded-lg bg-indigo-500 px-4 py-2 font-semibold text-black hover:bg-indigo-400"
+                >
+                  Köp prenumeration
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400">Logga in för att köpa prenumeration.</p>
+              )}
+            </div>
+          )}
         </section>
       ) : (
         <section className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
@@ -1111,6 +1330,47 @@ const GenerateRunPage = () => {
           </aside>
         </section>
       )}
+
+      <PaymentModal
+        isOpen={showRunPaymentModal}
+        title="Betala för rundan"
+        description="Betalningen krävs för att skapa rundan."
+        purpose="run_host"
+        allowSkip={false}
+        context={{
+          userId: pendingCreator?.id,
+          questionCount: Number(form.questionCount),
+          expectedPlayers: Number(form.expectedPlayers || 0)
+        }}
+        onSuccess={handleRunPaymentSuccess}
+        onCancel={handleRunPaymentCancel}
+      />
+
+      <PaymentModal
+        isOpen={showDonationModal}
+        title="Stöd Quizter"
+        description="Tack för att du vill stödja Quizter."
+        purpose="donation"
+        amount={donationAmount}
+        currency={donationCurrency}
+        allowSkip={true}
+        context={{ context: 'create_run' }}
+        onSuccess={() => setShowDonationModal(false)}
+        onCancel={() => setShowDonationModal(false)}
+      />
+
+      <PaymentModal
+        isOpen={showSubscriptionModal}
+        title="Köp prenumeration"
+        description="Prenumerationen aktiveras direkt efter betalning."
+        purpose="subscription"
+        amount={subscriptionAmount}
+        currency={donationCurrency}
+        allowSkip={false}
+        context={{ userId: currentUser?.id, context: 'subscription' }}
+        onSuccess={() => setShowSubscriptionModal(false)}
+        onCancel={() => setShowSubscriptionModal(false)}
+      />
 
     </PageLayout>
   );

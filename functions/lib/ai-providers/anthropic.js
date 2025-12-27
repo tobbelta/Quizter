@@ -190,12 +190,126 @@ export class AnthropicProvider {
         confidence: validation.confidence || 0,
         issues: validation.issues || [],
         suggestions: validation.suggestions || [],
-        feedback: validation.feedback || 'No feedback provided'
+        feedback: validation.feedback || 'No feedback provided',
+        proposedEdits: validation.proposedEdits && typeof validation.proposedEdits === 'object'
+          ? validation.proposedEdits
+          : null,
+        multipleCorrectOptions: validation.multipleCorrectOptions === true
+          || validation.multipleCorrectOptions === 'true'
+          || validation.multipleCorrectOptions === 1,
+        alternativeCorrectOptions: Array.isArray(validation.alternativeCorrectOptions)
+          ? validation.alternativeCorrectOptions.filter(Boolean)
+          : validation.alternativeCorrectOptions
+            ? [validation.alternativeCorrectOptions]
+            : [],
+        timeSensitive: validation.timeSensitive === true,
+        bestBeforeDate: validation.bestBeforeDate || null
       };
       
     } catch (error) {
       console.error('[Anthropic] Validation error:', error);
       throw new Error(`Anthropic validation failed: ${error.message}`);
+    }
+  }
+
+  async checkAnswerAmbiguity(question, _validationCriteria) {
+    const prompt = this.buildAmbiguityPrompt(question);
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 512,
+          messages: [{
+            role: 'user',
+            content: `Du är en expert på att upptäcka tvetydiga quizfrågor. Svara ENDAST med JSON.\n\n${prompt}`
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Anthropic ambiguity error (${response.status}): ${error}`);
+      }
+
+      const data = await response.json();
+      const result = JSON.parse(data.content[0].text);
+      const alternatives = Array.isArray(result.alternativeCorrectOptions)
+        ? result.alternativeCorrectOptions.filter(Boolean)
+        : result.alternativeCorrectOptions
+          ? [result.alternativeCorrectOptions]
+          : [];
+      const suggestions = Array.isArray(result.suggestions)
+        ? result.suggestions.filter(Boolean)
+        : result.suggestions
+          ? [result.suggestions]
+          : [];
+
+      return {
+        multipleCorrectOptions: result.multipleCorrectOptions === true
+          || result.multipleCorrectOptions === 'true'
+          || result.multipleCorrectOptions === 1,
+        alternativeCorrectOptions: alternatives,
+        reason: result.reason || '',
+        suggestions
+      };
+    } catch (error) {
+      console.error('[Anthropic] Ambiguity check error:', error);
+      throw new Error(`Anthropic ambiguity check failed: ${error.message}`);
+    }
+  }
+
+  async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
+    const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: `Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta. Svara ENDAST med JSON.\n\n${prompt}`
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Anthropic proposed edits error (${response.status}): ${error}`);
+      }
+
+      const data = await response.json();
+      const result = JSON.parse(data.content[0].text);
+      const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
+        ? result.proposedEdits
+        : null;
+      const suggestions = Array.isArray(result?.suggestions)
+        ? result.suggestions.filter(Boolean)
+        : result?.suggestions
+          ? [result.suggestions]
+          : [];
+
+      return {
+        proposedEdits,
+        suggestions,
+        reason: result?.reason || ''
+      };
+    } catch (error) {
+      console.error('[Anthropic] Proposed edits error:', error);
+      throw new Error(`Anthropic proposed edits failed: ${error.message}`);
     }
   }
 
@@ -256,6 +370,7 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
 - 4 svarsalternativ per språk (varav ETT är korrekt)
+- Exakt ett alternativ får vara korrekt; övriga får inte kunna tolkas som rätt
 - Korrekt svar angivet som index (0-3)
 - Pedagogisk förklaring på båda språken
 - Kort bakgrund/fördjupning på båda språken (2-4 meningar)
@@ -292,6 +407,16 @@ Returnera JSON i exakt följande format:
     const effectiveCategory = category || 'Allmän kunskap';
     const effectiveAgeGroup = ageGroup || 'adults';
     const effectiveDifficulty = difficulty || 'medium';
+    const childGuardrails = isChildrenAgeGroup(effectiveAgeGroup)
+      ? `
+EXTRA BARNREGLER:
+- Underkänn om ämnet är för avancerat (konsthistoria, politik, krig, ekonomi, avancerad naturvetenskap).
+- Underkänn om frågan handlar om konstnärer eller historiska epoker.
+- Om fråga nämner nationalitet (svensk/norsk osv) måste rätt svar verkligen stämma.
+- Om du är osäker: markera som ogiltig.`
+      : '';
+    const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
+    const freshnessPrompt = criteria?.freshnessPrompt ? `\n${criteria.freshnessPrompt}\n` : '';
     
     return `Validera följande quizfråga enligt dessa kriterier:
 
@@ -312,6 +437,14 @@ Kontrollera:
 6. Är översättningarna korrekta?
 7. Är svårighetsgraden lämplig för målgruppen (${effectiveAgeGroup})?
 8. Passar frågan kategorin ${effectiveCategory}?
+9. Är frågan tidskänslig? Sätt timeSensitive och bestBeforeDate.
+10. Finns det fler än ett svarsalternativ som kan vara korrekt? Om ja, underkänn.
+${childGuardrails}
+${answerPrompt}
+${freshnessPrompt}
+
+Om du underkänner (isValid=false) MÅSTE suggestions innehålla 1-3 konkreta förbättringsförslag.
+Om frågan kan rättas med konkreta ändringar: fyll proposedEdits med korrigerade fält (sv/en). Annars sätt proposedEdits till null.
 
 Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
 {

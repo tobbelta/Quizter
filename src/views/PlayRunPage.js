@@ -263,8 +263,8 @@ const PlayRunPage = () => {
 
 
   const orderedQuestions = useMemo(() => {
-    if (!currentRun) return [];
-    return currentRun.questionIds.map((id) => {
+    const questionIds = Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : [];
+    return questionIds.map((id) => {
       const question = questionService.getByIdForLanguage(id, selectedLanguage);
       if (!question) {
         console.warn(`[PlayRunPage] Fråga med ID ${id} hittades inte i questionService`);
@@ -336,10 +336,15 @@ const PlayRunPage = () => {
     totalQuestions
   ]);
 
+  const answeredCount = currentParticipant?.answers?.length || 0;
   const currentOrderIndex = useMemo(() => {
     if (!currentParticipant) return 0;
-    return Math.max(0, currentParticipant.currentOrder - 1);
-  }, [currentParticipant]);
+    const fallbackOrder = Math.max(1, answeredCount + 1);
+    const rawOrder = Number.isFinite(currentParticipant.currentOrder)
+      ? currentParticipant.currentOrder
+      : fallbackOrder;
+    return Math.max(0, rawOrder - 1);
+  }, [answeredCount, currentParticipant]);
 
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
@@ -562,7 +567,8 @@ const PlayRunPage = () => {
 
   // QR-kod för delning
   const joinLink = currentRun ? buildJoinLink(currentRun.joinCode) : '';
-  const { dataUrl, isLoading: qrLoading, error: qrError } = useQRCode(joinLink, 280);
+  const qrValue = shareDialogOpen ? joinLink : '';
+  const { dataUrl, isLoading: qrLoading, error: qrError } = useQRCode(qrValue, 280);
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
   const shouldShowQuestion = isTimeBased
@@ -793,7 +799,6 @@ const PlayRunPage = () => {
     isAppForeground
   ]);
 
-  const answeredCount = currentParticipant?.answers?.length || 0;
   const hasAnsweredAll = answeredCount >= totalQuestions;
   const requiresReturnToStart = currentRun?.type === 'route-based' && !manualMode;
   const hasCompleted = hasAnsweredAll && (!requiresReturnToStart || nearStartPoint);
@@ -1192,8 +1197,8 @@ const PlayRunPage = () => {
 
         {/* Avsluta runda-knapp när alla frågor är besvarade */}
         {hasAnsweredAll && (
-          <div className="absolute inset-x-4 top-4 z-30">
-            <div className={`backdrop-blur-sm rounded-xl border p-4 text-center shadow-xl ${
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+            <div className={`backdrop-blur-sm rounded-xl border p-4 text-center shadow-xl w-full max-w-md ${
               hasCompleted
                 ? 'bg-emerald-900/95 border-emerald-500/40'
                 : 'bg-amber-900/95 border-amber-500/40'
@@ -1355,6 +1360,3 @@ const PlayRunPage = () => {
 };
 
 export default PlayRunPage;
-
-
-

@@ -145,7 +145,7 @@ const RunAdminPage = () => {
 
         <div className="rounded-lg border border-slate-600 bg-slate-900/60 p-4">
             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-cyan-200">Frågor ({currentRun.questionIds.length})</h2>
+                <h2 className="text-lg font-semibold text-cyan-200">Frågor ({Array.isArray(currentRun?.questionIds) ? currentRun.questionIds.length : 0})</h2>
                 <div className="flex gap-1 rounded-lg bg-slate-800 p-1">
                     <button type="button" onClick={() => setSelectedLanguage('sv')} className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${selectedLanguage === 'sv' ? 'bg-cyan-500 text-black' : 'text-gray-300 hover:text-white'}`}>
                         🇸🇪 SV
@@ -156,7 +156,7 @@ const RunAdminPage = () => {
                 </div>
             </div>
             <div className="space-y-3">
-              {currentRun.questionIds.map((questionId, index) => {
+              {(Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : []).map((questionId, index) => {
                 const question = questionMap[questionId];
                 return (
                   <div key={questionId} className="border border-slate-700 bg-slate-800/40 rounded-lg p-3">

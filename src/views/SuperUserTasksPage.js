@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
@@ -62,6 +63,7 @@ const toDuration = (start, end) => {
 
 const SuperUserTasksPage = () => {
   const { allTasks, refreshAllTasks } = useBackgroundTasks();
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,6 +72,19 @@ const SuperUserTasksPage = () => {
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
   const [providerStatus, setProviderStatus] = useState(null);
   const [loadingProviderStatus, setLoadingProviderStatus] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState(new Set());
+
+  const toggleExpandedTask = (taskId) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
 
   const sortedTasks = useMemo(() => {
     if (!allTasks || allTasks.length === 0) {
@@ -556,7 +571,16 @@ const SuperUserTasksPage = () => {
                   filteredTasks.map((task) => {
                     const statusBadge = STATUS_BADGES[task.status] || STATUS_BADGES.pending;
                     const statusLabel = STATUS_LABELS[task.status] || task.status;
+                    const progressDetails = task.progress?.details || {};
+                    const isExpanded = expandedTasks.has(task.id);
                     const payloadDetails = [];
+                    const resultQuestionIds = Array.isArray(task.result?.questionIds)
+                      ? task.result.questionIds.filter(Boolean)
+                      : Array.isArray(task.result?.questions)
+                        ? task.result.questions.map((question) => question?.id).filter(Boolean)
+                        : [];
+                    const hasQuestionLink = task.taskType === 'generation' && resultQuestionIds.length > 0;
+                    const progressSummaryParts = [];
                     if (task.payload?.category) payloadDetails.push(`Kategori: ${task.payload.category}`);
                     if (task.payload?.difficulty) payloadDetails.push(`Nivå: ${task.payload.difficulty}`);
                     if (task.payload?.amount) payloadDetails.push(`Antal: ${task.payload.amount}`);
@@ -568,23 +592,55 @@ const SuperUserTasksPage = () => {
                         payloadDetails.push(`✓ ${task.result.validated} godkända`);
                         payloadDetails.push(`✗ ${task.result.failed} underkända`);
                       }
-                    } else if (task.taskType === 'generation' && task.result && task.status === 'completed') {
-                      // För generation: visa detaljerad information
-                      if (task.result.details) {
-                        if (task.result.details.imported != null) {
-                          payloadDetails.push(`✓ ${task.result.details.imported} importerade`);
+                    } else if (task.taskType === 'generation') {
+                      if (task.status === 'completed' && task.result) {
+                        const savedCount = task.result.savedCount ?? task.result.questionsGenerated;
+                        if (task.result.requestedCount != null && savedCount != null) {
+                          payloadDetails.push(`Skapade: ${savedCount} / ${task.result.requestedCount}`);
+                        } else if (savedCount != null) {
+                          payloadDetails.push(`Skapade: ${savedCount}`);
                         }
-                        if (task.result.details.duplicatesBlocked > 0) {
-                          payloadDetails.push(`⊘ ${task.result.details.duplicatesBlocked} dubletter blockerade`);
+                        if (task.result.generatedCount != null) {
+                          payloadDetails.push(`Genererade: ${task.result.generatedCount}`);
                         }
-                        if (task.result.details.category) {
-                          payloadDetails.push(`Kategori: ${task.result.details.category}`);
+                        if (task.result.duplicatesBlocked > 0) {
+                          payloadDetails.push(`⊘ ${task.result.duplicatesBlocked} dubletter`);
                         }
-                        if (task.result.details.ageGroup) {
-                          payloadDetails.push(`Åldersgrupp: ${task.result.details.ageGroup}`);
+                        if (task.result.ruleFiltered > 0) {
+                          payloadDetails.push(`🚫 ${task.result.ruleFiltered} regelstopp`);
                         }
-                      } else if (task.result.count != null) {
-                        payloadDetails.push(`Resultat: ${task.result.count}`);
+                        if (task.result.shortfall > 0) {
+                          payloadDetails.push(`Saknas: ${task.result.shortfall}`);
+                        }
+                        if (Array.isArray(task.result.providersUsed) && task.result.providersUsed.length > 0) {
+                          payloadDetails.push(`Providers: ${task.result.providersUsed.join(', ')}`);
+                        }
+                      } else if (progressDetails) {
+                        if (progressDetails.generatedCount != null) {
+                          payloadDetails.push(`Genererade: ${progressDetails.generatedCount}`);
+                        }
+                        if (progressDetails.duplicatesBlocked > 0) {
+                          payloadDetails.push(`⊘ ${progressDetails.duplicatesBlocked} dubletter`);
+                        }
+                        if (progressDetails.ruleFiltered > 0) {
+                          payloadDetails.push(`🚫 ${progressDetails.ruleFiltered} regelstopp`);
+                        }
+                      }
+                    } else if (task.taskType === 'validate_questions' && task.result && task.status === 'completed') {
+                      if (task.result.validatedCount != null) {
+                        payloadDetails.push(`✓ ${task.result.validatedCount} godkända`);
+                      }
+                      if (task.result.invalidCount != null) {
+                        payloadDetails.push(`✗ ${task.result.invalidCount} underkända`);
+                      }
+                      if (task.result.correctedCount != null && task.result.correctedCount > 0) {
+                        payloadDetails.push(`♻️ ${task.result.correctedCount} korrigerade`);
+                      }
+                      if (task.result.skippedCount != null && task.result.skippedCount > 0) {
+                        payloadDetails.push(`⏭️ ${task.result.skippedCount} skippade`);
+                      }
+                      if (Array.isArray(task.result.validationProvidersUsed) && task.result.validationProvidersUsed.length > 0) {
+                        payloadDetails.push(`Providers: ${task.result.validationProvidersUsed.join(', ')}`);
                       }
                     } else if (task.result?.count != null) {
                       // För andra tasks
@@ -595,9 +651,23 @@ const SuperUserTasksPage = () => {
 
                     // Progress för batch-validering och generering
                     const hasProgress = task.progress && (task.progress.total > 0 || task.progress.phase);
+                    const isActive = task.status === 'processing' || task.status === 'running';
+                    if (progressDetails.validatedCount != null) {
+                      progressSummaryParts.push(`${progressDetails.validatedCount || 0} ✓`);
+                    }
+                    if (progressDetails.invalidCount != null) {
+                      progressSummaryParts.push(`${progressDetails.invalidCount || 0} ✗`);
+                    }
+                    if (progressDetails.skippedCount != null && progressDetails.skippedCount > 0) {
+                      progressSummaryParts.push(`${progressDetails.skippedCount} ⏭️`);
+                    }
+                    if (progressDetails.correctedCount != null && progressDetails.correctedCount > 0) {
+                      progressSummaryParts.push(`${progressDetails.correctedCount} ♻️`);
+                    }
 
                     return (
-                      <tr key={task.id} className="border-b border-slate-800/60">
+                      <React.Fragment key={task.id}>
+                      <tr className="border-b border-slate-800/60">
                         <td className="px-4 py-3 align-top">
                           <input
                             type="checkbox"
@@ -624,15 +694,8 @@ const SuperUserTasksPage = () => {
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-slate-500">{task.id.substring(0, 8)}...</div>
-
-                          {/* Compact Timeline */}
-                          <div className="mt-2">
-                            <TaskTimeline task={task} compact={true} />
-                          </div>
-
                           {/* Progress details för pågående jobb */}
-                          {hasProgress && task.status === 'processing' && task.progress.phase && (
+                          {hasProgress && isActive && task.progress.phase && (
                             <div className="mt-2 text-xs text-amber-300 font-semibold">
                               {task.progress.phase}
                             </div>
@@ -651,7 +714,7 @@ const SuperUserTasksPage = () => {
                             )}
                           </div>
                           {/* Progress bar för pågående jobb */}
-                          {task.status === 'processing' && task.progress?.total > 0 && (
+                          {isActive && task.progress?.total > 0 && (
                             <div className="mt-2 space-y-1">
                               <div className="w-full bg-slate-700 rounded-full h-1.5 overflow-hidden">
                                 <div
@@ -663,8 +726,9 @@ const SuperUserTasksPage = () => {
                               </div>
                               <div className="text-xs text-slate-400">
                                 {task.progress.completed} / {task.progress.total}
-                                {task.taskType === 'batchvalidation' && task.progress.validated > 0 &&
-                                  ` (${task.progress.validated} ✓, ${task.progress.failed} ✗)`}
+                                {progressSummaryParts.length > 0
+                                  ? ` (${progressSummaryParts.join(', ')})`
+                                  : ''}
                               </div>
                             </div>
                           )}
@@ -686,17 +750,25 @@ const SuperUserTasksPage = () => {
                         <td className="px-4 py-3 align-top text-slate-300">
                           {task.userId || 'Okänd'}
                         </td>
-                        <td className="px-4 py-3 align-top text-slate-300 text-xs space-y-1">
-                          {payloadDetails.length > 0 ? (
-                            payloadDetails.map((line, index) => (
-                              <div key={index}>{line}</div>
-                            ))
-                          ) : (
-                            <span className="text-slate-500">Ingen metadata</span>
-                          )}
+                        <td className="px-4 py-3 align-top text-slate-300">
+                          <button
+                            onClick={() => toggleExpandedTask(task.id)}
+                            className="rounded bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                          >
+                            {isExpanded ? 'Dölj detaljer' : 'Visa detaljer'}
+                          </button>
                         </td>
                         <td className="px-4 py-3 align-top">
                           <div className="flex gap-2">
+                            {hasQuestionLink && (
+                              <button
+                                onClick={() => navigate(`/admin/questions?ids=${encodeURIComponent(resultQuestionIds.join(','))}&taskId=${task.id}`)}
+                                className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs rounded font-semibold transition-colors"
+                                title="Visa frågor i frågebanken"
+                              >
+                                📄
+                              </button>
+                            )}
                             {/* Stop knapp - visa bara för pågående jobb */}
                             {(task.status === 'processing' || task.status === 'queued' || task.status === 'pending') && (
                               <button
@@ -718,6 +790,31 @@ const SuperUserTasksPage = () => {
                           </div>
                         </td>
                       </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-900/40 border-b border-slate-800/60">
+                          <td colSpan={9} className="px-4 pb-4">
+                            <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-200 space-y-2">
+                              <div className="text-slate-500 break-all">ID: {task.id}</div>
+                              {payloadDetails.length > 0 ? (
+                                <div className="space-y-1">
+                                  {payloadDetails.map((line, index) => (
+                                    <div key={index}>{line}</div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-slate-500">Ingen metadata</div>
+                              )}
+                              {task.error && (
+                                <div className="text-red-300">Fel: {task.error}</div>
+                              )}
+                              <div>
+                                <TaskTimeline task={task} compact={true} />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     );
                   })
                 )}

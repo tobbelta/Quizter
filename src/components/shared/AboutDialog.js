@@ -5,19 +5,43 @@
  * - isOpen: boolean - om dialogen ska visas
  * - onClose: function - callback när dialogen stängs
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import PaymentModal from '../payment/PaymentModal';
 import FeedbackDialog from './FeedbackDialog';
 import MessageDialog from './MessageDialog';
+import { paymentService } from '../../services/paymentService';
 
 const AboutDialog = ({ isOpen, onClose }) => {
   const [showDonation, setShowDonation] = useState(false);
-  const [donationAmount, setDonationAmount] = useState(50);
+  const [donationAmount, setDonationAmount] = useState(2000);
   const [showInstructions, setShowInstructions] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [paymentConfig, setPaymentConfig] = useState(null);
+
+  useEffect(() => {
+    let isActive = true;
+    paymentService.getPaymentConfig().then((config) => {
+      if (!isActive) return;
+      setPaymentConfig(config);
+      const amounts = config?.donations?.amounts;
+      if (Array.isArray(amounts) && amounts.length > 0) {
+        setDonationAmount(amounts[0]);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   if (!isOpen) return null;
+
+  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.menu);
+  const donationCurrency = paymentConfig?.currency || 'sek';
+  const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
+    ? paymentConfig.donations.amounts
+    : [];
+  const formatDonation = (value) => `${(Number(value || 0) / 100).toFixed(2)} ${donationCurrency.toUpperCase()}`;
 
   const handleDonateClick = () => {
     setShowDonation(true);
@@ -138,31 +162,52 @@ const AboutDialog = ({ isOpen, onClose }) => {
             </section>
 
             {/* Donation */}
-            <section className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 rounded-lg p-4 border border-purple-500/20">
-              <h3 className="text-lg font-semibold text-cyan-400 mb-2">
-                Stöd Quizter
-              </h3>
-              <p className="text-sm mb-3 leading-relaxed">
-                Quizter är gratis att använda! Om du tycker om tjänsten kan du stödja utvecklingen med en donation.
-              </p>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  min="10"
-                  step="10"
-                  value={donationAmount}
-                  onChange={(e) => setDonationAmount(parseInt(e.target.value) || 50)}
-                  className="w-24 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-                />
-                <span className="text-gray-400">SEK</span>
-                <button
-                  onClick={handleDonateClick}
-                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-all shadow-lg"
-                >
-                  Donera
-                </button>
-              </div>
-            </section>
+            {donationEnabled && (
+              <section className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 rounded-lg p-4 border border-purple-500/20 space-y-3">
+                <h3 className="text-lg font-semibold text-cyan-400">Stöd Quizter</h3>
+                <p className="text-sm leading-relaxed">
+                  Quizter är gratis att använda! Om du tycker om tjänsten kan du stödja utvecklingen med en donation.
+                </p>
+                {donationAmounts.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {donationAmounts.map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setDonationAmount(value)}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                          donationAmount === value
+                            ? 'bg-cyan-500 text-black'
+                            : 'bg-slate-800 text-cyan-100 hover:bg-slate-700'
+                        }`}
+                      >
+                        {formatDonation(value)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={Number.isFinite(Number(donationAmount)) ? donationAmount / 100 : 0}
+                    onChange={(event) => {
+                      const value = Math.max(0, Number(event.target.value) || 0);
+                      setDonationAmount(Math.round(value * 100));
+                    }}
+                    className="w-28 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                  />
+                  <span className="text-gray-400">{donationCurrency.toUpperCase()}</span>
+                  <button
+                    onClick={handleDonateClick}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-all shadow-lg"
+                  >
+                    Donera {formatDonation(donationAmount)}
+                  </button>
+                </div>
+              </section>
+            )}
 
             {/* Kontakt & Feedback */}
             <section>
@@ -221,11 +266,13 @@ const AboutDialog = ({ isOpen, onClose }) => {
       {showDonation && (
         <PaymentModal
           isOpen={showDonation}
-          runName="Quizter Donation"
-          runId="donation"
-          participantId="donation"
-          amount={donationAmount * 100}
+          title="Stöd Quizter"
+          description="Tack för att du vill stödja Quizter."
+          purpose="donation"
+          amount={donationAmount}
+          currency={donationCurrency}
           allowSkip={true}
+          context={{ context: 'menu' }}
           onSuccess={(paymentResult) => {
             setShowDonation(false);
             if (!paymentResult.skipped) {

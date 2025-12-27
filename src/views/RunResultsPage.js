@@ -6,8 +6,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
+import { runRepository } from '../repositories/runRepository';
 import Header from '../components/layout/Header';
 import PaymentModal from '../components/payment/PaymentModal';
+import { paymentService } from '../services/paymentService';
 import { analyticsService } from '../services/analyticsService';
 import { describeParticipantStatus } from '../utils/participantStatus';
 
@@ -19,6 +21,11 @@ const RunResultsPage = () => {
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [donationFeedback, setDonationFeedback] = useState('');
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [donationAmount, setDonationAmount] = useState(2000);
+  const [answersOverride, setAnswersOverride] = useState(null);
+  const [answersByParticipant, setAnswersByParticipant] = useState({});
+  const [participantDetailsById, setParticipantDetailsById] = useState({});
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
@@ -34,8 +41,101 @@ const RunResultsPage = () => {
   }, [currentRun, loadRunById, runId]);
 
   useEffect(() => {
+    let isActive = true;
+    paymentService.getPaymentConfig().then((config) => {
+      if (!isActive) return;
+      setPaymentConfig(config);
+      const amounts = config?.donations?.amounts;
+      if (Array.isArray(amounts) && amounts.length > 0) {
+        setDonationAmount(amounts[0]);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
     refreshParticipants().catch((error) => console.warn('Kunde inte uppdatera deltagare', error));
   }, [refreshParticipants]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadParticipantAnswers = async () => {
+      if (!runId || participants.length === 0) {
+        setAnswersByParticipant({});
+        setParticipantDetailsById({});
+        return;
+      }
+
+      const detailEntries = await Promise.all(participants.map(async (participant) => {
+        try {
+          const refreshed = await runRepository.getParticipant(runId, participant.id);
+          return [
+            participant.id,
+            {
+              participant: refreshed || null,
+              answers: Array.isArray(refreshed?.answers) ? refreshed.answers : []
+            }
+          ];
+        } catch (error) {
+          console.warn('[RunResultsPage] Kunde inte hämta svar för deltagare:', participant.id, error);
+          return [participant.id, { participant: null, answers: [] }];
+        }
+      }));
+
+      if (!isActive) return;
+      const nextDetails = Object.fromEntries(detailEntries);
+      const nextAnswers = {};
+      const nextParticipants = {};
+
+      Object.entries(nextDetails).forEach(([participantId, entry]) => {
+        nextAnswers[participantId] = entry.answers || [];
+        if (entry.participant) {
+          nextParticipants[participantId] = entry.participant;
+        }
+      });
+
+      setAnswersByParticipant(nextAnswers);
+      setParticipantDetailsById(nextParticipants);
+    };
+
+    loadParticipantAnswers();
+
+    return () => {
+      isActive = false;
+    };
+  }, [participants, runId]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const hydrateAnswers = async () => {
+      if (!currentParticipant?.id || !runId) return;
+      const existingAnswers = Array.isArray(currentParticipant.answers)
+        ? currentParticipant.answers
+        : [];
+      if (existingAnswers.length > 0) {
+        setAnswersOverride(null);
+        return;
+      }
+
+      try {
+        const refreshed = await runRepository.getParticipant(runId, currentParticipant.id);
+        if (!isActive) return;
+        setAnswersOverride(Array.isArray(refreshed?.answers) ? refreshed.answers : []);
+      } catch (error) {
+        console.warn('[RunResultsPage] Kunde inte ladda svar:', error);
+      }
+    };
+
+    hydrateAnswers();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentParticipant, runId]);
 
   const handleOpenDonation = () => {
     setDonationFeedback('');
@@ -46,8 +146,8 @@ const RunResultsPage = () => {
     setShowDonationModal(false);
     setDonationFeedback('Tack för ditt stöd! Donationen registrerades.');
 
-    if (paymentResult?.paymentIntentId && currentRun) {
-      analyticsService.logDonation(2000, paymentResult.paymentIntentId, {
+    if (paymentResult?.providerPaymentId && currentRun) {
+      analyticsService.logDonation(donationAmount, paymentResult.providerPaymentId, {
         runId: currentRun.id,
         context: 'results',
       });
@@ -58,19 +158,100 @@ const RunResultsPage = () => {
     setShowDonationModal(false);
   };
 
+  const normalizedAnswers = useMemo(() => {
+    const participantAnswers = currentParticipant
+      ? answersByParticipant[currentParticipant.id]
+      : null;
+    const sourceAnswers = answersOverride
+      || participantAnswers
+      || (Array.isArray(currentParticipant?.answers) ? currentParticipant.answers : []);
+    if (!Array.isArray(sourceAnswers)) return [];
+    return sourceAnswers.map((answer) => ({
+      questionId: answer.questionId ?? answer.question_id,
+      answerIndex: answer.answerIndex ?? answer.answer_index,
+      correct: answer.correct ?? answer.is_correct ?? false
+    }));
+  }, [answersByParticipant, answersOverride, currentParticipant]);
+
+  const scoredParticipants = useMemo(() => {
+    const activeThresholdMs = 45000;
+    const totalQuestions = currentRun?.questionCount || currentRun?.questionIds?.length || 0;
+
+    return participants.map((participant) => {
+      const isCurrent = participant.id === currentParticipant?.id;
+      const storedAnswers = answersByParticipant[participant.id];
+      const fallbackAnswers = isCurrent ? normalizedAnswers : [];
+      const answers = Array.isArray(storedAnswers) && storedAnswers.length > 0
+        ? storedAnswers
+        : fallbackAnswers;
+      const score = answers.filter((answer) => Boolean(answer?.correct ?? answer?.is_correct)).length;
+      const details = participantDetailsById[participant.id] || {};
+      let completedAt = details.completedAt ?? details.completed_at ?? participant.completedAt ?? participant.completed_at;
+      const lastSeen = details.lastSeen ?? details.last_seen ?? participant.lastSeen ?? participant.last_seen;
+      const hasCompleted = totalQuestions > 0 && answers.length >= totalQuestions;
+
+      if (!completedAt && isCurrent && hasCompleted) {
+        completedAt = Date.now();
+      }
+
+      let status = participant.status;
+      if (!status) {
+        if (completedAt || hasCompleted) {
+          status = 'finished';
+        } else if (isCurrent) {
+          status = 'active';
+        } else if (lastSeen && Date.now() - Number(lastSeen) <= activeThresholdMs) {
+          status = 'active';
+        } else {
+          status = 'inactive';
+        }
+      }
+
+      return {
+        ...participant,
+        score,
+        completedAt,
+        status
+      };
+    });
+  }, [answersByParticipant, currentParticipant, currentRun, normalizedAnswers, participantDetailsById, participants]);
+
+  const currentParticipantScore = useMemo(() => {
+    return normalizedAnswers.filter((answer) => Boolean(answer?.correct)).length;
+  }, [normalizedAnswers]);
+
+  const normalizeCompletedAt = (value) => {
+    if (!value) return Number.MAX_SAFE_INTEGER;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+    }
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+  };
+
   /** Skapar topplistan baserat på poäng och sluttider. */
   const ranking = useMemo(() => {
-    return [...participants].sort((a, b) => {
+    return [...scoredParticipants].sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      return (a.completedAt || '').localeCompare(b.completedAt || '');
+      return normalizeCompletedAt(a.completedAt) - normalizeCompletedAt(b.completedAt);
     });
-  }, [participants]);
+  }, [scoredParticipants]);
+
+  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.afterRun);
+  const donationCurrency = paymentConfig?.currency || 'sek';
+  const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
+    ? paymentConfig.donations.amounts
+    : [];
+  const formatDonation = (value) => `${(Number(value || 0) / 100).toFixed(2)} ${donationCurrency.toUpperCase()}`;
 
   /** Skapar detaljerad lista med alla frågor och användarens svar */
   const detailedResults = useMemo(() => {
-    if (!currentParticipant || !currentRun?.questionIds) return [];
+    const questionIds = Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : [];
+    if (!currentParticipant || questionIds.length === 0) return [];
 
-    return currentRun.questionIds.map((questionId, index) => {
+    return questionIds.map((questionId, index) => {
       let question = questionService.getByIdForLanguage(questionId, selectedLanguage);
 
       // Fallback-logik om frågan inte hittas för valt språk
@@ -92,7 +273,7 @@ const RunResultsPage = () => {
         };
       }
 
-      const userAnswer = currentParticipant.answers?.find(a => a.questionId === questionId);
+      const userAnswer = normalizedAnswers.find(a => a.questionId === questionId);
       const isCorrect = userAnswer?.correct || false;
       const userSelectedOption = userAnswer?.answerIndex;
 
@@ -106,7 +287,7 @@ const RunResultsPage = () => {
         explanation: question.explanation
       };
     }); // Ta bort .filter(Boolean) så alla frågor visas
-  }, [currentParticipant, currentRun, selectedLanguage]);
+  }, [currentParticipant, currentRun, normalizedAnswers, selectedLanguage]);
 
   // Kontrollera om användaren är skapare av rundan
   const isCreator = currentRun && currentUser && (
@@ -153,6 +334,58 @@ const RunResultsPage = () => {
           </div>
         )}
 
+        {donationEnabled && (
+          <section className="rounded-2xl border border-emerald-500/30 bg-emerald-900/20 p-5 space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-emerald-200">Stöd Quizter</h2>
+              <p className="text-sm text-gray-300">
+                Donera valfritt belopp för att stötta utvecklingen av Quizter.
+              </p>
+            </div>
+            {donationAmounts.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {donationAmounts.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setDonationAmount(value)}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                      donationAmount === value
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-slate-800 text-emerald-100 hover:bg-slate-700'
+                    }`}
+                  >
+                    {formatDonation(value)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-400 mb-1">Eget belopp</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={Number.isFinite(Number(donationAmount)) ? donationAmount / 100 : 0}
+                  onChange={(event) => {
+                    const value = Math.max(0, Number(event.target.value) || 0);
+                    setDonationAmount(Math.round(value * 100));
+                  }}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-emerald-400 focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenDonation}
+                disabled={showDonationModal}
+                className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:opacity-60"
+              >
+                Donera {formatDonation(donationAmount)}
+              </button>
+            </div>
+          </section>
+        )}
+
       <section className="rounded border border-emerald-500/40 bg-emerald-900/20 p-6">
         <h2 className="text-xl font-semibold mb-3 text-emerald-200">Ledartavla</h2>
         <ol className="space-y-2">
@@ -181,7 +414,7 @@ const RunResultsPage = () => {
       {showDetailedResults && currentParticipant && detailedResults.length > 0 && (
         <section className="rounded border border-cyan-500/40 bg-cyan-900/10 p-6">
           <h2 className="text-xl font-semibold mb-3 text-cyan-200">
-            Dina detaljerade resultat ({currentParticipant.score}/{detailedResults.length} rätt)
+            Dina detaljerade resultat ({currentParticipantScore}/{detailedResults.length} rätt)
           </h2>
           <div className="space-y-4">
             {detailedResults.map((result) => (
@@ -292,14 +525,6 @@ const RunResultsPage = () => {
         )}
         <button
           type="button"
-          onClick={handleOpenDonation}
-          disabled={showDonationModal}
-          className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-emerald-500 disabled:opacity-60"
-        >
-          Stöd Quizter (20 kr)
-        </button>
-        <button
-          type="button"
           onClick={() => navigate('/')}
           className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
         >
@@ -309,12 +534,19 @@ const RunResultsPage = () => {
 
       <PaymentModal
         isOpen={showDonationModal}
-        runName={currentRun?.name || ''}
-        amount={2000}
+        title="Stöd Quizter"
+        description="Tack för att du hjälper oss utveckla Quizter vidare."
+        purpose="donation"
+        amount={donationAmount}
+        currency={donationCurrency}
         onSuccess={handleDonationSuccess}
         onCancel={handleDonationCancel}
-        runId={currentRun?.id}
-        participantId={currentParticipant?.id}
+        context={{
+          runId: currentRun?.id,
+          participantId: currentParticipant?.id,
+          userId: currentUser?.id,
+          context: 'results'
+        }}
         allowSkip={false}
       />
 
@@ -324,6 +556,3 @@ const RunResultsPage = () => {
 };
 
 export default RunResultsPage;
-
-
-

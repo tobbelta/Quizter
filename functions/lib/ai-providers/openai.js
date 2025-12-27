@@ -243,7 +243,20 @@ export class OpenAIProvider {
         confidence: validation.confidence || 0,
         issues: validation.issues || [],
         suggestions: validation.suggestions || [],
-        feedback: validation.feedback || 'No feedback provided'
+        feedback: validation.feedback || 'No feedback provided',
+        proposedEdits: validation.proposedEdits && typeof validation.proposedEdits === 'object'
+          ? validation.proposedEdits
+          : null,
+        multipleCorrectOptions: validation.multipleCorrectOptions === true
+          || validation.multipleCorrectOptions === 'true'
+          || validation.multipleCorrectOptions === 1,
+        alternativeCorrectOptions: Array.isArray(validation.alternativeCorrectOptions)
+          ? validation.alternativeCorrectOptions.filter(Boolean)
+          : validation.alternativeCorrectOptions
+            ? [validation.alternativeCorrectOptions]
+            : [],
+        timeSensitive: validation.timeSensitive === true,
+        bestBeforeDate: validation.bestBeforeDate || null
       };
       
     } catch (error) {
@@ -319,6 +332,7 @@ VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 Varje fråga ska ha:
 - Tydlig frågeställning på både svenska och engelska
 - 4 svarsalternativ per språk (varav ETT är korrekt)
+- Exakt ett alternativ får vara korrekt; övriga får inte kunna tolkas som rätt
 - Korrekt svar angivet som index (0-3)
 - Pedagogisk förklaring på båda språken
 - Kort bakgrund/fördjupning på båda språken (2-4 meningar)
@@ -357,6 +371,16 @@ Returnera JSON i exakt följande format:
     const effectiveCategory = category || 'Allmän kunskap';
     const effectiveAgeGroup = ageGroup || 'adults';
     const effectiveDifficulty = difficulty || 'medium';
+    const childGuardrails = isChildrenAgeGroup(effectiveAgeGroup)
+      ? `
+EXTRA BARNREGLER:
+- Underkänn om ämnet är för avancerat (konsthistoria, politik, krig, ekonomi, avancerad naturvetenskap).
+- Underkänn om frågan handlar om konstnärer eller historiska epoker.
+- Om fråga nämner nationalitet (svensk/norsk osv) måste rätt svar verkligen stämma.
+- Om du är osäker: markera som ogiltig.`
+      : '';
+    const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
+    const freshnessPrompt = criteria?.freshnessPrompt ? `\n${criteria.freshnessPrompt}\n` : '';
     
     return `Validera följande quizfråga enligt dessa kriterier:
 
@@ -377,6 +401,14 @@ Kontrollera:
 6. Är översättningarna korrekta?
 7. Är svårighetsgraden lämplig för målgruppen (${effectiveAgeGroup})?
 8. Passar frågan kategorin ${effectiveCategory}?
+9. Är frågan tidskänslig? Sätt timeSensitive och bestBeforeDate.
+10. Finns det fler än ett svarsalternativ som kan vara korrekt? Om ja, underkänn.
+${childGuardrails}
+${answerPrompt}
+${freshnessPrompt}
+
+Om du underkänner (isValid=false) MÅSTE suggestions innehålla 1-3 konkreta förbättringsförslag.
+Om frågan kan rättas med konkreta ändringar: fyll proposedEdits med korrigerade fält (sv/en). Annars sätt proposedEdits till null.
 
 Returnera JSON med följande format (all text MÅSTE vara på SVENSKA):
 {
@@ -484,6 +516,93 @@ VIKTIGT: All feedback, issues, suggestions, background och factSummary MÅSTE va
         message: error.message 
       };
     }
+  }
+
+  buildAmbiguityPrompt(question) {
+    const questionText = question?.question_sv || question?.question || '';
+    const options = question?.options_sv || question?.options || [];
+    const correctIndex = Number.isFinite(question?.correctOption) ? question.correctOption : null;
+    const correctText = Number.isFinite(correctIndex) && options[correctIndex] ? options[correctIndex] : null;
+
+    return `Bedöm om fler än ett svarsalternativ kan vara korrekt för frågan nedan.
+
+FRÅGA (SV):
+${questionText}
+
+SVARSALTERNATIV (SV):
+${JSON.stringify(options)}
+
+Markerat rätt svar (index): ${Number.isFinite(correctIndex) ? correctIndex : 'okänt'}
+Markerat rätt svar (text): ${correctText || 'okänt'}
+
+Regler:
+- Om två eller fler alternativ kan vara korrekta, sätt multipleCorrectOptions=true.
+- Lista då ALLA alternativ som kan vara korrekta (exakt som de står i listan).
+- Om frågan är vag ("känd för", "populär", "vackra", "välkänd") och flera alternativ passar, markera true.
+- Om du är osäker, markera true.
+
+Returnera ENDAST JSON:
+{
+  "multipleCorrectOptions": true/false,
+  "alternativeCorrectOptions": ["exakt alternativtext", "..."],
+  "reason": "kort förklaring på svenska",
+  "suggestions": ["1-3 korta förbättringsförslag för att göra frågan entydig"]
+}`;
+  }
+
+  buildProposedEditsPrompt(question, criteria = {}, analysis = {}) {
+    const { category, ageGroup, difficulty } = criteria;
+    const issues = Array.isArray(analysis.issues) ? analysis.issues : [];
+    const suggestions = Array.isArray(analysis.suggestions) ? analysis.suggestions : [];
+    const blockingRules = Array.isArray(analysis.blockingRules) ? analysis.blockingRules : [];
+    const issuesBlock = issues.length > 0 ? issues.map((issue) => `- ${issue}`).join('\n') : '- (inga)';
+    const suggestionsBlock = suggestions.length > 0 ? suggestions.map((item) => `- ${item}`).join('\n') : '- (inga)';
+    const rulesBlock = blockingRules.length > 0 ? blockingRules.map((rule) => `- ${rule}`).join('\n') : '- (inga)';
+    const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
+
+    return `Du ska föreslå konkreta ändringar så att frågan blir entydig och godkänd.
+
+KONTEXT:
+- Kategori: ${category || 'Allmän'}
+- Åldersgrupp: ${ageGroup || 'adults'}
+- Svårighetsgrad: ${difficulty || 'medium'}
+
+PROBLEM:
+${issuesBlock}
+
+FÖRSLAG:
+${suggestionsBlock}
+${answerPrompt}
+
+BLOCKERANDE REGLER:
+${rulesBlock}
+
+FRÅGA (JSON):
+${JSON.stringify(question, null, 2)}
+
+Regler:
+- Ändra så lite som möjligt.
+- Behåll 4 svarsalternativ per språk.
+- Om du ändrar svarsalternativ måste correctOption uppdateras.
+- Returnera bara fält som ska ändras; utelämna fält som inte behöver ändras.
+- Om du inte kan ge säkra ändringar, sätt proposedEdits till null.
+
+Returnera ENDAST JSON:
+{
+  "proposedEdits": {
+    "question_sv": "valfritt",
+    "question_en": "valfritt",
+    "options_sv": ["valfritt", "valfritt", "valfritt", "valfritt"],
+    "options_en": ["valfritt", "valfritt", "valfritt", "valfritt"],
+    "correctOption": 0,
+    "explanation_sv": "valfritt",
+    "explanation_en": "valfritt",
+    "background_sv": "valfritt",
+    "background_en": "valfritt"
+  },
+  "reason": "kort förklaring på svenska",
+  "suggestions": ["1-3 korta förbättringsförslag (valfritt)"]
+}`;
   }
 
   /**

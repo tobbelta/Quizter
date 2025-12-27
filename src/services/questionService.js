@@ -407,12 +407,40 @@ const normalizeQuestion = (question) => {
     }
   }
 
+  const parseTimestamp = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (value instanceof Date) {
+      const time = value.getTime();
+      return Number.isNaN(time) ? null : time;
+    }
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  };
+
+  const bestBeforeAt = parseTimestamp(
+    normalized.bestBeforeAt ?? normalized.best_before_at ?? normalized.bestBeforeDate ?? normalized.best_before_date
+  );
+  const isExpired = bestBeforeAt ? bestBeforeAt <= Date.now() : false;
+  const timeSensitive = normalized.timeSensitive === true ||
+    normalized.time_sensitive === true ||
+    Boolean(bestBeforeAt);
+  const quarantined = normalized.quarantined === true || normalized.quarantined === 1 || isExpired;
+
   return {
     ...normalized,
     categories,
     ageGroups,
     targetAudience,
-    correctOption
+    correctOption,
+    timeSensitive,
+    bestBeforeAt,
+    quarantined,
+    quarantinedAt: parseTimestamp(normalized.quarantinedAt ?? normalized.quarantined_at),
+    quarantineReason: normalized.quarantineReason || normalized.quarantine_reason || (isExpired ? 'expired' : null),
+    isExpired
   };
 };
 
@@ -644,13 +672,34 @@ export const questionService = {
 
       // Update question in cache with validation result
       if (response.success && response.result) {
+        const details = response.result.details || response.result;
+        const resolveTimestamp = (value) => {
+          if (value === undefined || value === null || value === '') return null;
+          if (typeof value === 'number' && Number.isFinite(value)) return value;
+          if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isNaN(time) ? null : time;
+          }
+          const numeric = Number(value);
+          if (Number.isFinite(numeric)) return numeric;
+          const parsed = Date.parse(String(value));
+          return Number.isNaN(parsed) ? null : parsed;
+        };
+        const bestBeforeAt = resolveTimestamp(details.bestBeforeAt);
+        const isExpired = bestBeforeAt ? bestBeforeAt <= Date.now() : false;
         updateCachedQuestion(questionId, (current) => {
           if (!current) return current;
           return {
             ...current,
             aiValidated: response.result.isValid,
-            aiValidationResult: response.result,
-            aiValidatedAt: new Date()
+            aiValidationResult: details,
+            aiValidatedAt: new Date(),
+            timeSensitive: details.timeSensitive === true,
+            bestBeforeAt: bestBeforeAt || null,
+            isExpired: isExpired,
+            quarantined: isExpired ? true : current.quarantined,
+            quarantinedAt: isExpired ? Date.now() : current.quarantinedAt,
+            quarantineReason: isExpired ? 'expired' : current.quarantineReason
           };
         });
       }

@@ -235,6 +235,29 @@ export async function onRequestPut(context) {
       fields.push('report_resolved_at = ?');
       values.push(updateData.reportResolvedAt ? new Date(updateData.reportResolvedAt).toISOString() : null);
     }
+    if (updateData.timeSensitive !== undefined) {
+      fields.push('time_sensitive = ?');
+      values.push(updateData.timeSensitive ? 1 : 0);
+    }
+    if (updateData.bestBeforeAt !== undefined || updateData.best_before_at !== undefined) {
+      const value = hasField('bestBeforeAt') ? updateData.bestBeforeAt : updateData.best_before_at;
+      fields.push('best_before_at = ?');
+      values.push(normalizeTimestamp(value));
+    }
+    if (updateData.quarantined !== undefined) {
+      fields.push('quarantined = ?');
+      values.push(updateData.quarantined ? 1 : 0);
+    }
+    if (updateData.quarantinedAt !== undefined || updateData.quarantined_at !== undefined) {
+      const value = hasField('quarantinedAt') ? updateData.quarantinedAt : updateData.quarantined_at;
+      fields.push('quarantined_at = ?');
+      values.push(normalizeTimestamp(value));
+    }
+    if (updateData.quarantineReason !== undefined || updateData.quarantine_reason !== undefined) {
+      const value = hasField('quarantineReason') ? updateData.quarantineReason : updateData.quarantine_reason;
+      fields.push('quarantine_reason = ?');
+      values.push(value ?? null);
+    }
 
     // Always update updated_at
     fields.push('updated_at = ?');

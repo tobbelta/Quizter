@@ -31,6 +31,23 @@ export async function onRequestPut(context) {
 
     const now = new Date().toISOString();
     let updatedCount = 0;
+    const normalizeTimestamp = (value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+      if (value === null) {
+        return null;
+      }
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
 
     // Update each question
     for (const { questionId, updateData } of updates) {
@@ -107,6 +124,29 @@ export async function onRequestPut(context) {
       if (updateData.reportResolvedAt !== undefined) {
         fields.push('report_resolved_at = ?');
         values.push(updateData.reportResolvedAt ? new Date(updateData.reportResolvedAt).toISOString() : null);
+      }
+      if (updateData.timeSensitive !== undefined) {
+        fields.push('time_sensitive = ?');
+        values.push(updateData.timeSensitive ? 1 : 0);
+      }
+      if (updateData.bestBeforeAt !== undefined || updateData.best_before_at !== undefined) {
+        const value = updateData.bestBeforeAt !== undefined ? updateData.bestBeforeAt : updateData.best_before_at;
+        fields.push('best_before_at = ?');
+        values.push(normalizeTimestamp(value));
+      }
+      if (updateData.quarantined !== undefined) {
+        fields.push('quarantined = ?');
+        values.push(updateData.quarantined ? 1 : 0);
+      }
+      if (updateData.quarantinedAt !== undefined || updateData.quarantined_at !== undefined) {
+        const value = updateData.quarantinedAt !== undefined ? updateData.quarantinedAt : updateData.quarantined_at;
+        fields.push('quarantined_at = ?');
+        values.push(normalizeTimestamp(value));
+      }
+      if (updateData.quarantineReason !== undefined || updateData.quarantine_reason !== undefined) {
+        const value = updateData.quarantineReason !== undefined ? updateData.quarantineReason : updateData.quarantine_reason;
+        fields.push('quarantine_reason = ?');
+        values.push(value ?? null);
       }
 
       // Always update updated_at

@@ -85,6 +85,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Skip SSE streams to avoid caching and SW errors
+  const accepts = request.headers.get('accept') || '';
+  if (url.pathname.startsWith('/api/sse') || accepts.includes('text/event-stream')) {
+    return;
+  }
+
   // Determine caching strategy
   let strategy = 'networkFirst'; // default
 

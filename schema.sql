@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS donations;
 DROP TABLE IF EXISTS provider_settings;
+DROP TABLE IF EXISTS ai_rule_sets;
 DROP TABLE IF EXISTS background_tasks;
 
 -- ----------------------------------------------------------------------------
@@ -63,6 +64,11 @@ CREATE TABLE questions (
   ai_validated BOOLEAN DEFAULT FALSE,
   ai_validation_result TEXT, -- JSON object with validation details
   ai_validated_at INTEGER,
+  time_sensitive BOOLEAN DEFAULT FALSE,
+  best_before_at INTEGER,
+  quarantined BOOLEAN DEFAULT FALSE,
+  quarantined_at INTEGER,
+  quarantine_reason TEXT,
   manually_approved BOOLEAN DEFAULT FALSE,
   manually_rejected BOOLEAN DEFAULT FALSE,
   created_at INTEGER NOT NULL,
@@ -199,6 +205,14 @@ CREATE TABLE provider_settings (
   provider_type TEXT,
   is_custom BOOLEAN DEFAULT FALSE,
   updated_at INTEGER
+);
+
+CREATE TABLE ai_rule_sets (
+  scope_type TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  config TEXT NOT NULL,
+  updated_at INTEGER,
+  PRIMARY KEY (scope_type, scope_id)
 );
 
 CREATE TABLE background_tasks (

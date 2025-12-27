@@ -14,6 +14,18 @@ import { ensureDatabase } from '../../lib/ensureDatabase.js';
 // Store active SSE connections
 const connections = new Map();
 
+const safeJsonParse = (value, fallback) => {
+  if (!value || typeof value !== 'string') {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.warn('[SSE] Failed to parse JSON value', error);
+    return fallback;
+  }
+};
+
 export async function onRequest(context) {
   const { request, env } = context;
   const { method, url } = request;
@@ -39,14 +51,17 @@ export async function onRequest(context) {
   }
 
   try {
-    // Validate run exists
-    const run = await env.DB.prepare('SELECT id, status FROM runs WHERE id = ?').first(runId);
-    
-    if (!run) {
-      return new Response(JSON.stringify({ error: 'Run not found' }), { 
-        status: 404, 
-        headers: { 'Content-Type': 'application/json' }
-      });
+    const isAdminStream = runId === 'admin';
+    if (!isAdminStream) {
+      // Validate run exists
+      const run = await env.DB.prepare('SELECT id, status FROM runs WHERE id = ?').bind(runId).first();
+      
+      if (!run) {
+        return new Response(JSON.stringify({ error: 'Run not found' }), { 
+          status: 404, 
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
     }
 
     // Create SSE stream
@@ -65,17 +80,30 @@ export async function onRequest(context) {
       connectedAt: Date.now()
     });
 
-    // Send initial state
-    await sendSSEMessage(writer, encoder, 'connected', {
-      connectionId,
-      runId,
-      participantId,
-      timestamp: Date.now()
-    });
+    const sendInitialState = async () => {
+      await sendSSEMessage(writer, encoder, 'connected', {
+        connectionId,
+        runId,
+        participantId,
+        timestamp: Date.now()
+      });
 
-    // Send current run state
-    const currentState = await getCurrentRunState(env.DB, runId);
-    await sendSSEMessage(writer, encoder, 'initial-state', currentState);
+      if (isAdminStream) {
+        const currentState = await getCurrentAdminState(env.DB);
+        await sendSSEMessage(writer, encoder, null, currentState);
+      } else {
+        const currentState = await getCurrentRunState(env.DB, runId);
+        await sendSSEMessage(writer, encoder, 'initial-state', currentState);
+      }
+    };
+
+    if (typeof context.waitUntil === 'function') {
+      context.waitUntil(sendInitialState());
+    } else {
+      sendInitialState().catch((error) => {
+        console.error('[SSE] Failed to send initial state:', error);
+      });
+    }
 
     // Set up cleanup on disconnect
     const cleanup = () => {
@@ -123,10 +151,38 @@ export async function onRequest(context) {
  */
 async function sendSSEMessage(writer, encoder, event, data) {
   try {
-    const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    await writer.write(encoder.encode(message));
+    const message = event
+      ? `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+      : `data: ${JSON.stringify(data)}\n\n`;
+    const writePromise = writer.write(encoder.encode(message));
+    writePromise.catch((error) => {
+      console.error('[SSE] Failed to write message:', error);
+    });
   } catch (error) {
     console.error('[SSE] Failed to send message:', error);
+  }
+}
+
+/**
+ * Get current state for admin streams (list all runs).
+ */
+async function getCurrentAdminState(db) {
+  try {
+    const runsResult = await db.prepare('SELECT * FROM runs ORDER BY created_at DESC').all();
+    const runs = (runsResult.results || []).map((run) => ({
+      ...run,
+      question_ids: safeJsonParse(run.question_ids, []),
+      checkpoints: safeJsonParse(run.checkpoints, []),
+      route: safeJsonParse(run.route, null),
+    }));
+
+    return {
+      runs,
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    console.error('[SSE] Error getting admin state:', error);
+    return { error: 'Failed to get admin state' };
   }
 }
 
@@ -142,7 +198,7 @@ async function getCurrentRunState(db, runId) {
       LEFT JOIN users u ON r.created_by = u.id 
       WHERE r.id = ?
     `);
-    const run = await runStmt.first(runId);
+    const run = await runStmt.bind(runId).first();
 
     if (!run) {
       return { error: 'Run not found' };
@@ -151,9 +207,9 @@ async function getCurrentRunState(db, runId) {
     // Parse JSON fields
     const processedRun = {
       ...run,
-      question_ids: run.question_ids ? JSON.parse(run.question_ids) : [],
-      checkpoints: run.checkpoints ? JSON.parse(run.checkpoints) : [],
-      route: run.route ? JSON.parse(run.route) : null,
+      question_ids: safeJsonParse(run.question_ids, []),
+      checkpoints: safeJsonParse(run.checkpoints, []),
+      route: safeJsonParse(run.route, null),
     };
 
     // Get participants
@@ -164,7 +220,7 @@ async function getCurrentRunState(db, runId) {
       WHERE p.run_id = ? 
       ORDER BY p.joined_at ASC
     `);
-    const participantsResult = await participantsStmt.all(runId);
+    const participantsResult = await participantsStmt.bind(runId).all();
     const participants = participantsResult.results || [];
 
     // Get leaderboard
@@ -192,7 +248,7 @@ async function getCurrentRunState(db, runId) {
       GROUP BY p.id, p.alias, p.user_id, u.display_name, p.completed_at
       ORDER BY score_percentage DESC, last_answer_at ASC
     `);
-    const leaderboardResult = await leaderboardStmt.all(runId);
+    const leaderboardResult = await leaderboardStmt.bind(runId).all();
     const leaderboard = leaderboardResult.results || [];
 
     return {

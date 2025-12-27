@@ -53,8 +53,11 @@ export async function onRequestPost(context) {
     
     const initialProgress = {
       completed: 0,
-      total: 100,
-      phase: 'Queued',
+      total: amount,
+      phase: 'Köad',
+      details: {
+        targetCount: amount
+      }
     };
 
     const payload = {
@@ -138,8 +141,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
     await ensureCategoriesTable(env.DB);
     console.log(`[Task ${taskId}] Database ensured.`);
     
-    // Update progress: 10%
-    await updateTaskProgress(env.DB, taskId, 10, 'Förbereder AI-förfrågan');
+    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, 'Förbereder AI-förfrågan', {
+      targetCount: amount
+    });
     
     await ensureAudienceTables(env.DB);
     const ageGroupDetails = ageGroup ? await getAgeGroupById(env.DB, ageGroup) : null;
@@ -167,22 +171,22 @@ async function generateQuestionsInBackground(env, taskId, params) {
     // Handle 'random' provider by picking one randomly
     let effectiveProvider = provider.toLowerCase();
     let selectedProvider;
-    
+
     if (effectiveProvider === 'random') {
       const randomSelection = factory.getRandomProvider('generation');
       effectiveProvider = randomSelection.name;
       selectedProvider = randomSelection.provider;
       console.log(`[Task ${taskId}] Random provider selected: ${effectiveProvider}`);
-    } else {
+    }
+
+    const providerQueue = availableProviders.filter((name) => name !== effectiveProvider);
+    if (!selectedProvider) {
       selectedProvider = factory.getProvider(effectiveProvider);
     }
-    
-    // Update progress: 30%
-    await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider}`);
-    
-    // Generate questions using the selected provider (with automatic fallback to all available providers)
-    let generatedQuestions;
-    let attemptedProviders = [effectiveProvider];
+
+    const attemptedProviders = [effectiveProvider];
+    const providersUsed = new Set();
+    const modelsUsed = new Set();
     let lastError;
     
     try {
@@ -210,16 +214,23 @@ async function generateQuestionsInBackground(env, taskId, params) {
       
       for (const fallbackProviderName of availableProviders) {
         try {
-          console.log(`[Task ${taskId}] Trying fallback provider: ${fallbackProviderName}`);
-          attemptedProviders.push(fallbackProviderName);
-          
-          effectiveProvider = fallbackProviderName;
-          selectedProvider = factory.getProvider(fallbackProviderName);
-          
-          await updateTaskProgress(env.DB, taskId, 30, `Genererar med ${effectiveProvider} (fallback)`);
-          
-          generatedQuestions = await selectedProvider.generateQuestions({
-            amount,
+          selectedProvider = factory.getProvider(nextProvider);
+          effectiveProvider = nextProvider;
+          attemptedProviders.push(nextProvider);
+          console.log(`[Task ${taskId}] Switching provider to ${nextProvider}`);
+          return true;
+        } catch (error) {
+          console.warn(`[Task ${taskId}] Failed to load provider ${nextProvider}:`, error.message);
+        }
+      }
+      return false;
+    };
+
+    const generateBatch = async (batchAmount) => {
+      while (selectedProvider) {
+        try {
+          const batchQuestions = await selectedProvider.generateQuestions({
+            amount: batchAmount,
             category,
             categoryDetails,
             ageGroupDetails,
@@ -230,46 +241,138 @@ async function generateQuestionsInBackground(env, taskId, params) {
             targetAudienceDetails,
             language: 'sv'
           });
-          
-          fallbackSuccess = true;
-          console.log(`[Task ${taskId}] Fallback to ${effectiveProvider} succeeded`);
-          break;
-        } catch (fallbackError) {
-          lastError = fallbackError;
-          console.warn(`[Task ${taskId}] Fallback ${fallbackProviderName} also failed:`, fallbackError.message);
-          continue;
+          providersUsed.add(effectiveProvider);
+          if (selectedProvider?.model) {
+            modelsUsed.add(selectedProvider.model);
+          }
+          return (batchQuestions || []).map((question) => ({
+            ...question,
+            generationProvider: effectiveProvider,
+            generationModel: selectedProvider?.model || null
+          }));
+        } catch (providerError) {
+          lastError = providerError;
+          console.warn(`[Task ${taskId}] ${effectiveProvider} failed:`, providerError.message);
+          const switched = await switchProvider();
+          if (!switched) {
+            break;
+          }
         }
       }
-      
-      if (!fallbackSuccess) {
-        throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError.message}`);
+      throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
+    };
+
+    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, `Genererar 0/${amount}`, {
+      targetCount: amount
+    });
+
+    let generationRounds = 0;
+    let totalGenerated = 0;
+    let duplicateCount = 0;
+    let ruleFilteredCount = 0;
+    let stalledRounds = 0;
+    const maxRounds = Math.max(3, Math.ceil(amount / 5));
+    const acceptedQuestions = [];
+
+    const existingRows = await env.DB.prepare(`
+      SELECT id, question_sv FROM questions
+    `).all();
+    let existingQuestions = existingRows.results || [];
+
+    while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
+      const remaining = amount - acceptedQuestions.length;
+      const batchAmount = remaining;
+      const batchQuestions = await generateBatch(batchAmount);
+      generationRounds += 1;
+      totalGenerated += batchQuestions.length;
+
+      if (batchQuestions.length === 0) {
+        stalledRounds += 1;
+        if (stalledRounds >= 2) {
+          break;
+        }
+        continue;
       }
+
+      const duplicateResult = await filterDuplicatesBeforeSaving(
+        env.DB,
+        batchQuestions,
+        existingQuestions
+      );
+      existingQuestions = duplicateResult.existingQuestions;
+      duplicateCount += duplicateResult.duplicateCount;
+
+      const { acceptedQuestions: batchAccepted, rejectedQuestions } = filterQuestionsByRules(
+        duplicateResult.uniqueQuestions,
+        {
+          ageGroup,
+          difficulty,
+          category,
+          targetAudience
+        },
+        rulesConfig
+      );
+
+      if (rejectedQuestions.length > 0) {
+        console.warn(`[Task ${taskId}] Rule-filtered ${rejectedQuestions.length} questions for age group ${ageGroup || 'unknown'}`);
+      }
+
+      ruleFilteredCount += rejectedQuestions.length;
+      acceptedQuestions.push(...batchAccepted);
+
+      if (batchAccepted.length === 0) {
+        stalledRounds += 1;
+      } else {
+        stalledRounds = 0;
+      }
+
+      await updateTaskProgress(env.DB, taskId, {
+        completed: Math.min(acceptedQuestions.length, amount),
+        total: amount
+      }, `Genererar ${Math.min(acceptedQuestions.length, amount)}/${amount}`, {
+        targetCount: amount,
+        generatedCount: totalGenerated,
+        duplicatesBlocked: duplicateCount,
+        ruleFiltered: ruleFilteredCount,
+        acceptedCount: acceptedQuestions.length
+      });
     }
+
+    const finalQuestions = acceptedQuestions.slice(0, amount);
+    const shortfall = amount - finalQuestions.length;
     
-    console.log(`[Task ${taskId}] Generated ${generatedQuestions.length} questions`);
-    
-    // Update progress: 40%
-    await updateTaskProgress(env.DB, taskId, 40, 'Kontrollerar dubletter');
-    
-    // Step 1: Check for duplicates BEFORE saving (compare question text with existing questions)
-    const { uniqueQuestions, duplicateCount } = await filterDuplicatesBeforeSaving(
-      env.DB, 
-      generatedQuestions
-    );
-    
-    console.log(`[Task ${taskId}] Found ${uniqueQuestions.length} unique questions, ${duplicateCount} duplicates (not saved)`);
-    
-    // Update progress: 60%
-    await updateTaskProgress(env.DB, taskId, 60, 'Sparar unika frågor till databas');
-    
+    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, `Sparar 0/${amount}`, {
+      targetCount: amount,
+      generatedCount: totalGenerated,
+      duplicatesBlocked: duplicateCount,
+      ruleFiltered: ruleFilteredCount,
+      acceptedCount: finalQuestions.length
+    });
+
     // Step 2: Save ONLY unique questions to database (unvalidated)
-    const saveResult = await saveQuestionsToDatabase(env.DB, uniqueQuestions, {
+    const saveResult = await saveQuestionsToDatabase(env.DB, finalQuestions, {
       category,
       difficulty,
       provider: effectiveProvider,
-      model: selectedProvider.model,
+      model: selectedProvider?.model || null,
       ageGroup,
-      targetAudience
+      targetAudience,
+      freshnessConfig
+    }, {
+      onProgress: async ({ savedCount, errorCount }) => {
+        await updateTaskProgress(env.DB, taskId, {
+          completed: savedCount,
+          total: amount
+        }, `Sparar ${savedCount}/${amount}`, {
+          targetCount: amount,
+          generatedCount: totalGenerated,
+          duplicatesBlocked: duplicateCount,
+          ruleFiltered: ruleFilteredCount,
+          acceptedCount: finalQuestions.length,
+          savedCount,
+          errorCount
+        });
+      }
     });
     
     const { savedQuestions, errors } = saveResult;
@@ -287,14 +390,25 @@ async function generateQuestionsInBackground(env, taskId, params) {
     await completeTask(env.DB, taskId, {
       success: true,
       questionsGenerated: savedQuestions.length,
-      provider: effectiveProvider,
-      model: selectedProvider.model,
+      provider: primaryProvider,
+      model: modelsUsed.size === 1 ? Array.from(modelsUsed)[0] : null,
+      providersUsed: generatorProviders,
+      modelsUsed: Array.from(modelsUsed),
+      requestedCount: amount,
+      generatedCount: totalGenerated,
+      savedCount: savedQuestions.length,
+      duplicatesBlocked: duplicateCount,
+      ruleFiltered: ruleFilteredCount,
+      generationRounds,
+      shortfall,
+      questionIds: savedQuestions.map((question) => question.id),
       questions: savedQuestions,
       validationInfo: {
-        totalGenerated: generatedQuestions.length,
+        requestedCount: amount,
+        totalGenerated: totalGenerated,
         totalSaved: savedQuestions.length,
-        uniqueQuestions: savedQuestions.length,
         duplicates: duplicateCount,
+        ruleFiltered: ruleFilteredCount,
         validatedCount: 0,
         invalidCount: 0,
         skippedCount: savedQuestions.length,
@@ -331,9 +445,22 @@ async function generateQuestionsInBackground(env, taskId, params) {
           validationProvider,
           category,
           ageGroup,
-          difficulty
+          difficulty,
+          targetAudience
         }),
-        JSON.stringify({ completed: 0, total: 100, phase: 'Startar validering' }),
+        JSON.stringify({
+          completed: 0,
+          total: savedQuestions.length,
+          phase: 'Startar validering',
+          details: {
+            totalCount: savedQuestions.length,
+            validatedCount: 0,
+            invalidCount: 0,
+            skippedCount: 0,
+            correctedCount: 0
+          }
+        }),
+        Date.now(),
         Date.now(),
         Date.now(),
         Date.now()
@@ -345,7 +472,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
       // Run validation synchronously (AWAIT instead of fire-and-forget)
       // IMPORTANT: Use savedQuestions (with database IDs), not uniqueQuestions!
       try {
-        await validateQuestionsInBackground(env, validationTaskId, savedQuestions, effectiveProvider, {
+        await validateQuestionsInBackground(env, validationTaskId, savedQuestions, generatorProviders, {
           category,
           ageGroup,
           difficulty,
@@ -371,7 +498,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
 /**
  * Validate questions in background
  */
-async function validateQuestionsInBackground(env, taskId, questions, generatorProvider, metadata = {}) {
+async function validateQuestionsInBackground(env, taskId, questions, generatorProvider, metadata = {}, rulesConfig = null) {
   try {
     console.log(`[Validation ${taskId}] Starting validation of ${questions.length} questions`);
     
@@ -380,6 +507,13 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     await ensureDatabase(env.DB);
     console.log(`[Validation ${taskId}] Database initialized`);
     
+    if (!rulesConfig) {
+      rulesConfig = await getAiRulesConfig(env.DB);
+    }
+    const freshnessConfig = resolveFreshnessConfig(rulesConfig, metadata.targetAudience);
+    const freshnessPrompt = buildFreshnessPrompt(freshnessConfig, { ageGroup: metadata.ageGroup });
+    const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
+
     // Create factory inside background task (can't pass objects through fire-and-forget)
     const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
     const factory = new AIProviderFactory(env, providerMap);
@@ -403,10 +537,18 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     
     console.log(`[Validation ${taskId}] Final metadata:`, metadata);
     
+    const totalCount = questions.length;
+
     // Update progress to show we're starting
     try {
-      await updateTaskProgress(env.DB, taskId, 10, 'Förbereder validering');
-      console.log(`[Validation ${taskId}] Progress updated to 10%`);
+      await updateTaskProgress(env.DB, taskId, { completed: 0, total: totalCount }, 'Förbereder validering', {
+        totalCount,
+        validatedCount: 0,
+        invalidCount: 0,
+        skippedCount: 0,
+        correctedCount: 0
+      });
+      console.log(`[Validation ${taskId}] Progress updated`);
     } catch (progressError) {
       console.error(`[Validation ${taskId}] Failed to update progress:`, progressError);
       throw progressError;
@@ -444,11 +586,21 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     }
     
     console.log(`[Validation ${taskId}] About to update progress to 100%`);
-    await updateTaskProgress(env.DB, taskId, 100, 'Validering klar');
+    await updateTaskProgress(env.DB, taskId, {
+      completed: totalCount,
+      total: totalCount
+    }, 'Validering klar', {
+      totalCount,
+      validatedCount: validationResult.validatedCount,
+      invalidCount: validationResult.invalidCount,
+      skippedCount: validationResult.skippedCount,
+      correctedCount: validationResult.correctedCount
+    });
     
     console.log(`[Validation ${taskId}] About to complete task`);
     await completeTask(env.DB, taskId, {
       success: true,
+      totalCount,
       validatedCount: validationResult.validatedCount,
       invalidCount: validationResult.invalidCount,
       skippedCount: validationResult.skippedCount,
@@ -515,24 +667,27 @@ function calculateSimilarity(str1, str2) {
  * Compares new questions against existing questions in database
  * Uses both exact matching and similarity matching (90% threshold)
  */
-async function filterDuplicatesBeforeSaving(db, newQuestions) {
+async function filterDuplicatesBeforeSaving(db, newQuestions, existingQuestionsOverride = null) {
   const uniqueQuestions = [];
   let duplicateCount = 0;
   const SIMILARITY_THRESHOLD = 90; // 90% similarity = duplicate
-  
-  // Get all existing questions from database (we'll compare against these)
-  const allExisting = await db.prepare(`
-    SELECT id, question_sv FROM questions
-  `).all();
-  
-  const existingQuestions = allExisting.results || [];
-  console.log(`[filterDuplicatesBeforeSaving] Comparing ${newQuestions.length} new questions against ${existingQuestions.length} existing questions`);
-  
+
+  let existingQuestions = existingQuestionsOverride;
+  if (!existingQuestions) {
+    const allExisting = await db.prepare(`
+      SELECT id, question_sv FROM questions
+    `).all();
+    existingQuestions = allExisting.results || [];
+  }
+
+  const comparisonPool = [...existingQuestions];
+  console.log(`[filterDuplicatesBeforeSaving] Comparing ${newQuestions.length} new questions against ${comparisonPool.length} existing questions`);
+
   for (const newQuestion of newQuestions) {
     let isDuplicate = false;
-    
+
     // Check for exact match first
-    for (const existing of existingQuestions) {
+    for (const existing of comparisonPool) {
       if (newQuestion.question_sv === existing.question_sv) {
         duplicateCount++;
         console.log(`[filterDuplicatesBeforeSaving] Exact duplicate found (NOT saving): ${newQuestion.question_sv.substring(0, 60)}...`);
@@ -540,16 +695,16 @@ async function filterDuplicatesBeforeSaving(db, newQuestions) {
         break;
       }
     }
-    
+
     if (isDuplicate) continue;
-    
+
     // Check for similar questions
-    for (const existing of existingQuestions) {
+    for (const existing of comparisonPool) {
       const similarity = calculateSimilarity(
         newQuestion.question_sv.toLowerCase(),
         existing.question_sv.toLowerCase()
       );
-      
+
       if (similarity >= SIMILARITY_THRESHOLD) {
         duplicateCount++;
         console.log(`[filterDuplicatesBeforeSaving] Similar question found (${similarity.toFixed(1)}% match, NOT saving):`);
@@ -559,14 +714,19 @@ async function filterDuplicatesBeforeSaving(db, newQuestions) {
         break;
       }
     }
-    
+
     if (!isDuplicate) {
       uniqueQuestions.push(newQuestion);
+      comparisonPool.push({ question_sv: newQuestion.question_sv });
     }
   }
-  
+
   console.log(`[filterDuplicatesBeforeSaving] Result: ${uniqueQuestions.length} unique, ${duplicateCount} duplicates filtered`);
-  return { uniqueQuestions, duplicateCount };
+  return {
+    uniqueQuestions,
+    duplicateCount,
+    existingQuestions: comparisonPool
+  };
 }
 
 /**
@@ -673,7 +833,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     
     // Validate each question
     for (let i = 0; i < questions.length; i++) {
-      const question = questions[i];
+      let question = questions[i];
       console.log(`[validateUniqueQuestions] Validating question ${i + 1}/${questions.length}...`);
       console.log('[validateUniqueQuestions] Question context:', {
         questionId: question.id,
@@ -774,18 +934,29 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
 }
 
 // Helper function to update task progress
-async function updateTaskProgress(db, taskId, progressPercent, phase, details = null) {
+async function updateTaskProgress(db, taskId, progressValue, phase, details = null) {
   try {
-    console.log(`[updateTaskProgress] Updating task ${taskId} to ${progressPercent}% - ${phase}`);
-    
-    const progressData = {
-      completed: progressPercent,
-      total: 100,
-      phase: phase,
+    console.log(`[updateTaskProgress] Updating task ${taskId} - ${phase}`);
+
+    const isObject = progressValue && typeof progressValue === 'object';
+    const completedValue = isObject ? Number(progressValue.completed) : Number(progressValue);
+    const totalValue = isObject ? Number(progressValue.total) : 100;
+    const resolvedCompleted = Number.isFinite(completedValue) ? completedValue : 0;
+    const resolvedTotal = Number.isFinite(totalValue) && totalValue > 0 ? totalValue : 100;
+    const resolvedPhase = phase || (isObject && progressValue.phase ? progressValue.phase : '');
+    const mergedDetails = {
+      ...(isObject && progressValue.details ? progressValue.details : {}),
+      ...(details || {})
     };
-    
-    if (details) {
-      progressData.details = details;
+
+    const progressData = {
+      completed: resolvedCompleted,
+      total: resolvedTotal,
+      phase: resolvedPhase,
+    };
+
+    if (Object.keys(mergedDetails).length > 0) {
+      progressData.details = mergedDetails;
     }
 
     const result = await db.prepare(`
@@ -861,16 +1032,32 @@ async function failTask(db, taskId, errorMessage) {
 }
 
 // Save questions to D1 database
-async function saveQuestionsToDatabase(db, questions, metadata) {
-  const { category, difficulty, provider, model, ageGroup, targetAudience } = metadata;
+async function saveQuestionsToDatabase(db, questions, metadata, progress = null) {
+  const { category, difficulty, provider, model, ageGroup, targetAudience, freshnessConfig } = metadata;
   const savedQuestions = [];
   const errors = [];
+  const onProgress = progress?.onProgress;
   
   for (const q of questions) {
     const id = `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = Date.now();
     
     try {
+      const freshness = resolveFreshnessFields({
+        ...q,
+        ageGroup: q.ageGroup || ageGroup,
+        ageGroups: q.ageGroups || (q.ageGroup ? [q.ageGroup] : (ageGroup ? [ageGroup] : []))
+      }, freshnessConfig, now);
+      const isExpired = isExpiredByBestBefore(freshness.bestBeforeAt, now);
+
+      const resolvedAgeGroups = ageGroup
+        ? [ageGroup]
+        : (q.ageGroup ? [q.ageGroup] : []);
+      const resolvedAgeGroup = resolvedAgeGroups[0] || null;
+
+      const questionProvider = q.generationProvider || provider;
+      const questionModel = q.generationModel || model;
+
       await db.prepare(`
         INSERT INTO questions (
           id, question_sv, question_en, options_sv, options_en, correct_option, 
@@ -897,8 +1084,8 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         now,
         now,
         'ai-system',
-        provider,
-        model,
+        questionProvider,
+        questionModel,
         0  // Always false initially, validation happens after
       ).run();
       
@@ -923,9 +1110,15 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
         createdBy: 'ai-system',
         aiGenerated: true,
         validated: false,  // Always false initially
-        provider,
-        model
+        provider: questionProvider,
+        model: questionModel
       });
+      if (typeof onProgress === 'function') {
+        await onProgress({
+          savedCount: savedQuestions.length,
+          errorCount: errors.length
+        });
+      }
     } catch (error) {
       const errorInfo = {
         message: error.message,
@@ -938,6 +1131,12 @@ async function saveQuestionsToDatabase(db, questions, metadata) {
       console.error('[generateAIQuestions] Error message:', error.message);
       console.error('[generateAIQuestions] Error stack:', error.stack);
       // Continue with other questions even if one fails
+      if (typeof onProgress === 'function') {
+        await onProgress({
+          savedCount: savedQuestions.length,
+          errorCount: errors.length
+        });
+      }
     }
   }
   

@@ -24,6 +24,7 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS age_groups;
       DROP TABLE IF EXISTS donations;
       DROP TABLE IF EXISTS provider_settings;
+      DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
       
       CREATE TABLE users (
@@ -62,6 +63,11 @@ export async function onRequestGet({ env }) {
         ai_validated BOOLEAN DEFAULT FALSE,
         ai_validation_result TEXT,
         ai_validated_at INTEGER,
+        time_sensitive BOOLEAN DEFAULT FALSE,
+        best_before_at INTEGER,
+        quarantined BOOLEAN DEFAULT FALSE,
+        quarantined_at INTEGER,
+        quarantine_reason TEXT,
         validation_generated_at INTEGER,
         structure_validation_result TEXT,
         manually_approved BOOLEAN DEFAULT FALSE,
@@ -129,6 +135,17 @@ export async function onRequestGet({ env }) {
         question_ids TEXT NOT NULL,
         checkpoints TEXT NOT NULL,
         route TEXT,
+        payment_policy TEXT,
+        payment_status TEXT,
+        payment_total_amount INTEGER,
+        payment_host_amount INTEGER,
+        payment_player_amount INTEGER,
+        payment_currency TEXT,
+        payment_provider_id TEXT,
+        expected_players INTEGER,
+        anonymous_policy TEXT,
+        max_anonymous INTEGER,
+        host_payment_id TEXT,
         FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
       );
       
@@ -140,6 +157,12 @@ export async function onRequestGet({ env }) {
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
+        payment_status TEXT,
+        payment_amount INTEGER,
+        payment_currency TEXT,
+        payment_provider_id TEXT,
+        payment_id TEXT,
+        is_anonymous BOOLEAN DEFAULT FALSE,
         FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
       );
@@ -166,6 +189,45 @@ export async function onRequestGet({ env }) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
         FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE SET NULL
       );
+
+      CREATE TABLE payment_settings (
+        id TEXT PRIMARY KEY,
+        config TEXT NOT NULL,
+        updated_at INTEGER
+      );
+
+      CREATE TABLE payments (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        run_id TEXT,
+        participant_id TEXT,
+        provider_id TEXT NOT NULL,
+        provider_type TEXT NOT NULL,
+        payment_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        provider_payment_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      );
+
+      CREATE TABLE subscriptions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        period TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        provider_payment_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
+      );
       
       CREATE TABLE provider_settings (
         provider_id TEXT PRIMARY KEY,
@@ -184,6 +246,14 @@ export async function onRequestGet({ env }) {
         provider_type TEXT,
         is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
+      );
+
+      CREATE TABLE ai_rule_sets (
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        config TEXT NOT NULL,
+        updated_at INTEGER,
+        PRIMARY KEY (scope_type, scope_id)
       );
       
       CREATE TABLE background_tasks (

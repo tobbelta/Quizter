@@ -2,15 +2,20 @@
  * Första sidan användare möter – fokuserar på CTA för att skapa/ansluta rundor
  * och förklarar kort hur Quizter fungerar.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageLayout from '../components/layout/PageLayout';
+import PaymentModal from '../components/payment/PaymentModal';
+import { paymentService } from '../services/paymentService';
 
 const LandingPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [isBetaExpanded, setIsBetaExpanded] = useState(false);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [donationAmount, setDonationAmount] = useState(2000);
 
   const handleStartRun = () => {
     navigate('/join');
@@ -19,6 +24,28 @@ const LandingPage = () => {
   const handleCreateRun = () => {
     navigate('/generate');
   };
+
+  useEffect(() => {
+    let isActive = true;
+    paymentService.getPaymentConfig().then((config) => {
+      if (!isActive) return;
+      setPaymentConfig(config);
+      const amounts = config?.donations?.amounts;
+      if (Array.isArray(amounts) && amounts.length > 0) {
+        setDonationAmount(amounts[0]);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.landing);
+  const donationCurrency = paymentConfig?.currency || 'sek';
+  const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
+    ? paymentConfig.donations.amounts
+    : [];
+  const formatDonation = (value) => `${(Number(value || 0) / 100).toFixed(2)} ${donationCurrency.toUpperCase()}`;
 
   return (
     <PageLayout headerTitle="Quizter" maxWidth="max-w-3xl" className="space-y-8">
@@ -137,6 +164,54 @@ const LandingPage = () => {
         </div>
       </section>
 
+      {donationEnabled && (
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-900/10 p-6 space-y-4 text-center">
+          <div>
+            <h2 className="text-xl font-semibold text-emerald-200">Stöd Quizter</h2>
+            <p className="mt-2 text-sm text-gray-300">
+              Donera valfritt belopp för att stötta drift och vidareutveckling.
+            </p>
+          </div>
+          {donationAmounts.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {donationAmounts.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setDonationAmount(value)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                    donationAmount === value
+                      ? 'bg-emerald-500 text-black'
+                      : 'bg-slate-800 text-emerald-100 hover:bg-slate-700'
+                  }`}
+                >
+                  {formatDonation(value)}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+            <input
+              type="number"
+              min="0"
+              value={Number.isFinite(Number(donationAmount)) ? donationAmount / 100 : 0}
+              onChange={(event) => {
+                const value = Math.max(0, Number(event.target.value) || 0);
+                setDonationAmount(Math.round(value * 100));
+              }}
+              className="w-32 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100 focus:border-emerald-400 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setShowDonationModal(true)}
+              className="rounded-lg bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
+            >
+              Donera {formatDonation(donationAmount)}
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="space-y-4 text-center">
         <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
           <h2 className="text-xl font-semibold text-slate-100">Perfekt för alla tillfällen</h2>
@@ -152,10 +227,22 @@ const LandingPage = () => {
         )}
       </section>
 
+      <PaymentModal
+        isOpen={showDonationModal}
+        title="Stöd Quizter"
+        description="Tack för att du vill stödja Quizter."
+        purpose="donation"
+        amount={donationAmount}
+        currency={donationCurrency}
+        allowSkip={true}
+        context={{ context: 'landing' }}
+        onSuccess={() => setShowDonationModal(false)}
+        onCancel={() => setShowDonationModal(false)}
+      />
+
     </PageLayout>
   );
 };
 
 export default LandingPage;
-
 

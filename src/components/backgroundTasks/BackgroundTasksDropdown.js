@@ -120,6 +120,7 @@ const BackgroundTasksDropdown = ({
                           </p>
                         )}
                         <div className="flex flex-col mt-2 text-[11px] text-slate-500 gap-0.5">
+                          <span className="break-all">ID: {task.id}</span>
                           <span>Start: {formatDateTime(task.createdAt)}</span>
                           {task.finishedAt && (
                             <span>Klart: {formatDateTime(task.finishedAt)}</span>
