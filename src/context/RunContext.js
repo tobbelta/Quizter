@@ -24,6 +24,11 @@ import React, {
 } from 'react';
 import { runRepository } from '../repositories/runRepository';
 import { questionService } from '../services/questionService';
+import {
+  buildGeneratedRun,
+  buildDistanceBasedRun,
+  buildTimeBasedRun
+} from '../services/runFactory';
 
 /**
  * React Context för run-state
@@ -95,6 +100,21 @@ const mapRunQuestions = (run) => {
   return questionService.getManyByIds(run.questionIds);
 };
 
+const mergeParticipantState = (participant, previousParticipant) => {
+  if (!participant) return participant;
+  const next = { ...participant };
+
+  if (!Array.isArray(participant.answers) && Array.isArray(previousParticipant?.answers)) {
+    next.answers = previousParticipant.answers;
+  }
+
+  if (!Number.isFinite(participant.currentOrder) && Number.isFinite(previousParticipant?.currentOrder)) {
+    next.currentOrder = previousParticipant.currentOrder;
+  }
+
+  return next;
+};
+
 /**
  * RunProvider - Huvudkomponent som tillhandahåller run-state till hela appen
  *
@@ -160,7 +180,7 @@ export const RunProvider = ({ children }) => {
       if (trackedId) {
         const updatedParticipant = participantsList.find((entry) => entry.id === trackedId);
         if (updatedParticipant) {
-          setCurrentParticipant(updatedParticipant);
+          setCurrentParticipant((prev) => mergeParticipantState(updatedParticipant, prev));
         }
       }
     } catch (error) {
@@ -193,9 +213,84 @@ export const RunProvider = ({ children }) => {
    * @returns {Promise<Object>} Genererad runda
    */
   const generateRun = useCallback(async (options, creator) => {
-    const run = await runRepository.generateRouteRun(options, creator);
-    await loadRunState(run);
-    return run;
+    let generatedRun;
+
+    if (options?.runType === 'distance-based') {
+      generatedRun = await buildDistanceBasedRun({
+        name: options.name,
+        audience: options.audience || options.difficulty,
+        difficulty: options.difficulty || options.audience,
+        distanceBetweenQuestions: options.distanceBetweenQuestions,
+        questionCount: options.questionCount,
+        categories: options.categories || [],
+        allowAnonymous: options.allowAnonymous,
+        language: options.language || 'sv'
+      }, creator);
+    } else if (options?.runType === 'time-based') {
+      generatedRun = await buildTimeBasedRun({
+        name: options.name,
+        audience: options.audience || options.difficulty,
+        difficulty: options.difficulty || options.audience,
+        minutesBetweenQuestions: options.minutesBetweenQuestions,
+        questionCount: options.questionCount,
+        categories: options.categories || [],
+        allowAnonymous: options.allowAnonymous,
+        language: options.language || 'sv'
+      }, creator);
+    } else {
+      generatedRun = await buildGeneratedRun({
+        name: options.name,
+        audience: options.audience || options.difficulty,
+        difficulty: options.difficulty || options.audience,
+        lengthMeters: options.lengthMeters,
+        questionCount: options.questionCount,
+        categories: options.categories || [],
+        allowAnonymous: options.allowAnonymous,
+        allowRouteSelection: options.allowRouteSelection,
+        language: options.language || 'sv',
+        origin: options.origin,
+        seed: options.seed,
+        preferGreenAreas: options.preferGreenAreas
+      }, creator);
+    }
+
+    const routePayload = {
+      path: Array.isArray(generatedRun.route) ? generatedRun.route : null,
+      meta: {
+        type: generatedRun.type,
+        questionCount: generatedRun.questionCount,
+        distanceBetweenQuestions: generatedRun.distanceBetweenQuestions,
+        minutesBetweenQuestions: generatedRun.minutesBetweenQuestions,
+        lengthMeters: generatedRun.lengthMeters,
+        allowRouteSelection: generatedRun.allowRouteSelection,
+        startPoint: generatedRun.startPoint,
+        audience: generatedRun.audience,
+        difficulty: generatedRun.difficulty,
+        language: generatedRun.language
+      }
+    };
+
+    const createdRun = await runRepository.createRun({
+      name: generatedRun.name,
+      question_ids: generatedRun.questionIds || [],
+      checkpoints: generatedRun.checkpoints || [],
+      route: routePayload,
+      expectedPlayers: options?.expectedPlayers,
+      paymentId: options?.paymentId
+    }, creator);
+
+    const mergedRun = {
+      ...generatedRun,
+      id: createdRun.id,
+      joinCode: createdRun.joinCode,
+      qrSlug: createdRun.joinCode ? createdRun.joinCode.toLowerCase() : generatedRun.qrSlug,
+      createdAt: createdRun.createdAt || generatedRun.createdAt,
+      updatedAt: createdRun.updatedAt || generatedRun.updatedAt,
+      status: createdRun.status || generatedRun.status
+    };
+
+    await loadRunState(mergedRun);
+    return mergedRun;
   }, [loadRunState]);
 
   /**
@@ -276,7 +371,7 @@ export const RunProvider = ({ children }) => {
     if (trackedId) {
       const updatedParticipant = participantsList.find((entry) => entry.id === trackedId);
       if (updatedParticipant) {
-        setCurrentParticipant(updatedParticipant);
+        setCurrentParticipant((prev) => mergeParticipantState(updatedParticipant, prev));
       } else {
         participantIdRef.current = null;
         setCurrentParticipant(null);
@@ -332,8 +427,12 @@ export const RunProvider = ({ children }) => {
       return;
     }
 
-    await runRepository.completeRun(runId, participantId);
-    await refreshParticipants(); // Uppdatera status för alla
+    try {
+      await runRepository.completeRun(runId, participantId);
+      await refreshParticipants(); // Uppdatera status för alla
+    } catch (error) {
+      console.warn('[RunContext] Kunde inte markera deltagare som klar:', error);
+    }
   }, [runId, participantId, refreshParticipants]);
 
   /**
@@ -467,7 +566,7 @@ export const RunProvider = ({ children }) => {
       if (trackedId) {
         const updatedParticipant = participantSnapshot.find((entry) => entry.id === trackedId);
         if (updatedParticipant) {
-          setCurrentParticipant(updatedParticipant);
+          setCurrentParticipant((prev) => mergeParticipantState(updatedParticipant, prev));
         } else {
           participantIdRef.current = null;
           setCurrentParticipant(null);
@@ -632,5 +731,3 @@ export const useRun = () => {
 
   return context;
 };
-
-

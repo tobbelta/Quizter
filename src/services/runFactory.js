@@ -119,7 +119,11 @@ export const countAvailableQuestions = async ({ audience, difficulty, categories
     const counts = distributeFamilyCounts(questionCount > 0 ? questionCount : 3);
     const countForAgeGroup = (ageGroup) => {
       return pool.filter((question) => {
-        const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+        const isRejected = question.aiValidated === false ||
+          question.manuallyRejected === true ||
+          question.reported === true ||
+          question.quarantined === true ||
+          question.isExpired === true;
         if (isRejected) return false;
 
         // Matcha åldersgrupp (stöd både nytt och gammalt schema)
@@ -173,7 +177,11 @@ export const countAvailableQuestions = async ({ audience, difficulty, categories
   // För specifik åldersgrupp eller ingen filtrering
   const filtered = pool.filter((question) => {
     // Exkludera underkända och rapporterade frågor
-    const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+    const isRejected = question.aiValidated === false ||
+      question.manuallyRejected === true ||
+      question.reported === true ||
+      question.quarantined === true ||
+      question.isExpired === true;
     if (isRejected) {
       return false;
     }
@@ -242,7 +250,11 @@ const pickQuestions = async ({ audience, difficulty, questionCount, categories =
   // Filtrera frågor baserat på åldersgrupp och kategorier
   const filtered = pool.filter((question) => {
     // VIKTIGT: Exkludera alla underkända och rapporterade frågor
-    const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+    const isRejected = question.aiValidated === false ||
+      question.manuallyRejected === true ||
+      question.reported === true ||
+      question.quarantined === true ||
+      question.isExpired === true;
     if (isRejected) {
       return false;
     }
@@ -313,7 +325,11 @@ const pickFamilyQuestions = (pool, questionCount, categories) => {
   const getQuestionsForAgeGroup = (ageGroup) => {
     return pool.filter((question) => {
       // Exkludera underkända/rapporterade
-      const isRejected = question.aiValidated === false || question.manuallyRejected === true || question.reported === true;
+      const isRejected = question.aiValidated === false ||
+        question.manuallyRejected === true ||
+        question.reported === true ||
+        question.quarantined === true ||
+        question.isExpired === true;
       if (isRejected) return false;
 
       // Matcha åldersgrupp (stöd både nytt och gammalt schema)

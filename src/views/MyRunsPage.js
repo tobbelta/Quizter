@@ -25,30 +25,40 @@ const MyRunsPage = () => {
       setLoading(true);
       try {
         let runs = [];
+        const localRunsMeta = localStorageService.getCreatedRuns();
+        const localRunIds = localRunsMeta.map(r => r.runId);
+        const useLocalOnly = !isAuthenticated || !currentUser || currentUser.isAnonymous;
 
-  // Om användaren är inloggad, hämta rundor från API
-        if (isAuthenticated && currentUser) {
+        if (!useLocalOnly && currentUser) {
           const allRuns = await runRepository.listRuns();
           runs = allRuns.filter(run =>
             run.createdBy === currentUser.id ||
-            run.createdByName === currentUser.name
+            run.createdByName === currentUser.name ||
+            run.createdByName === currentUser.email
           );
-        } else {
-          // Om ej inloggad, hämta lokala rundor från localStorage
-          const localRunsMeta = localStorageService.getCreatedRuns();
-          const localRunIds = localRunsMeta.map(r => r.runId);
+        }
 
-          if (localRunIds.length > 0) {
-            runs = await runRepository.listRunsByIds(localRunIds);
+        if (localRunIds.length > 0) {
+          const localRuns = await runRepository.listRunsByIds(localRunIds);
 
-            // Om färre rundor hittades än förväntat, rensa localStorage
-            if (runs.length < localRunIds.length) {
-              const missingIds = localRunIds.filter(id => !runs.some(r => r.id === id));
-              if (missingIds.length > 0) {
-                const validRuns = localRunsMeta.filter(r => !missingIds.includes(r.runId));
-                localStorage.setItem('quizter:local:createdRuns', JSON.stringify(validRuns));
-              }
+          // Om färre rundor hittades än förväntat, rensa localStorage
+          if (localRuns.length < localRunIds.length) {
+            const missingIds = localRunIds.filter(id => !localRuns.some(r => r.id === id));
+            if (missingIds.length > 0) {
+              const validRuns = localRunsMeta.filter(r => !missingIds.includes(r.runId));
+              localStorage.setItem('quizter:local:createdRuns', JSON.stringify(validRuns));
             }
+          }
+
+          if (useLocalOnly) {
+            runs = localRuns;
+          } else {
+            const seen = new Set(runs.map(run => run.id));
+            localRuns.forEach((run) => {
+              if (!seen.has(run.id)) {
+                runs.push(run);
+              }
+            });
           }
         }
 

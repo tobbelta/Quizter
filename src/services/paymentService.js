@@ -1,20 +1,15 @@
 /**
- * PaymentService - Hanterar betalningar via Stripe
+ * PaymentService - Hanterar betalflöden och inställningar
  */
 import { loadStripe } from '@stripe/stripe-js';
 
-// Stripe publishable key (test-nyckel för utveckling)
-// I produktion: lägg detta i environment variables
-const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || 'pk_test_51234567890'; // Dummy test key
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-// Test-läge kan aktiveras via environment variable eller localStorage
 const isTestMode = () => {
-  // Kontrollera environment variable först
   if (process.env.REACT_APP_PAYMENT_TEST_MODE === 'true') {
     return true;
   }
 
-  // Kontrollera localStorage för lokal utveckling
   if (typeof window !== 'undefined') {
     return localStorage.getItem('quizter:paymentTestMode') === 'true';
   }
@@ -22,82 +17,100 @@ const isTestMode = () => {
   return false;
 };
 
-// Ladda Stripe (lazy loading)
 let stripePromise = null;
+let stripeKey = null;
 
-const getStripe = () => {
-  if (!stripePromise && !isTestMode()) {
-    stripePromise = loadStripe(STRIPE_PUBLISHABLE_KEY);
+const getStripeInstance = (publishableKey) => {
+  if (!publishableKey) return null;
+  if (!stripePromise || stripeKey !== publishableKey) {
+    stripeKey = publishableKey;
+    stripePromise = loadStripe(publishableKey);
   }
   return stripePromise;
 };
 
-/**
- * Skapar en betalning för runddeltagande
- */
-export const createPaymentIntent = async ({ runId, participantId, amount = 500 }) => {
-  // I test-läge: simulera framgångsrik betalning
-  if (isTestMode()) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[PaymentService] Test-läge aktiverat - simulerar betalning');
-    }
-    return {
-      success: true,
-      paymentIntentId: `test_pi_${runId}_${participantId}_${Date.now()}`,
-      testMode: true
-    };
-  }
+let cachedConfig = null;
+let configPromise = null;
 
+const fetchPaymentConfig = async (force = false) => {
+  if (!force && cachedConfig) return cachedConfig;
+  if (!force && configPromise) return configPromise;
+
+  configPromise = fetch(`${API_BASE_URL}/api/paymentConfig`)
+    .then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Kunde inte hämta betalningskonfig.');
+      }
+      cachedConfig = data.config || null;
+      return cachedConfig;
+    })
+    .finally(() => {
+      configPromise = null;
+    });
+
+  return configPromise;
+};
+
+const getPaymentConfig = async (force = false) => {
   try {
-  // I riktigt läge: anropa API för att skapa PaymentIntent
-  const functionUrl = '/api/createPaymentIntent';
+    return await fetchPaymentConfig(force);
+  } catch (error) {
+    console.error('[paymentService] Kunde inte hämta paymentConfig:', error);
+    return null;
+  }
+};
 
-  const response = await fetch(functionUrl, {
+const createPaymentIntent = async ({
+  purpose,
+  amount,
+  currency,
+  runId,
+  participantId,
+  questionCount,
+  expectedPlayers,
+  userId,
+  context
+}) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/createPaymentIntent`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        purpose,
+        amount,
+        currency,
         runId,
         participantId,
-        amount, // SEK i ören (500 = 5 kr)
-        currency: 'sek'
+        questionCount,
+        expectedPlayers,
+        userId,
+        context,
+        testMode: isTestMode(),
       }),
     });
 
+    const data = await response.json();
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      throw new Error(data.error || 'Betalningsförfrågan misslyckades.');
     }
-
-    const { client_secret, payment_intent_id } = await response.json();
 
     return {
       success: true,
-      clientSecret: client_secret,
-      paymentIntentId: payment_intent_id,
-      testMode: false
+      ...data,
+      testMode: isTestMode() || data.testMode
     };
-
   } catch (error) {
-    console.error('[PaymentService] Fel vid skapande av betalning:', error);
+    console.error('[paymentService] Fel vid skapande av betalning:', error);
     return {
       success: false,
       error: error.message,
-      testMode: false
     };
   }
 };
 
-/**
- * Bekräftar betalning med Stripe Elements
- */
-export const confirmPayment = async ({ clientSecret, stripe, elements }) => {
+const confirmPayment = async ({ clientSecret, stripe, elements }) => {
   if (isTestMode()) {
-    // I test-läge: simulera framgångsrik bekräftelse
-    if (process.env.NODE_ENV !== 'production') {
-      console.debug('[PaymentService] Test-läge - simulerar bekräftelse');
-    }
     return {
       success: true,
       paymentIntent: {
@@ -137,9 +150,8 @@ export const confirmPayment = async ({ clientSecret, stripe, elements }) => {
       paymentIntent,
       testMode: false
     };
-
   } catch (error) {
-    console.error('[PaymentService] Fel vid bekräftelse av betalning:', error);
+    console.error('[paymentService] Fel vid bekräftelse av betalning:', error);
     return {
       success: false,
       error: error.message
@@ -147,15 +159,70 @@ export const confirmPayment = async ({ clientSecret, stripe, elements }) => {
   }
 };
 
-/**
- * Kontrollerar om test-läge är aktiverat
- */
-export const getTestMode = isTestMode;
+const recordPayment = async ({ paymentId, providerPaymentId, runId, participantId, userId }) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/payments/record`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paymentId,
+        providerPaymentId,
+        runId,
+        participantId,
+        userId,
+        testMode: isTestMode(),
+      }),
+    });
 
-/**
- * Aktiverar/deaktiverar test-läge (endast för utveckling)
- */
-export const setTestMode = (enabled) => {
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Kunde inte registrera betalning.');
+    }
+
+    return {
+      success: true,
+      payment: data.payment || null
+    };
+  } catch (error) {
+    console.error('[paymentService] Fel vid registrering av betalning:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+const getPaymentSettings = async (userEmail) => {
+  const response = await fetch(`${API_BASE_URL}/api/paymentSettings`, {
+    headers: {
+      'x-user-email': userEmail || ''
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte hämta betalningsinställningar.');
+  }
+  return data;
+};
+
+const savePaymentSettings = async (settings, userEmail) => {
+  const response = await fetch(`${API_BASE_URL}/api/paymentSettings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-email': userEmail || ''
+    },
+    body: JSON.stringify({ settings })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte spara betalningsinställningar.');
+  }
+  cachedConfig = null;
+  return data;
+};
+
+const setTestMode = (enabled) => {
   if (typeof window !== 'undefined') {
     if (enabled) {
       localStorage.setItem('quizter:paymentTestMode', 'true');
@@ -165,15 +232,14 @@ export const setTestMode = (enabled) => {
   }
 };
 
-/**
- * Hämtar Stripe instance
- */
-export const getStripeInstance = getStripe;
-
 export const paymentService = {
+  getPaymentConfig,
   createPaymentIntent,
   confirmPayment,
-  getTestMode,
+  recordPayment,
+  getPaymentSettings,
+  savePaymentSettings,
+  getStripeInstance,
+  getTestMode: isTestMode,
   setTestMode,
-  getStripeInstance
 };

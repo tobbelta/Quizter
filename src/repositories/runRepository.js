@@ -14,19 +14,118 @@ const normalizeTimestamp = (value) => {
   return value;
 };
 
+const unpackRouteMeta = (routeValue) => {
+  if (!routeValue || typeof routeValue !== 'object' || Array.isArray(routeValue)) {
+    return { route: routeValue, meta: null };
+  }
+
+  const path = Array.isArray(routeValue.path)
+    ? routeValue.path
+    : Array.isArray(routeValue.route)
+      ? routeValue.route
+      : null;
+  const meta = routeValue.meta || (!path ? routeValue : null);
+
+  return { route: path, meta };
+};
+
 const normalizeRun = (run) => {
   if (!run) return run;
   const questionIds = run.questionIds || run.question_ids || [];
   const joinCode = run.joinCode || run.join_code || null;
   const createdAt = run.createdAt ?? normalizeTimestamp(run.created_at);
   const updatedAt = run.updatedAt ?? normalizeTimestamp(run.updated_at);
+  const { route, meta } = unpackRouteMeta(run.route);
+  const type = run.type || meta?.type || meta?.runType || null;
+  const paymentPolicy = run.paymentPolicy ?? run.payment_policy ?? null;
+  const paymentStatus = run.paymentStatus ?? run.payment_status ?? null;
+  const paymentTotalAmount = run.paymentTotalAmount ?? run.payment_total_amount ?? null;
+  const paymentHostAmount = run.paymentHostAmount ?? run.payment_host_amount ?? null;
+  const paymentPlayerAmount = run.paymentPlayerAmount ?? run.payment_player_amount ?? null;
+  const paymentCurrency = run.paymentCurrency ?? run.payment_currency ?? null;
+  const paymentProviderId = run.paymentProviderId ?? run.payment_provider_id ?? null;
+  const expectedPlayers = run.expectedPlayers ?? run.expected_players ?? null;
+  const anonymousPolicy = run.anonymousPolicy ?? run.anonymous_policy ?? null;
+  const maxAnonymous = run.maxAnonymous ?? run.max_anonymous ?? null;
+  const hostPaymentId = run.hostPaymentId ?? run.host_payment_id ?? null;
+  const allowAnonymous = anonymousPolicy ? anonymousPolicy !== 'block' : run.allowAnonymous ?? meta?.allowAnonymous ?? null;
 
   return {
     ...run,
     joinCode,
     questionIds,
     createdAt,
-    updatedAt
+    updatedAt,
+    route,
+    type,
+    createdBy: run.createdBy ?? run.created_by ?? null,
+    createdByName: run.createdByName ?? run.created_by_name ?? run.creator_name ?? null,
+    questionCount: run.questionCount ?? meta?.questionCount,
+    distanceBetweenQuestions: run.distanceBetweenQuestions ?? meta?.distanceBetweenQuestions,
+    minutesBetweenQuestions: run.minutesBetweenQuestions ?? meta?.minutesBetweenQuestions,
+    lengthMeters: run.lengthMeters ?? meta?.lengthMeters,
+    allowRouteSelection: run.allowRouteSelection ?? meta?.allowRouteSelection,
+    startPoint: run.startPoint ?? meta?.startPoint,
+    audience: run.audience ?? meta?.audience,
+    difficulty: run.difficulty ?? meta?.difficulty,
+    language: run.language ?? meta?.language,
+    paymentPolicy,
+    paymentStatus,
+    paymentTotalAmount,
+    paymentHostAmount,
+    paymentPlayerAmount,
+    paymentCurrency,
+    paymentProviderId,
+    expectedPlayers,
+    anonymousPolicy,
+    maxAnonymous,
+    hostPaymentId,
+    allowAnonymous
+  };
+};
+
+const normalizeAnswer = (answer) => {
+  if (!answer) return answer;
+  return {
+    ...answer,
+    questionId: answer.questionId ?? answer.question_id,
+    answerIndex: answer.answerIndex ?? answer.answer_index,
+    correct: answer.correct ?? answer.is_correct ?? false,
+    answeredAt: answer.answeredAt ?? normalizeTimestamp(answer.answered_at)
+  };
+};
+
+const normalizeParticipantRow = (participant) => {
+  if (!participant) return participant;
+  return {
+    ...participant,
+    runId: participant.runId ?? participant.run_id,
+    userId: participant.userId ?? participant.user_id,
+    joinedAt: participant.joinedAt ?? normalizeTimestamp(participant.joined_at),
+    completedAt: participant.completedAt ?? normalizeTimestamp(participant.completed_at),
+    lastSeen: participant.lastSeen ?? normalizeTimestamp(participant.last_seen),
+    paymentStatus: participant.paymentStatus ?? participant.payment_status ?? null,
+    paymentAmount: participant.paymentAmount ?? participant.payment_amount ?? null,
+    paymentCurrency: participant.paymentCurrency ?? participant.payment_currency ?? null,
+    paymentProviderId: participant.paymentProviderId ?? participant.payment_provider_id ?? null,
+    paymentId: participant.paymentId ?? participant.payment_id ?? null,
+    isAnonymous: participant.isAnonymous ?? participant.is_anonymous ?? null
+  };
+};
+
+const normalizeParticipant = (participant, answers = []) => {
+  if (!participant) return participant;
+  const safeAnswers = Array.isArray(answers)
+    ? answers.map(normalizeAnswer)
+    : [];
+  const currentOrder = Number.isFinite(participant.currentOrder)
+    ? participant.currentOrder
+    : safeAnswers.length + 1;
+
+  return {
+    ...normalizeParticipantRow(participant),
+    answers: safeAnswers,
+    currentOrder
   };
 };
 
@@ -59,6 +158,23 @@ export const runRepository = {
       return (data.runs || []).map(normalizeRun);
     } catch (error) {
       console.error('[runRepository] Failed to list runs:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Lista rundor från en given ID-lista
+   */
+  listRunsByIds: async (runIds = []) => {
+    try {
+      if (!Array.isArray(runIds) || runIds.length === 0) {
+        return [];
+      }
+      const runs = await runRepository.listRuns();
+      const lookup = new Set(runIds);
+      return runs.filter((run) => lookup.has(run.id));
+    } catch (error) {
+      console.error('[runRepository] Failed to list runs by ids:', error);
       throw error;
     }
   },
@@ -98,6 +214,12 @@ export const runRepository = {
         ...runData,
         created_by: creator.id
       };
+      if (runData?.expectedPlayers && !payload.expected_players) {
+        payload.expected_players = runData.expectedPlayers;
+      }
+      if (runData?.paymentId && !payload.payment_id) {
+        payload.payment_id = runData.paymentId;
+      }
       const data = await apiCall('/api/runs', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -178,7 +300,7 @@ export const runRepository = {
   listParticipants: async (runId) => {
     try {
       const data = await apiCall(`/api/participants?runId=${encodeURIComponent(runId)}`);
-      return data.participants || [];
+      return (data.participants || []).map(normalizeParticipantRow);
     } catch (error) {
       console.error('[runRepository] Failed to list participants:', error);
       throw error;
@@ -191,7 +313,8 @@ export const runRepository = {
   getParticipant: async (runId, participantId) => {
     try {
       const data = await apiCall(`/api/participants/${participantId}`);
-      return data.participant;
+      const answersData = await apiCall(`/api/answers?participantId=${encodeURIComponent(participantId)}`);
+      return normalizeParticipant(data.participant, answersData.answers);
     } catch (error) {
       console.error('[runRepository] Failed to get participant:', error);
       throw error;
@@ -207,11 +330,20 @@ export const runRepository = {
         run_id: runId,
         ...participantData
       };
+      if (!payload.user_id && participantData?.userId) {
+        payload.user_id = participantData.userId;
+      }
+      if (!payload.payment_id && participantData?.paymentId) {
+        payload.payment_id = participantData.paymentId;
+      }
+      if (participantData?.isAnonymous !== undefined && payload.is_anonymous === undefined) {
+        payload.is_anonymous = participantData.isAnonymous;
+      }
       const data = await apiCall('/api/participants', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      return data.participant;
+      return normalizeParticipant(data.participant, []);
     } catch (error) {
       console.error('[runRepository] Failed to register participant:', error);
       throw error;
@@ -221,13 +353,14 @@ export const runRepository = {
   /**
    * Spela in svar från deltagare
    */
-  recordAnswer: async (runId, participantId, questionId, answerIndex, isCorrect) => {
+  recordAnswer: async (runId, participantId, answerData = {}) => {
     try {
+      const { questionId, answerIndex, correct } = answerData;
       const payload = {
         participant_id: participantId,
         question_id: questionId,
-        answer_index: answerIndex
-        // is_correct beräknas automatiskt på backend
+        answer_index: answerIndex,
+        is_correct: correct
       };
       await apiCall('/api/answers', {
         method: 'POST',
@@ -261,7 +394,7 @@ export const runRepository = {
    */
   heartbeatParticipant: async (runId, participantId) => {
     try {
-      await apiCall(`/api/participants/${participantId}/heartbeat`, {
+      await apiCall(`/api/participants/${participantId}`, {
         method: 'POST',
       });
     } catch (error) {
@@ -279,8 +412,8 @@ export const runRepository = {
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.runs) {
-        callback(data.runs);
+      if (Array.isArray(data.runs)) {
+        callback(data.runs.map(normalizeRun));
       }
     };
 
@@ -302,7 +435,7 @@ export const runRepository = {
     eventSource.addEventListener('initial-state', (event) => {
       const data = JSON.parse(event.data);
       if (data.participants) {
-        callback(data.participants);
+        callback(data.participants.map(normalizeParticipantRow));
       }
     });
 

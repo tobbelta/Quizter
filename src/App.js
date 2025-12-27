@@ -24,6 +24,7 @@ import AdminQuestionsPage from './views/AdminQuestionsPage';
 import AdminDashboardPage from './views/AdminDashboardPage';
 import AdminCategoriesPage from './views/AdminCategoriesPage';
 import AdminAudienceSettingsPage from './views/AdminAudienceSettingsPage';
+import AdminPaymentsPage from './views/AdminPaymentsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
@@ -32,6 +33,7 @@ import SuperUserNotificationsPage from './views/SuperUserNotificationsPage';
 import SuperUserErrorLogsPage from './views/SuperUserErrorLogsPage';
 import SuperUserTasksPage from './views/SuperUserTasksPage';
 import AIProviderSettingsPage from './views/AIProviderSettingsPage';
+import AdminAIRulesPage from './views/AdminAIRulesPage';
 import InstallPrompt from './components/shared/InstallPrompt';
 import ToastViewport from './components/shared/ToastViewport';
 import ServiceStatusIcon from './components/shared/ServiceStatusIcon';
@@ -172,6 +174,22 @@ const AppRoutes = () => (
         </RequireSuperUser>
       )}
     />
+    <Route
+      path="/admin/ai-rules"
+      element={(
+        <RequireSuperUser>
+          <AdminAIRulesPage />
+        </RequireSuperUser>
+      )}
+    />
+    <Route
+      path="/admin/payments"
+      element={(
+        <RequireSuperUser>
+          <AdminPaymentsPage />
+        </RequireSuperUser>
+      )}
+    />
 
     <Route path="/superuser/all-runs" element={<Navigate to="/admin/all-runs" replace />} />
     <Route path="/superuser/users" element={<Navigate to="/admin/users" replace />} />
@@ -181,8 +199,10 @@ const AppRoutes = () => (
     <Route path="/superuser/notifications" element={<Navigate to="/admin/notifications" replace />} />
     <Route path="/superuser/logs" element={<Navigate to="/admin/logs" replace />} />
     <Route path="/superuser/ai-providers" element={<Navigate to="/admin/ai-providers" replace />} />
+    <Route path="/superuser/ai-rules" element={<Navigate to="/admin/ai-rules" replace />} />
     <Route path="/superuser/categories" element={<Navigate to="/admin/categories" replace />} />
     <Route path="/superuser/audiences" element={<Navigate to="/admin/audiences" replace />} />
+    <Route path="/superuser/payments" element={<Navigate to="/admin/payments" replace />} />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

@@ -2,7 +2,7 @@
  * Admin-sida för att hantera och visa tillgängliga frågor.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 // ...removed legacy Firestore imports...
 // ...existing code...
 import { useAuth } from '../context/AuthContext';
@@ -63,6 +63,8 @@ const buildEditState = (question) => {
       ? [question.category]
       : [];
   const initialAgeGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
+  const bestBeforeAt = question.bestBeforeAt || question.best_before_at || null;
+  const bestBeforeDate = bestBeforeAt ? new Date(bestBeforeAt).toISOString().slice(0, 10) : '';
   return {
     sv: {
       text: baseSv?.text || '',
@@ -81,7 +83,9 @@ const buildEditState = (question) => {
     targetAudience: question.targetAudience || 'swedish',
     difficulty: question.difficulty || 'medium',
     correctOption: typeof question.correctOption === 'number' ? question.correctOption : 0,
-    emoji: question.emoji || ''
+    emoji: question.emoji || '',
+    timeSensitive: question.timeSensitive === true,
+    bestBeforeDate
   };
 };
 
@@ -110,12 +114,16 @@ const QuestionCard = ({
   validationProvidersLoading,
   categoryOptions,
   ageGroupOptions,
-  targetAudienceOptions
+  targetAudienceOptions,
+  aiRulesConfig,
+  loadingAiRules
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isApplyingEdits, setIsApplyingEdits] = useState(false);
   const [editErrors, setEditErrors] = useState([]);
+  const [showPromptInfo, setShowPromptInfo] = useState(false);
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || {
@@ -138,16 +146,13 @@ const QuestionCard = ({
       : [];
   const ageGroups = Array.isArray(question.ageGroups) ? question.ageGroups : [];
   const formattedAgeGroups = ageGroups.map((group) => {
-    switch (group) {
-      case 'children':
-        return 'Barn';
-      case 'youth':
-        return 'Ungdom';
-      case 'adults':
-        return 'Vuxna';
-      default:
-        return group;
+    if (Array.isArray(ageGroupOptions)) {
+      const match = ageGroupOptions.find((option) => option.id === group);
+      if (match) {
+        return formatAgeGroupLabel(match);
+      }
     }
+    return group;
   });
   const targetAudience = question.targetAudience;
   const providerLabel = formatProviderLabel(question.provider);
@@ -155,6 +160,60 @@ const QuestionCard = ({
   const createdByDisplay = providerLabel
     ? `${createdByLabel} (${providerLabel})`
     : createdByLabel;
+  const bestBeforeAt = question.bestBeforeAt || question.best_before_at || null;
+  const bestBeforeLabel = bestBeforeAt ? new Date(bestBeforeAt).toLocaleDateString('sv-SE') : null;
+  const isExpired = question.isExpired === true || (bestBeforeAt ? bestBeforeAt <= Date.now() : false);
+  const resolvedAgeGroupDetails = ageGroups
+    .map((group) => (Array.isArray(ageGroupOptions) ? ageGroupOptions.find((option) => option.id === group) : null))
+    .filter(Boolean);
+  const resolvedCategoryDetails = categories
+    .map((category) => (Array.isArray(categoryOptions) ? categoryOptions.find((option) => option.value === category) : null))
+    .filter(Boolean);
+  const resolvedTargetAudience = Array.isArray(targetAudienceOptions)
+    ? targetAudienceOptions.find((option) => option.id === targetAudience)
+    : null;
+  const normalizedAudienceKey = targetAudience ? targetAudience.toLowerCase() : null;
+  const globalRules = aiRulesConfig?.global || null;
+  const targetRules = normalizedAudienceKey
+    ? aiRulesConfig?.targetAudiences?.[normalizedAudienceKey]
+    : null;
+  const activeBlocklist = [
+    ...(Array.isArray(globalRules?.blocklist) ? globalRules.blocklist : []),
+    ...(Array.isArray(targetRules?.blocklist) ? targetRules.blocklist : [])
+  ].filter((rule) => {
+    if (!rule || rule.enabled === false) return false;
+    const scopedAgeGroups = Array.isArray(rule.ageGroups) ? rule.ageGroups : [];
+    if (scopedAgeGroups.length === 0) return true;
+    return ageGroups.some((group) => scopedAgeGroups.includes(group));
+  });
+  const answerRule = globalRules?.answerInQuestion || null;
+  const maxLengthMap = {
+    ...(globalRules?.maxQuestionLengthByAgeGroup || {}),
+    ...(targetRules?.maxQuestionLengthByAgeGroup || {})
+  };
+  const maxLengthEntries = ageGroups
+    .map((group) => ({
+      group,
+      value: maxLengthMap[group]
+    }))
+    .filter((entry) => Number.isFinite(Number(entry.value)));
+  const freshnessRules = targetRules?.freshness || globalRules?.freshness || null;
+  const autoTimeSensitiveAgeGroups = Array.isArray(freshnessRules?.autoTimeSensitiveAgeGroups)
+    ? freshnessRules.autoTimeSensitiveAgeGroups.filter(Boolean)
+    : [];
+  const normalizedAgeGroups = ageGroups.map((group) => String(group).toLowerCase());
+  const relevantAutoAgeGroups = normalizedAgeGroups.length > 0
+    ? autoTimeSensitiveAgeGroups.filter((group) => normalizedAgeGroups.includes(String(group).toLowerCase()))
+    : autoTimeSensitiveAgeGroups;
+  const autoTimeSensitiveLabel = autoTimeSensitiveAgeGroups.length === 0
+    ? 'Av'
+    : normalizedAgeGroups.length === 0
+      ? autoTimeSensitiveAgeGroups.join(', ')
+      : relevantAutoAgeGroups.length > 0
+        ? relevantAutoAgeGroups.join(', ')
+        : `Nej (gäller: ${autoTimeSensitiveAgeGroups.join(', ')})`;
+  const showFreshnessGuidance = Boolean(freshnessRules?.guidance)
+    && (normalizedAgeGroups.length === 0 || relevantAutoAgeGroups.length > 0);
   const normalizedGenerator = question.provider ? question.provider.toLowerCase() : null;
   const availableValidationProviders = Array.isArray(validationProviders) ? validationProviders : [];
   const hasAlternativeValidationProvider = normalizedGenerator
@@ -283,6 +342,16 @@ const QuestionCard = ({
     if (!editData?.sv?.explanation || editData.sv.explanation.trim().length < 5) {
       errors.push('Svensk förklaring måste vara minst 5 tecken.');
     }
+    if (!editData?.en?.text || editData.en.text.trim().length < 5) {
+      errors.push('Engelsk frågetext måste vara minst 5 tecken.');
+    }
+    const enOptions = normalizeOptionList(editData?.en?.options || []);
+    if (enOptions.length !== 4 || enOptions.some((option) => !option || option.trim().length === 0)) {
+      errors.push('Alla engelska svarsalternativ måste vara ifyllda (4 st).');
+    }
+    if (!editData?.en?.explanation || editData.en.explanation.trim().length < 5) {
+      errors.push('Engelsk förklaring måste vara minst 5 tecken.');
+    }
     if (!Array.isArray(editData?.categories) || editData.categories.length === 0) {
       errors.push('Välj minst en kategori.');
     }
@@ -291,6 +360,17 @@ const QuestionCard = ({
     }
     if (!editData?.targetAudience) {
       errors.push('Välj en målgrupp.');
+    }
+    if (editData?.timeSensitive && !editData?.bestBeforeDate) {
+      errors.push('Ange ett bäst före-datum för tidskänsliga frågor.');
+    }
+    if (editData?.bestBeforeDate) {
+      const parsed = Date.parse(editData.bestBeforeDate);
+      if (Number.isNaN(parsed)) {
+        errors.push('Bäst före-datum måste vara i formatet YYYY-MM-DD.');
+      } else if (parsed <= Date.now()) {
+        errors.push('Bäst före-datum måste ligga i framtiden.');
+      }
     }
     return errors;
   };
@@ -331,10 +411,11 @@ const QuestionCard = ({
     }
   };
 
-  const handleValidateWithAI = async () => {
+  const handleValidateWithAI = async (options = {}) => {
+    const { allowAutoCorrection = true, force = false } = options;
     if (!question.id) return;
 
-    if (validatingQuestions && validatingQuestions.has(question.id)) {
+    if (!force && validatingQuestions && validatingQuestions.has(question.id)) {
       return; // Already validating
     }
 
@@ -348,6 +429,27 @@ const QuestionCard = ({
         // Since validation is now synchronous, show immediate feedback
         if (response.success && response.result) {
           const { isValid, feedback, details } = response.result;
+          const detailsEdits = details?.proposedEdits && typeof details.proposedEdits === 'object'
+            ? details.proposedEdits
+            : null;
+          const shouldAutoCorrect = allowAutoCorrection
+            && autoCorrectionEnabled
+            && detailsEdits
+            && isValid === false;
+          if (shouldAutoCorrect) {
+            setDialogConfig({
+              isOpen: true,
+              title: '♻️ Auto‑korrigering',
+              message: 'AI föreslog ändringar. De appliceras nu och validering körs om.',
+              type: 'info'
+            });
+            await handleApplyProposedEdits(detailsEdits, {
+              revalidate: true,
+              allowAutoCorrection: false,
+              forceValidate: true
+            });
+            return;
+          }
           
           // Build detailed message with AI analysis
           let detailedMessage = feedback || (isValid ? 'Frågan godkändes av AI' : 'Frågan underkändes av AI');
@@ -395,6 +497,143 @@ const QuestionCard = ({
     }
   };
 
+  const buildEditDataFromProposed = (edits) => {
+    if (!edits) return null;
+    const base = buildEditState(question);
+    const next = {
+      ...base,
+      sv: { ...base.sv },
+      en: { ...base.en }
+    };
+    if (typeof edits.question_sv === 'string') next.sv.text = edits.question_sv;
+    if (Array.isArray(edits.options_sv) && edits.options_sv.length > 0) {
+      next.sv.options = normalizeOptionList(edits.options_sv);
+    }
+    if (typeof edits.explanation_sv === 'string') next.sv.explanation = edits.explanation_sv;
+    if (typeof edits.background_sv === 'string') next.sv.background = edits.background_sv;
+    if (typeof edits.question_en === 'string') next.en.text = edits.question_en;
+    if (Array.isArray(edits.options_en) && edits.options_en.length > 0) {
+      next.en.options = normalizeOptionList(edits.options_en);
+    }
+    if (typeof edits.explanation_en === 'string') next.en.explanation = edits.explanation_en;
+    if (typeof edits.background_en === 'string') next.en.background = edits.background_en;
+    if (Number.isFinite(Number(edits.correctOption))) {
+      next.correctOption = Number(edits.correctOption);
+    }
+    return next;
+  };
+
+  const handleApplyProposedEdits = async (edits = proposedEdits, options = {}) => {
+    const { revalidate = true, allowAutoCorrection = false, forceValidate = false } = options;
+    if (!edits || isApplyingEdits) return;
+    const nextEditData = buildEditDataFromProposed(edits);
+    if (!nextEditData) return;
+
+    setIsApplyingEdits(true);
+    try {
+      await questionService.updateQuestionContent(question.id, nextEditData);
+      setDialogConfig({
+        isOpen: true,
+        title: '✅ Ändringar applicerade',
+        message: 'AI‑förslagen är nu sparade.',
+        type: 'success'
+      });
+      if (revalidate) {
+        await handleValidateWithAI({ allowAutoCorrection, force: forceValidate });
+      }
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte applicera AI‑ändringar:', error);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid uppdatering',
+        message: `Kunde inte applicera AI‑förslag: ${error.message}`,
+        type: 'error'
+      });
+    } finally {
+      setIsApplyingEdits(false);
+    }
+  };
+
+  const handleReactivateExpired = async () => {
+    const defaultDate = bestBeforeAt ? new Date(bestBeforeAt).toISOString().slice(0, 10) : '';
+    const nextDate = window.prompt(
+      'Ange nytt bäst före-datum (YYYY-MM-DD). Lämna tomt för att ta bort bäst före och göra frågan evergreen.',
+      defaultDate
+    );
+
+    if (nextDate === null) {
+      return;
+    }
+
+    const trimmed = nextDate.trim();
+    let bestBeforeAtValue = null;
+    let timeSensitiveValue = false;
+
+    if (trimmed) {
+      const parsed = Date.parse(trimmed);
+      if (Number.isNaN(parsed)) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Felaktigt datum',
+          message: 'Datumet måste vara i formatet YYYY-MM-DD.',
+          type: 'error'
+        });
+        return;
+      }
+      if (parsed <= Date.now()) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Bäst före har redan passerat',
+          message: 'Ange ett datum som ligger i framtiden.',
+          type: 'error'
+        });
+        return;
+      }
+      bestBeforeAtValue = parsed;
+      timeSensitiveValue = true;
+    }
+
+    try {
+      await questionService.updateQuestionMeta(question.id, {
+        timeSensitive: timeSensitiveValue,
+        bestBeforeAt: bestBeforeAtValue,
+        quarantined: false,
+        quarantinedAt: null,
+        quarantineReason: null,
+        aiValidated: false,
+        aiValidationResult: null,
+        aiValidatedAt: null
+      });
+
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fråga återaktiverad',
+        message: 'Frågan är nu aktiv igen.',
+        type: 'success'
+      });
+
+      if (isValidationBlocked) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Validering saknas',
+          message: 'Frågan återaktiverades men kan inte AI-valideras eftersom ingen alternativ provider är aktiv.',
+          type: 'warning'
+        });
+        return;
+      }
+
+      await handleValidateWithAI();
+    } catch (error) {
+      console.error('[AdminQuestionsPage] Kunde inte återaktivera fråga:', error);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Fel vid återaktivering',
+        message: `Kunde inte återaktivera fråga: ${error.message}`,
+        type: 'error'
+      });
+    }
+  };
+
   const rawAiResult = question.aiValidationResult;
   const structureResult =
     question.structureValidationResult ||
@@ -406,6 +645,16 @@ const QuestionCard = ({
     : typeof aiResult?.isValid === 'boolean'
       ? aiResult.isValid
       : null;
+  const autoCorrectionEnabled = aiRulesConfig?.global?.autoCorrection?.enabled === true;
+  const proposedEdits = aiResult?.proposedEdits && typeof aiResult.proposedEdits === 'object'
+    ? aiResult.proposedEdits
+    : null;
+  const hasProposedEdits = Boolean(
+    proposedEdits && Object.values(proposedEdits).some((value) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== null && value !== undefined && value !== '';
+    })
+  );
   const validationContext = aiResult?.validationContext || null;
 
   const hasStructurePass = structureResult?.valid === true;
@@ -511,6 +760,16 @@ const QuestionCard = ({
                 {question.reported === true && (
                   <span className="inline-flex items-center rounded-full bg-yellow-500/20 px-2.5 py-0.5 text-xs font-medium text-yellow-300" title="Rapporterad av användare - i karantän">
                     ⚠️ Rapporterad ({question.reportCount || 1})
+                  </span>
+                )}
+                {isExpired && (
+                  <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-medium text-amber-200" title="Bäst före-datum har passerat">
+                    ⏳ Utgången
+                  </span>
+                )}
+                {!isExpired && bestBeforeLabel && (
+                  <span className="inline-flex items-center rounded-full bg-slate-700/60 px-2.5 py-0.5 text-xs font-medium text-slate-100" title="Bäst före-datum">
+                    ⏳ Bäst före {bestBeforeLabel}
                   </span>
                 )}
                 {question.aiValidated === true && question.manuallyApproved === true && !question.reported && (
@@ -643,6 +902,15 @@ const QuestionCard = ({
               ) : (
                 <>
 
+                  {isExpired && (
+                    <button
+                      onClick={handleReactivateExpired}
+                      className="rounded bg-amber-600 px-3 py-1 text-sm font-semibold text-white hover:bg-amber-500"
+                      title="Återaktivera fråga och kör ny AI-validering"
+                    >
+                      ♻️ Återaktivera
+                    </button>
+                  )}
                   {!question.manuallyApproved && (
                     <button
                       onClick={() => handleManualApprove(question.id)}
@@ -707,6 +975,14 @@ const QuestionCard = ({
                   <span className="text-xs text-gray-400">Kategorier:</span>
                   <span className="text-xs text-gray-200">
                     {categories.length > 0 ? categories.join(', ') : 'Allmän'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-gray-400">Aktualitet:</span>
+                  <span className="text-xs text-gray-200">
+                    {question.timeSensitive
+                      ? (isExpired ? 'Utgången' : (bestBeforeLabel ? `Bäst före ${bestBeforeLabel}` : 'Tidskänslig'))
+                      : 'Evergreen'}
                   </span>
                 </div>
               </div>
@@ -937,6 +1213,36 @@ const QuestionCard = ({
                     placeholder="Ex: 🎯"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Bäst före</label>
+                  <label className="flex items-center gap-2 text-xs text-gray-300 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={editData.timeSensitive === true}
+                      onChange={(e) => setEditData((prev) => ({
+                        ...prev,
+                        timeSensitive: e.target.checked,
+                        bestBeforeDate: e.target.checked ? prev.bestBeforeDate : ''
+                      }))}
+                      className="h-4 w-4 rounded border-gray-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    Frågan är tidskänslig
+                  </label>
+                  <input
+                    type="date"
+                    value={editData.bestBeforeDate || ''}
+                    onChange={(e) => setEditData((prev) => ({
+                      ...prev,
+                      bestBeforeDate: e.target.value,
+                      timeSensitive: true
+                    }))}
+                    disabled={!editData.timeSensitive}
+                    className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-sm text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:opacity-60"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    Lämna tomt om frågan inte behöver ett bäst före-datum.
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-wrap justify-end gap-2">
@@ -967,6 +1273,140 @@ const QuestionCard = ({
               </div>
             </div>
           )}
+
+          <div className="bg-slate-800/40 rounded border border-slate-600 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-400">🧭 Prompt-info</p>
+              <button
+                type="button"
+                onClick={() => setShowPromptInfo((prev) => !prev)}
+                className="text-xs text-cyan-200 hover:text-cyan-100"
+              >
+                {showPromptInfo ? 'Dölj' : 'Visa'}
+              </button>
+            </div>
+            {showPromptInfo && (
+              <div className="mt-3 space-y-3 text-xs text-gray-200">
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400">Åldersgrupp</div>
+                  {resolvedAgeGroupDetails.length > 0 ? (
+                    <div className="space-y-2">
+                      {resolvedAgeGroupDetails.map((group) => (
+                        <div key={`prompt-age-${question.id}-${group.id}`}>
+                          <div className="font-semibold">{formatAgeGroupLabel(group) || group.label || group.id}</div>
+                          <div className="text-gray-300">
+                            {group.prompt || group.description || 'Ingen prompt sparad.'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-300">Ingen åldersgruppsprompt hittades.</div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400">Kategori</div>
+                  {resolvedCategoryDetails.length > 0 ? (
+                    <div className="space-y-2">
+                      {resolvedCategoryDetails.map((category) => (
+                        <div key={`prompt-cat-${question.id}-${category.value}`}>
+                          <div className="font-semibold">{category.label || category.value}</div>
+                          <div className="text-gray-300">
+                            {category.prompt || category.description || 'Ingen prompt sparad.'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-300">Ingen kategoriprompt hittades.</div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400">Målgrupp</div>
+                  {resolvedTargetAudience ? (
+                    <div>
+                      <div className="font-semibold">{resolvedTargetAudience.label || resolvedTargetAudience.id}</div>
+                      <div className="text-gray-300">
+                        {resolvedTargetAudience.prompt || resolvedTargetAudience.description || 'Ingen prompt sparad.'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-300">Ingen målgruppsprompt hittades.</div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400">AI-regler</div>
+                  {loadingAiRules && (
+                    <div className="text-gray-300">Laddar AI-regler...</div>
+                  )}
+                  {!loadingAiRules && !aiRulesConfig && (
+                    <div className="text-gray-300">Inga AI-regler hittades.</div>
+                  )}
+                  {!loadingAiRules && aiRulesConfig && (
+                    <div className="space-y-2 text-gray-300">
+                      <div>
+                        Svar i frågan: {answerRule?.enabled === false
+                          ? 'Av'
+                          : `På (min ${answerRule?.minAnswerLength || 4} tecken)`}
+                      </div>
+                      {maxLengthEntries.length > 0 ? (
+                        <div>
+                          Max frågelängd:{' '}
+                          {maxLengthEntries.map((entry) => {
+                            const label = formatAgeGroupLabel(
+                              (Array.isArray(ageGroupOptions) ? ageGroupOptions.find((option) => option.id === entry.group) : null)
+                              || { id: entry.group, label: entry.group }
+                            );
+                            return `${label}: ${entry.value} tecken`;
+                          }).join(' · ')}
+                        </div>
+                      ) : (
+                        <div>Max frågelängd: Ingen gräns satt.</div>
+                      )}
+                      {activeBlocklist.length > 0 ? (
+                        <div>
+                          Blocklista ({activeBlocklist.length}):
+                          <div className="mt-1 space-y-1">
+                            {activeBlocklist.map((rule, idx) => (
+                              <div key={`rule-${question.id}-${idx}`}>
+                                <span className="font-semibold">{rule.pattern}</span>
+                                {rule.issue ? ` → ${rule.issue}` : ''}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>Blocklista: Inga regler som matchar frågan.</div>
+                      )}
+                      {freshnessRules ? (
+                        <div>
+                          Aktualitet: {freshnessRules.enabled === false ? 'Av' : 'På'}
+                          {freshnessRules.enabled !== false && (
+                            <div className="mt-1 space-y-1">
+                              <div>
+                                Standard: {freshnessRules.defaultShelfLifeDays || 0} dagar
+                                {freshnessRules.minShelfLifeDays ? ` · Min ${freshnessRules.minShelfLifeDays} dagar` : ''}
+                                {freshnessRules.maxShelfLifeDays ? ` · Max ${freshnessRules.maxShelfLifeDays} dagar` : ''}
+                              </div>
+                              <div>Auto‑tidskänslig: {autoTimeSensitiveLabel}</div>
+                              {showFreshnessGuidance && (
+                                <div>Riktlinje: {freshnessRules.guidance}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>Aktualitet: Ingen regelkonfig.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Illustration (Emoji eller SVG) */}
           {question.emoji && (
@@ -1192,7 +1632,18 @@ const QuestionCard = ({
                 </div>
               )}
 
-                {aiResult.suggestions && aiResult.suggestions.length > 0 && (
+              {Array.isArray(aiResult.blockingRules) && aiResult.blockingRules.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-amber-300 mb-1">Blockerande regler:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {aiResult.blockingRules.map((rule, idx) => (
+                      <li key={idx} className="text-xs text-amber-200">{rule}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {aiResult.suggestions && aiResult.suggestions.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs font-semibold text-blue-300 mb-1">Förbättringsförslag:</p>
                   <ul className="list-disc list-inside space-y-1">
@@ -1200,6 +1651,93 @@ const QuestionCard = ({
                       <li key={idx} className="text-xs text-blue-200">{suggestion}</li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {hasProposedEdits && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-amber-300 mb-1">Föreslagna ändringar:</p>
+                  <div className="space-y-2 text-xs text-amber-200">
+                    {aiResult?.proposedEditsReason && (
+                      <div className="text-xs text-amber-200/90">
+                        {aiResult.proposedEditsReason}
+                      </div>
+                    )}
+                    {typeof proposedEdits.question_sv === 'string' && proposedEdits.question_sv.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Fråga (SV)</div>
+                        <div>{proposedEdits.question_sv}</div>
+                      </div>
+                    )}
+                    {Array.isArray(proposedEdits.options_sv) && proposedEdits.options_sv.length > 0 && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Alternativ (SV)</div>
+                        <ul className="list-disc list-inside">
+                          {proposedEdits.options_sv.map((option, idx) => (
+                            <li key={`sv-opt-${idx}`}>{option}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {typeof proposedEdits.question_en === 'string' && proposedEdits.question_en.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Fråga (EN)</div>
+                        <div>{proposedEdits.question_en}</div>
+                      </div>
+                    )}
+                    {Array.isArray(proposedEdits.options_en) && proposedEdits.options_en.length > 0 && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Alternativ (EN)</div>
+                        <ul className="list-disc list-inside">
+                          {proposedEdits.options_en.map((option, idx) => (
+                            <li key={`en-opt-${idx}`}>{option}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Number.isFinite(Number(proposedEdits.correctOption)) && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Korrekt svar</div>
+                        <div>Index: {Number(proposedEdits.correctOption)}</div>
+                      </div>
+                    )}
+                    {typeof proposedEdits.explanation_sv === 'string' && proposedEdits.explanation_sv.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Förklaring (SV)</div>
+                        <div className="whitespace-pre-wrap">{proposedEdits.explanation_sv}</div>
+                      </div>
+                    )}
+                    {typeof proposedEdits.background_sv === 'string' && proposedEdits.background_sv.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Bakgrund (SV)</div>
+                        <div className="whitespace-pre-wrap">{proposedEdits.background_sv}</div>
+                      </div>
+                    )}
+                    {typeof proposedEdits.explanation_en === 'string' && proposedEdits.explanation_en.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Förklaring (EN)</div>
+                        <div className="whitespace-pre-wrap">{proposedEdits.explanation_en}</div>
+                      </div>
+                    )}
+                    {typeof proposedEdits.background_en === 'string' && proposedEdits.background_en.trim() !== '' && (
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-amber-300/80">Bakgrund (EN)</div>
+                        <div className="whitespace-pre-wrap">{proposedEdits.background_en}</div>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyProposedEdits(proposedEdits, { revalidate: true, allowAutoCorrection: false })}
+                    disabled={isApplyingEdits || isEditing}
+                    className={`mt-3 px-3 py-1 text-xs rounded-md transition-colors ${
+                      isApplyingEdits || isEditing
+                        ? 'bg-slate-700 text-gray-400 cursor-not-allowed'
+                        : 'bg-amber-500 text-slate-900 hover:bg-amber-400'
+                    }`}
+                  >
+                    {isApplyingEdits ? '⏳ Applicerar...' : '✅ Godkänn ändringar'}
+                  </button>
                 </div>
               )}
 
@@ -1486,6 +2024,7 @@ const QuestionCard = ({
 
 const AdminQuestionsPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isSuperUser, currentUser } = useAuth();
   const { registerTask } = useBackgroundTasks();
   const [questions, setQuestions] = useState([]);
@@ -1506,15 +2045,19 @@ const AdminQuestionsPage = () => {
   const [ageGroupOptions, setAgeGroupOptions] = useState(DEFAULT_AGE_GROUPS);
   const [loadingAgeGroups, setLoadingAgeGroups] = useState(false);
   const [targetAudienceOptions, setTargetAudienceOptions] = useState(DEFAULT_TARGET_AUDIENCES);
+  const [aiRulesConfig, setAiRulesConfig] = useState(null);
+  const [loadingAiRules, setLoadingAiRules] = useState(false);
   const [validationProviders, setValidationProviders] = useState(null);
   const [validationProvidersLoading, setValidationProvidersLoading] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [validationStatusFilter, setValidationStatusFilter] = useState('all'); // 'all' | 'validated' | 'failed' | 'unvalidated' | 'reported'
+  const [validationStatusFilter, setValidationStatusFilter] = useState('all'); // 'all' | 'validated' | 'failed' | 'unvalidated' | 'reported' | 'expired'
   const [selectedAgeGroup, setSelectedAgeGroup] = useState('all');
   const [selectedAudience, setSelectedAudience] = useState('all');
   const [selectedQuestions, setSelectedQuestions] = useState(new Set());
+  const [idFilter, setIdFilter] = useState(null);
+  const [idFilterTaskId, setIdFilterTaskId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const isMountedRef = useRef(true);
@@ -1555,6 +2098,36 @@ const AdminQuestionsPage = () => {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadAiRules = async () => {
+      setLoadingAiRules(true);
+      try {
+        const response = await fetch('/api/ai-rules');
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Kunde inte ladda AI-regler');
+        }
+        if (isActive) {
+          setAiRulesConfig(data.config || null);
+        }
+      } catch (error) {
+        console.warn('[AdminQuestionsPage] Kunde inte ladda AI-regler:', error);
+      } finally {
+        if (isActive) {
+          setLoadingAiRules(false);
+        }
+      }
+    };
+
+    loadAiRules();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   // Redirect om användaren inte är SuperUser
   useEffect(() => {
     if (!isSuperUser) {
@@ -1574,7 +2147,8 @@ const AdminQuestionsPage = () => {
           const nextOptions = categories.map((category) => ({
             value: category.name,
             label: category.name,
-            description: category.description || ''
+            description: category.description || '',
+            prompt: category.prompt || ''
           }));
           setCategoryOptions(nextOptions);
           const optionValues = new Set(nextOptions.map((option) => option.value));
@@ -1641,6 +2215,30 @@ const AdminQuestionsPage = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const idsParam = params.get('ids');
+    const taskIdParam = params.get('taskId');
+
+    if (idsParam) {
+      const ids = idsParam
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const nextKey = ids.join(',');
+      const currentKey = idFilter ? Array.from(idFilter).join(',') : '';
+      if (nextKey !== currentKey) {
+        setIdFilter(ids.length > 0 ? new Set(ids) : null);
+        setIdFilterTaskId(taskIdParam || null);
+        setCurrentPage(1);
+      }
+    } else if (idFilter) {
+      setIdFilter(null);
+      setIdFilterTaskId(null);
+      setCurrentPage(1);
+    }
+  }, [location.search, idFilter]);
 
   // Listen for background task updates to update validation status
   useEffect(() => {
@@ -1955,6 +2553,8 @@ const AdminQuestionsPage = () => {
 
     const matchesAudience =
       selectedAudience === 'all' || audienceValue === normalizedAudience;
+    const matchesIdFilter =
+      !idFilter || idFilter.has(question.id);
 
     const rawAi = question.aiValidationResult;
     const structureResult =
@@ -1992,6 +2592,8 @@ const AdminQuestionsPage = () => {
         !question.reported;
     } else if (validationStatusFilter === 'reported') {
       matchesValidationStatus = question.reported === true;
+    } else if (validationStatusFilter === 'expired') {
+      matchesValidationStatus = question.isExpired === true;
     } else if (validationStatusFilter === 'manual-approved') {
       matchesValidationStatus = question.manuallyApproved === true;
     } else if (validationStatusFilter === 'manual-rejected') {
@@ -2007,6 +2609,7 @@ const AdminQuestionsPage = () => {
       matchesCategory &&
       matchesAgeGroup &&
       matchesAudience &&
+      matchesIdFilter &&
       matchesValidationStatus
     );
   });
@@ -2025,9 +2628,9 @@ const AdminQuestionsPage = () => {
   const handleGenerateAIQuestions = async () => {
     setIsGeneratingAI(true);
     setShowAIDialog(false);
+    navigate('/admin/tasks');
 
-    // Begär 50% fler frågor för att kompensera för dubletter och ogiltiga
-    const requestAmount = Math.ceil(aiAmount * 1.5);
+    const requestAmount = aiAmount;
 
     try {
       const { taskId } = await aiService.startAIGeneration({
@@ -2075,24 +2678,28 @@ const AdminQuestionsPage = () => {
         completedTask?.result?.totalSaved;
 
       if (typeof generatedCount === 'number' && generatedCount === 0) {
-        setDialogConfig({
-          isOpen: true,
-          title: 'AI-generering klar, men inga frågor sparades',
-          message:
-            'Bakgrundsjobbet blev klart men inga nya frågor hamnade i databasen.\n\n' +
-            'Öppna DevTools → Console för detaljer, eller testa en annan provider.',
-          type: 'warning'
-        });
+        if (isMountedRef.current) {
+          setDialogConfig({
+            isOpen: true,
+            title: 'AI-generering klar, men inga frågor sparades',
+            message:
+              'Bakgrundsjobbet blev klart men inga nya frågor hamnade i databasen.\n\n' +
+              'Öppna DevTools → Console för detaljer, eller testa en annan provider.',
+            type: 'warning'
+          });
+        }
       }
 
     } catch (error) {
       console.error('Kunde inte generera frågor:', error);
-      setDialogConfig({
-        isOpen: true,
-        title: 'Fel vid AI-generering',
-        message: `Kunde inte generera frågor: ${error.message}`,
-        type: 'error'
-      });
+      if (isMountedRef.current) {
+        setDialogConfig({
+          isOpen: true,
+          title: 'Fel vid AI-generering',
+          message: `Kunde inte generera frågor: ${error.message}`,
+          type: 'error'
+        });
+      }
     } finally {
       if (isMountedRef.current) {
         setIsGeneratingAI(false);
@@ -2344,6 +2951,7 @@ const AdminQuestionsPage = () => {
                     <option value="structure-rejected">Strukturellt underkända</option>
                     <option value="unvalidated">Ej validerade</option>
                     <option value="reported">Rapporterade (karantän)</option>
+                    <option value="expired">Utgångna (bäst före)</option>
                   </select>
                 </div>
                 <div>
@@ -2424,6 +3032,21 @@ const AdminQuestionsPage = () => {
           </div>
         ) : (
           <div>
+            {idFilter && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-100">
+                <div>
+                  Visar endast {filteredQuestions.length} av {idFilter.size} frågor från bakgrundsjobb
+                  {idFilterTaskId ? ` ${idFilterTaskId}` : ''}.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/questions')}
+                  className="rounded bg-amber-500/20 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/30"
+                >
+                  Rensa filter
+                </button>
+              </div>
+            )}
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm text-gray-400">
                 Visar {filteredQuestions.length} av {questions.length} frågor
@@ -2471,6 +3094,8 @@ const AdminQuestionsPage = () => {
                       categoryOptions={categoryOptions}
                       ageGroupOptions={ageGroupOptions}
                       targetAudienceOptions={targetAudienceOptions}
+                      aiRulesConfig={aiRulesConfig}
+                      loadingAiRules={loadingAiRules}
                     />
                   );
                 })}

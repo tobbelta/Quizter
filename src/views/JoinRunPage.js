@@ -9,6 +9,8 @@ import { localStorageService } from '../services/localStorageService';
 import { analyticsService } from '../services/analyticsService';
 import { userPreferencesService } from '../services/userPreferencesService';
 import PageLayout from '../components/layout/PageLayout';
+import PaymentModal from '../components/payment/PaymentModal';
+import { runRepository } from '../repositories/runRepository';
 
 const JoinRunPage = () => {
   const navigate = useNavigate();
@@ -23,10 +25,14 @@ const JoinRunPage = () => {
   const [contact, setContact] = useState(() => userPreferencesService.getContact());
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingJoin, setPendingJoin] = useState(null);
+  const [paymentError, setPaymentError] = useState('');
 
   const handleJoin = useCallback(async (code) => {
     setError('');
     setSuccess('');
+    setPaymentError('');
 
     const upperCode = code.trim().toUpperCase();
     if (upperCode.length < 4) {
@@ -34,15 +40,14 @@ const JoinRunPage = () => {
       return;
     }
 
-    // För anonyma användare, kontrollera att alias finns
-    if (currentUser?.isAnonymous && !alias.trim()) {
+    const requiresGuest = !currentUser || currentUser.isAnonymous;
+    if (requiresGuest && !alias.trim()) {
       setError('Ange ett alias för att delta.');
       return;
     }
 
-    // Om användaren är anonym och har angivit alias, uppdatera profilen
     let participantUser = currentUser;
-    if (currentUser?.isAnonymous && alias.trim()) {
+    if (requiresGuest && alias.trim()) {
       const cleanAlias = alias.trim();
       userPreferencesService.saveAlias(cleanAlias);
       setAlias(cleanAlias);
@@ -50,17 +55,19 @@ const JoinRunPage = () => {
       if (contact) {
         userPreferencesService.saveContact(contact);
       }
-      // Uppdatera den anonyma användarens profil
       participantUser = await loginAsGuest({ alias: cleanAlias, contact });
     }
 
     try {
-      const { run } = await joinRunByCode(upperCode, {
-        userId: participantUser?.isAnonymous ? null : participantUser?.id,
-        alias: participantUser?.name,
-        contact: participantUser?.contact,
-        isAnonymous: participantUser?.isAnonymous,
-      });
+      const run = await runRepository.getRunByCode(upperCode);
+      if (!run) {
+        setError(`Ingen runda hittades med anslutningskod "${upperCode}"`);
+        return;
+      }
+
+      const isHost = Boolean(participantUser?.id && run.createdBy && participantUser.id === run.createdBy);
+      const playerAmount = Number(run.paymentPlayerAmount || 0);
+      const requiresPayment = playerAmount > 0 && !isHost;
 
       const participantDetails = {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
@@ -69,26 +76,72 @@ const JoinRunPage = () => {
         isAnonymous: participantUser?.isAnonymous,
       };
 
+      if (requiresPayment) {
+        setPendingJoin({
+          run,
+          participantDetails,
+          joinCode: upperCode,
+        });
+        setShowPaymentModal(true);
+        return;
+      }
+
+      const { run: joinedRun } = await joinRunByCode(upperCode, participantDetails);
+
       if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(run, participantDetails);
+        localStorageService.addJoinedRun(joinedRun, participantDetails);
       }
 
       analyticsService.logVisit('join_run', {
-        runId: run.id,
-        runName: run.name,
+        runId: joinedRun.id,
+        runName: joinedRun.name,
       });
 
-      setSuccess(`Du är nu ansluten till ${run.name}!`);
+      setSuccess(`Du är nu ansluten till ${joinedRun.name}!`);
 
       setTimeout(() => {
-        // Om rundan tillåter rutt-val, gå till ruttval (TODO: implementera ruttval-sida)
-        // För nu går vi alltid direkt till spel
-        navigate(`/run/${run.id}/play`);
+        navigate(`/run/${joinedRun.id}/play`);
       }, 600);
     } catch (joinError) {
       setError(joinError.message);
     }
   }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate]);
+
+  const handlePaymentSuccess = useCallback(async (paymentResult) => {
+    setShowPaymentModal(false);
+    if (!pendingJoin) return;
+
+    try {
+      const { run, participantDetails, joinCode } = pendingJoin;
+      const { run: joinedRun } = await joinRunByCode(joinCode, {
+        ...participantDetails,
+        paymentId: paymentResult?.paymentId || null
+      });
+
+      if (!currentUser || currentUser.isAnonymous) {
+        localStorageService.addJoinedRun(joinedRun, participantDetails);
+      }
+
+      analyticsService.logVisit('join_run', {
+        runId: joinedRun.id,
+        runName: joinedRun.name,
+      });
+
+      setSuccess(`Du är nu ansluten till ${joinedRun.name}!`);
+      setPendingJoin(null);
+
+      setTimeout(() => {
+        navigate(`/run/${joinedRun.id}/play`);
+      }, 600);
+    } catch (joinError) {
+      setPaymentError(joinError.message || 'Kunde inte ansluta efter betalning.');
+    }
+  }, [pendingJoin, joinRunByCode, currentUser, navigate]);
+
+  const handlePaymentCancel = () => {
+    setShowPaymentModal(false);
+    setPendingJoin(null);
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -141,7 +194,9 @@ const JoinRunPage = () => {
     handleJoin(joinCode);
   };
 
-  const localInfo = currentUser?.isAnonymous ? localStorageService.getJoinedRuns() : [];
+  const localInfo = (!currentUser || currentUser?.isAnonymous)
+    ? localStorageService.getJoinedRuns()
+    : [];
 
   return (
     <PageLayout headerTitle="Anslut till runda" maxWidth="max-w-2xl" className="space-y-8">
@@ -163,6 +218,11 @@ const JoinRunPage = () => {
           {error}
         </div>
       )}
+      {paymentError && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-900/40 px-4 py-3 text-amber-100">
+          {paymentError}
+        </div>
+      )}
 
       {success && (
         <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/40 px-4 py-3 text-emerald-100">
@@ -182,7 +242,7 @@ const JoinRunPage = () => {
           />
         </div>
 
-        {currentUser?.isAnonymous && !aliasCommitted && (
+        {(!currentUser || currentUser?.isAnonymous) && !aliasCommitted && (
           <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
             <div>
               <h2 className="text-base font-semibold text-cyan-200">Ditt alias</h2>
@@ -215,7 +275,7 @@ const JoinRunPage = () => {
             </div>
           </div>
         )}
-        {currentUser?.isAnonymous && aliasCommitted && (
+        {(!currentUser || currentUser?.isAnonymous) && aliasCommitted && (
           <div className="space-y-1 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4 text-sm text-cyan-100">
             <p>
               Aliaset <span className="font-semibold text-cyan-200">{alias}</span> används automatiskt för denna anslutning.
@@ -233,11 +293,26 @@ const JoinRunPage = () => {
           Anslut till runda
         </button>
       </form>
+
+      <PaymentModal
+        isOpen={showPaymentModal}
+        title="Betala för rundan"
+        description={pendingJoin?.run?.name ? `Betalning krävs för att ansluta till ${pendingJoin.run.name}.` : 'Betalning krävs för att ansluta.'}
+        purpose="run_player"
+        amount={pendingJoin?.run?.paymentPlayerAmount}
+        currency={pendingJoin?.run?.paymentCurrency}
+        allowSkip={false}
+        context={{
+          runId: pendingJoin?.run?.id,
+          userId: pendingJoin?.participantDetails?.userId,
+          questionCount: pendingJoin?.run?.questionCount || pendingJoin?.run?.questionIds?.length || 0,
+          expectedPlayers: pendingJoin?.run?.expectedPlayers || 0
+        }}
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
+      />
     </PageLayout>
   );
 };
 
 export default JoinRunPage;
-
-
-

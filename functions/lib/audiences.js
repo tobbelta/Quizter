@@ -3,7 +3,7 @@ const DEFAULT_AGE_GROUPS = [
     id: 'children',
     label: 'Barn',
     description: '6-12 år',
-    prompt: 'Kortare frågor, tydliga ledtrådar och vardagsnära exempel.',
+    prompt: 'Kortare frågor, tydliga ledtrådar och vardagsnära exempel. Ta gärna upp aktuella barnprogram och kända figurer för barn. Undvik konsthistoria, politik, krig, ekonomi och avancerad vetenskap. Håll frågorna konkreta och enkla.',
     minAge: 6,
     maxAge: 12,
     sortOrder: 10
@@ -82,7 +82,7 @@ const DEFAULT_TARGET_AUDIENCES = [
 
 const DEFAULT_AGE_GROUP_TARGETS = [
   { ageGroupId: 'children', targetAudienceId: 'swedish' },
-  { ageGroupId: 'youth', targetAudienceId: 'swedish' },
+  { ageGroupId: 'youth', targetAudienceId: 'global' },
   { ageGroupId: 'adults', targetAudienceId: 'swedish' }
 ];
 

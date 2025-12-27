@@ -21,8 +21,13 @@ export async function onRequestGet(context) {
     console.log(`[listQuestions] Found ${results.length} questions`);
 
     // Transform database format to match frontend expectations
-    const questions = results.map(row => ({
-      id: row.id,
+    const now = Date.now();
+    const questions = results.map(row => {
+      const bestBeforeAt = row.best_before_at || null;
+      const isExpired = bestBeforeAt ? Number(bestBeforeAt) <= now : false;
+      const quarantined = row.quarantined === 1 || row.quarantined === true || isExpired;
+      return {
+        id: row.id,
       // Legacy fields for backwards compatibility
       question: row.question_sv || row.question,
       options: JSON.parse(row.options_sv || row.options || '[]'),
@@ -63,9 +68,16 @@ export async function onRequestGet(context) {
       manuallyApproved: row.manually_approved === 1 || row.manuallyApproved === true,
       manuallyRejected: row.manually_rejected === 1 || row.manuallyRejected === true,
       reported: row.reported === 1 || row.reported === true,
-      provider: row.ai_generation_provider || row.provider || null,
-      model: row.ai_generation_model || row.model || null,
-    }));
+      timeSensitive: row.time_sensitive === 1 || row.time_sensitive === true,
+      bestBeforeAt: bestBeforeAt,
+      quarantined: quarantined,
+      quarantinedAt: row.quarantined_at || null,
+      quarantineReason: row.quarantine_reason || (isExpired ? 'expired' : null),
+      isExpired: isExpired,
+        provider: row.ai_generation_provider || row.provider || null,
+        model: row.ai_generation_model || row.model || null,
+      };
+    });
 
     return new Response(
       JSON.stringify({

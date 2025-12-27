@@ -107,6 +107,10 @@ function transformQuestionFromDb(row) {
   const ageGroups = JSON.parse(row.age_groups || '["adults"]');
   const aiValidationResult = row.ai_validation_result ? JSON.parse(row.ai_validation_result) : null;
   const structureValidationResult = row.structure_validation_result ? JSON.parse(row.structure_validation_result) : null;
+  const bestBeforeAt = row.best_before_at || null;
+  const now = Date.now();
+  const isExpired = bestBeforeAt ? Number(bestBeforeAt) <= now : false;
+  const quarantined = row.quarantined === 1 || row.quarantined === true || isExpired;
 
   return {
     id: row.id,
@@ -142,5 +146,11 @@ function transformQuestionFromDb(row) {
     createdAt: row.created_at ? new Date(row.created_at) : null,
     updatedAt: row.updated_at ? new Date(row.updated_at) : null,
     createdBy: row.created_by || 'system',
+    timeSensitive: row.time_sensitive === 1 || row.time_sensitive === true,
+    bestBeforeAt: bestBeforeAt,
+    quarantined: quarantined,
+    quarantinedAt: row.quarantined_at ? new Date(row.quarantined_at) : null,
+    quarantineReason: row.quarantine_reason || (isExpired ? 'expired' : null),
+    isExpired: isExpired,
   };
 }
