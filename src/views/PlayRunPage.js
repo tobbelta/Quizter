@@ -108,6 +108,7 @@ const PlayRunPage = () => {
   const instanceId = useMemo(() => runSessionService.getInstanceId(), []);
   const [isPassiveSession, setIsPassiveSession] = useState(false);
   const [forceQuestionVisible, setForceQuestionVisible] = useState(false);
+  const [restoredQuestionNotice, setRestoredQuestionNotice] = useState('');
   const questionVisibilityKey = useMemo(() => {
     if (!runId || !currentParticipant?.id) return '';
     return `quizter:questionVisible:${runId}:${currentParticipant.id}`;
@@ -346,9 +347,11 @@ const PlayRunPage = () => {
     if (shouldRestore) {
       setQuestionVisible(true);
       setForceQuestionVisible(true);
+      setRestoredQuestionNotice('Återställde synlig fråga.');
       return;
     }
     setForceQuestionVisible(false);
+    setRestoredQuestionNotice('');
 
     if (isTimeBased) {
       setQuestionVisible(false);
@@ -698,6 +701,14 @@ const PlayRunPage = () => {
     writeQuestionVisibility(payload);
     setForceQuestionVisible(Boolean(currentQuestion));
   }, [currentQuestion, currentOrderIndex, questionVisibilityKey, writeQuestionVisibility, isPassiveSession]);
+
+  useEffect(() => {
+    if (!restoredQuestionNotice) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setRestoredQuestionNotice('');
+    }, 2500);
+    return () => window.clearTimeout(timeoutId);
+  }, [restoredQuestionNotice]);
 
   useEffect(() => {
     if (!isTimeBased || !timedShouldShowQuestion) {
@@ -1201,6 +1212,13 @@ const PlayRunPage = () => {
 
       {/* Huvudinnehåll - karta */}
       <main className="flex-1 relative overflow-hidden">
+        {restoredQuestionNotice && (
+          <div className="absolute inset-x-4 top-4 z-30">
+            <div className="mx-auto max-w-md rounded-xl border border-cyan-400/40 bg-slate-900/90 px-4 py-2 text-center text-sm text-cyan-100 shadow-lg">
+              {restoredQuestionNotice}
+            </div>
+          </div>
+        )}
         <RunMap
           checkpoints={currentRun.checkpoints || []}
           userPosition={coords}
