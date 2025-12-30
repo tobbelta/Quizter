@@ -335,7 +335,11 @@ const GenerateRunPage = () => {
     return trackingEnabled && (coords !== null || gpsStatus === 'active' || gpsStatus === 'pending');
   }, [trackingEnabled, coords, gpsStatus]);
 
-  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.createRun);
+  const donationEnabled = Boolean(
+    paymentConfig?.paymentsEnabled
+    && paymentConfig?.donations?.enabled
+    && paymentConfig?.donations?.placements?.createRun
+  );
   const donationCurrency = paymentConfig?.currency || 'sek';
   const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
     ? paymentConfig.donations.amounts

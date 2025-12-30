@@ -40,7 +40,11 @@ const LandingPage = () => {
     };
   }, []);
 
-  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.landing);
+  const donationEnabled = Boolean(
+    paymentConfig?.paymentsEnabled
+    && paymentConfig?.donations?.enabled
+    && paymentConfig?.donations?.placements?.landing
+  );
   const donationCurrency = paymentConfig?.currency || 'sek';
   const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
     ? paymentConfig.donations.amounts
@@ -245,4 +249,3 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
-
