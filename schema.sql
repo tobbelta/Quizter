@@ -24,6 +24,9 @@ DROP TABLE IF EXISTS donations;
 DROP TABLE IF EXISTS provider_settings;
 DROP TABLE IF EXISTS ai_rule_sets;
 DROP TABLE IF EXISTS background_tasks;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS message_states;
+DROP TABLE IF EXISTS analytics_events;
 
 -- ----------------------------------------------------------------------------
 -- `users` table
@@ -259,3 +262,28 @@ CREATE TABLE message_states (
   updated_at INTEGER,
   PRIMARY KEY (message_id, recipient_type, recipient_id)
 );
+
+-- ----------------------------------------------------------------------------
+-- Analytics events
+-- ----------------------------------------------------------------------------
+CREATE TABLE analytics_events (
+  id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  user_id TEXT,
+  event_type TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  device_type TEXT,
+  os TEXT,
+  browser TEXT,
+  timezone TEXT,
+  user_agent TEXT,
+  language TEXT,
+  screen_resolution TEXT,
+  path TEXT,
+  metadata TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_timestamp ON analytics_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_device ON analytics_events(device_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);

@@ -313,6 +313,52 @@ async function ensureMessagesSchema(db) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_message_states_recipient ON message_states(recipient_type, recipient_id)').run();
 }
 
+async function ensureAnalyticsSchema(db) {
+  const analyticsExists = await tableExists(db, 'analytics_events');
+  if (!analyticsExists) {
+    await db.prepare(`
+      CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'analytics_events', [
+    { name: 'device_id', ddl: 'device_id TEXT' },
+    { name: 'user_id', ddl: 'user_id TEXT' },
+    { name: 'event_type', ddl: 'event_type TEXT' },
+    { name: 'timestamp', ddl: 'timestamp INTEGER' },
+    { name: 'device_type', ddl: 'device_type TEXT' },
+    { name: 'os', ddl: 'os TEXT' },
+    { name: 'browser', ddl: 'browser TEXT' },
+    { name: 'timezone', ddl: 'timezone TEXT' },
+    { name: 'user_agent', ddl: 'user_agent TEXT' },
+    { name: 'language', ddl: 'language TEXT' },
+    { name: 'screen_resolution', ddl: 'screen_resolution TEXT' },
+    { name: 'path', ddl: 'path TEXT' },
+    { name: 'metadata', ddl: 'metadata TEXT' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+  ]);
+
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_timestamp ON analytics_events(timestamp)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_device ON analytics_events(device_id)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type)').run();
+}
+
 async function addMissingColumns(db) {
   try {
     await ensureRunsSchema(db);
@@ -324,6 +370,7 @@ async function addMissingColumns(db) {
     await ensureAiRulesTable(db);
     await ensurePaymentsSchema(db);
     await ensureMessagesSchema(db);
+    await ensureAnalyticsSchema(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
     try {
@@ -484,6 +531,7 @@ export async function ensureDatabase(db) {
         run_id TEXT NOT NULL,
         user_id TEXT,
         alias TEXT NOT NULL,
+        device_id TEXT,
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
@@ -589,6 +637,23 @@ export async function ensureDatabase(db) {
         updated_at INTEGER,
         PRIMARY KEY (message_id, recipient_type, recipient_id)
       )`,
+      `CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      )`,
       `CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,
         scope_id TEXT NOT NULL,
@@ -626,6 +691,7 @@ export async function ensureDatabase(db) {
     await ensureAudienceTables(db);
     await ensurePaymentsSchema(db);
     await ensureMessagesSchema(db);
+    await ensureAnalyticsSchema(db);
     dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed

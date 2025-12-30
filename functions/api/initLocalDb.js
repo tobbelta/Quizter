@@ -273,6 +273,24 @@ export async function onRequestGet({ env }) {
         PRIMARY KEY (message_id, recipient_type, recipient_id)
       );
 
+      CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      );
+
       CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,
         scope_id TEXT NOT NULL,

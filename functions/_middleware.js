@@ -120,6 +120,7 @@ async function initDatabaseIfNeeded(env) {
         run_id TEXT NOT NULL,
         user_id TEXT,
         alias TEXT NOT NULL,
+        device_id TEXT,
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
@@ -186,6 +187,23 @@ async function initDatabaseIfNeeded(env) {
         created_at INTEGER NOT NULL,
         updated_at INTEGER,
         PRIMARY KEY (message_id, recipient_type, recipient_id)
+      )`,
+      `CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
       )`,
       `CREATE TABLE background_tasks (
         id TEXT PRIMARY KEY,

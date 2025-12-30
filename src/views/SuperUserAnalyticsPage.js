@@ -39,11 +39,11 @@ const SuperUserAnalyticsPage = () => {
         setIsLoading(true);
 
         // Hämta aggregerad statistik
-        const aggregatedStats = await analyticsService.getAggregatedStats();
+        const aggregatedStats = await analyticsService.getAggregatedStats(currentUser?.email || '');
         setStats(aggregatedStats);
 
         // Hämta senaste events
-        const events = await analyticsService.getAnalytics({ limit: 100 });
+        const events = await analyticsService.getAnalytics({ limit: 100 }, currentUser?.email || '');
         setRecentEvents(events);
       } catch (error) {
         console.error('Kunde inte ladda analytics:', error);
@@ -53,9 +53,17 @@ const SuperUserAnalyticsPage = () => {
     };
 
     loadAnalytics();
-  }, [isSuperUser, navigate]);
+  }, [isSuperUser, navigate, currentUser]);
 
   // Filtrera events baserat på typ och tid
+  const getEventDate = (value) => {
+    if (!value) return null;
+    if (value.toDate) return value.toDate();
+    if (typeof value === 'number') return new Date(value);
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const filteredEvents = recentEvents.filter(event => {
     // Filtrera på eventType
     if (eventFilter !== 'all' && event.eventType !== eventFilter) {
@@ -78,8 +86,9 @@ const SuperUserAnalyticsPage = () => {
     }
 
     // Filtrera på tid
-    if (timeFilter !== 'all' && event.timestamp?.toDate) {
-      const eventDate = event.timestamp.toDate();
+    if (timeFilter !== 'all') {
+      const eventDate = getEventDate(event.timestamp);
+      if (!eventDate) return false;
       const now = new Date();
       const dayInMs = 24 * 60 * 60 * 1000;
 
@@ -105,8 +114,9 @@ const SuperUserAnalyticsPage = () => {
   });
 
   const formatTimestamp = (timestamp) => {
-    if (!timestamp?.toDate) return 'N/A';
-    return new Date(timestamp.toDate()).toLocaleString('sv-SE');
+    const date = getEventDate(timestamp);
+    if (!date) return 'N/A';
+    return date.toLocaleString('sv-SE');
   };
 
   const formatAmount = (amount) => {
@@ -120,14 +130,16 @@ const SuperUserAnalyticsPage = () => {
 
   // Samla unika enheter med deras senaste info
   const uniqueDevicesMap = recentEvents.reduce((acc, event) => {
-    if (!acc[event.deviceId] || event.timestamp?.toDate() > acc[event.deviceId].timestamp?.toDate()) {
+    const eventDate = getEventDate(event.timestamp);
+    const existingDate = getEventDate(acc[event.deviceId]?.timestamp);
+    if (!acc[event.deviceId] || (eventDate && (!existingDate || eventDate > existingDate))) {
       acc[event.deviceId] = {
         deviceId: event.deviceId,
         deviceType: event.deviceType,
         os: event.os,
         browser: event.browser,
         userId: event.userId,
-        lastSeen: event.timestamp,
+        lastSeen: eventDate,
         eventCount: 1
       };
     } else {
