@@ -323,6 +323,25 @@ const PlayRunPage = () => {
   const manualMode = requiresTracking ? !trackingEnabled : false;
   const isNative = Capacitor.isNativePlatform();
 
+  const orderedQuestions = useMemo(() => {
+    const questionIds = Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : [];
+    return questionIds.map((id) => {
+      const question = questionService.getByIdForLanguage(id, selectedLanguage);
+      if (!question) {
+        console.warn(`[PlayRunPage] Fråga med ID ${id} hittades inte i questionService`);
+        return {
+          id: id,
+          text: `Fråga ${id} kunde inte laddas`,
+          options: ['Ladda om sidan', 'Försök igen', 'Kontakta admin', 'Hoppa över'],
+          explanation: 'Denna fråga kunde inte laddas från databasen.',
+          correctOption: 0
+        };
+      }
+      return question;
+    });
+  }, [currentRun, selectedLanguage]);
+  const totalQuestions = orderedQuestions.length;
+
   // Timer för att mäta total tid
   const { formattedTime } = useElapsedTime(true);
 
@@ -360,25 +379,6 @@ const PlayRunPage = () => {
     }
   }, [currentParticipant?.currentOrder, isTimeBased, manualMode, orderedQuestions, currentOrderIndex, readQuestionVisibility]);
 
-
-  const orderedQuestions = useMemo(() => {
-    const questionIds = Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : [];
-    return questionIds.map((id) => {
-      const question = questionService.getByIdForLanguage(id, selectedLanguage);
-      if (!question) {
-        console.warn(`[PlayRunPage] Fråga med ID ${id} hittades inte i questionService`);
-        return {
-          id: id,
-          text: `Fråga ${id} kunde inte laddas`,
-          options: ['Ladda om sidan', 'Försök igen', 'Kontakta admin', 'Hoppa över'],
-          explanation: 'Denna fråga kunde inte laddas från databasen.',
-          correctOption: 0
-        };
-      }
-      return question;
-    });
-  }, [currentRun, selectedLanguage]);
-  const totalQuestions = orderedQuestions.length;
 
   // Schedule native notification for time-based questions
   // Must be defined AFTER orderedQuestions and totalQuestions
