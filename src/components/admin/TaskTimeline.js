@@ -7,6 +7,10 @@ import React from 'react';
  * @param {boolean} compact - Om true, visa kompakt version (för tabell-rad)
  */
 const TaskTimeline = ({ task, compact = false }) => {
+  const detailText = typeof task.progress?.details === 'string'
+    ? task.progress.details
+    : task.progress?.details?.message || task.progress?.details?.lastMessage || '';
+
   // Definiera task stages baserat på taskType och progress
   const getStages = () => {
     const baseStages = [
@@ -204,9 +208,9 @@ const TaskTimeline = ({ task, compact = false }) => {
                     {task.progress.phase}
                   </div>
                 )}
-                {isCurrent && task.progress?.details && (
+                {isCurrent && detailText && (
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {task.progress.details}
+                    {detailText}
                   </div>
                 )}
                 {isFailed && isCurrent && task.error && (

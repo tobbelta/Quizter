@@ -45,6 +45,17 @@ const formatDateTime = (date) => {
   }
 };
 
+const formatEventTime = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('sv-SE', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
 const toDuration = (start, end) => {
   if (!start || !end) return '—';
   const milliseconds = end.getTime() - start.getTime();
@@ -572,6 +583,13 @@ const SuperUserTasksPage = () => {
                     const statusBadge = STATUS_BADGES[task.status] || STATUS_BADGES.pending;
                     const statusLabel = STATUS_LABELS[task.status] || task.status;
                     const progressDetails = task.progress?.details || {};
+                    const progressEvents = Array.isArray(progressDetails.events) ? progressDetails.events : [];
+                    const currentProvider = progressDetails.provider || progressDetails.currentProvider || null;
+                    const currentModel = progressDetails.model || progressDetails.currentModel || null;
+                    const currentQuestionId = progressDetails.currentQuestionId || null;
+                    const currentQuestion = progressDetails.currentQuestion || null;
+                    const lastSavedQuestionId = progressDetails.lastSavedQuestionId || null;
+                    const lastSavedQuestion = progressDetails.lastSavedQuestion || null;
                     const isExpanded = expandedTasks.has(task.id);
                     const payloadDetails = [];
                     const resultQuestionIds = Array.isArray(task.result?.questionIds)
@@ -581,6 +599,7 @@ const SuperUserTasksPage = () => {
                         : [];
                     const hasQuestionLink = task.taskType === 'generation' && resultQuestionIds.length > 0;
                     const progressSummaryParts = [];
+                    const progressDetailLines = [];
                     if (task.payload?.category) payloadDetails.push(`Kategori: ${task.payload.category}`);
                     if (task.payload?.difficulty) payloadDetails.push(`Nivå: ${task.payload.difficulty}`);
                     if (task.payload?.amount) payloadDetails.push(`Antal: ${task.payload.amount}`);
@@ -663,6 +682,19 @@ const SuperUserTasksPage = () => {
                     }
                     if (progressDetails.correctedCount != null && progressDetails.correctedCount > 0) {
                       progressSummaryParts.push(`${progressDetails.correctedCount} ♻️`);
+                    }
+                    if (task.progress?.phase) progressDetailLines.push(`Steg: ${task.progress.phase}`);
+                    if (currentProvider) progressDetailLines.push(`Provider: ${currentProvider}`);
+                    if (currentModel) progressDetailLines.push(`Modell: ${currentModel}`);
+                    if (progressDetails.round != null) progressDetailLines.push(`Runda: ${progressDetails.round}`);
+                    if (progressDetails.remaining != null) progressDetailLines.push(`Återstår: ${progressDetails.remaining}`);
+                    if (currentQuestionId || currentQuestion) {
+                      const questionLabel = currentQuestionId ? `Fråga: ${currentQuestionId}` : 'Fråga';
+                      progressDetailLines.push(currentQuestion ? `${questionLabel} · ${currentQuestion}` : questionLabel);
+                    }
+                    if (lastSavedQuestionId || lastSavedQuestion) {
+                      const savedLabel = lastSavedQuestionId ? `Senast sparad: ${lastSavedQuestionId}` : 'Senast sparad';
+                      progressDetailLines.push(lastSavedQuestion ? `${savedLabel} · ${lastSavedQuestion}` : savedLabel);
                     }
 
                     return (
@@ -806,6 +838,26 @@ const SuperUserTasksPage = () => {
                               )}
                               {task.error && (
                                 <div className="text-red-300">Fel: {task.error}</div>
+                              )}
+                              {progressDetailLines.length > 0 && (
+                                <div className="space-y-1">
+                                  {progressDetailLines.map((line, index) => (
+                                    <div key={index}>{line}</div>
+                                  ))}
+                                </div>
+                              )}
+                              {progressEvents.length > 0 && (
+                                <div className="space-y-1">
+                                  <div className="text-slate-400">Senaste steg</div>
+                                  {progressEvents.map((event, index) => {
+                                    const timeLabel = formatEventTime(event.at);
+                                    return (
+                                      <div key={`${event.at || index}`} className="text-slate-300">
+                                        {timeLabel ? `${timeLabel} · ` : ''}{event.message}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
                               <div>
                                 <TaskTimeline task={task} compact={true} />

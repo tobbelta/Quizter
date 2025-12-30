@@ -23,6 +23,13 @@ import {
 import { getAiRulesConfig } from '../lib/aiRules.js';
 import { resolveFreshnessFields, isExpiredByBestBefore } from '../lib/freshness.js';
 
+const summarizeProgressText = (value, limit = 120) => {
+  if (!value) return '';
+  const text = String(value);
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}…`;
+};
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   
@@ -137,12 +144,30 @@ export async function onRequestPost(context) {
 async function generateQuestionsInBackground(env, taskId, params) {
   const { amount, category, ageGroup, difficulty, provider, userEmail } = params;
   const taskUserId = userEmail || 'system';
+  const progressEvents = [];
+
+  const pushEvent = (message) => {
+    if (!message) return;
+    progressEvents.push({ at: Date.now(), message });
+    if (progressEvents.length > 6) {
+      progressEvents.shift();
+    }
+  };
+
+  const updateProgress = async (progressValue, phase, details = {}) => {
+    await updateTaskProgress(env.DB, taskId, progressValue, phase, {
+      ...details,
+      events: [...progressEvents],
+      lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
+    });
+  };
   
   console.log(`[Task ${taskId}] Params received:`, params);
   console.log(`[Task ${taskId}] Destructured values:`, { amount, category, ageGroup, difficulty, provider });
   
   try {
     console.log(`[Task ${taskId}] Starting generation...`);
+    pushEvent('Startar generering');
     
     // Ensure database is initialized (important for background context)
     console.log(`[Task ${taskId}] Calling ensureDatabase...`);
@@ -150,7 +175,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
     await ensureCategoriesTable(env.DB);
     console.log(`[Task ${taskId}] Database ensured.`);
     
-    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, 'Förbereder AI-förfrågan', {
+    pushEvent('Förbereder AI-förfrågan');
+    await updateProgress({ completed: 0, total: amount }, 'Förbereder AI-förfrågan', {
       targetCount: amount
     });
     
@@ -196,6 +222,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     if (!selectedProvider) {
       selectedProvider = factory.getProvider(effectiveProvider);
     }
+    pushEvent(`Provider vald: ${effectiveProvider}`);
 
     const attemptedProviders = [effectiveProvider];
     const providersUsed = new Set();
@@ -210,6 +237,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
           effectiveProvider = nextProvider;
           attemptedProviders.push(nextProvider);
           console.log(`[Task ${taskId}] Switching provider to ${nextProvider}`);
+          pushEvent(`Byter provider till ${nextProvider}`);
           return true;
         } catch (error) {
           console.warn(`[Task ${taskId}] Failed to load provider ${nextProvider}:`, error.message);
@@ -256,8 +284,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
       throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
     };
 
-    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, `Genererar 0/${amount}`, {
-      targetCount: amount
+    pushEvent(`Genererar 0/${amount}`);
+    await updateProgress({ completed: 0, total: amount }, `Genererar 0/${amount}`, {
+      targetCount: amount,
+      provider: effectiveProvider,
+      model: selectedProvider?.model || null
     });
 
     let generationRounds = 0;
@@ -276,6 +307,19 @@ async function generateQuestionsInBackground(env, taskId, params) {
     while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
       const remaining = amount - acceptedQuestions.length;
       const batchAmount = remaining;
+      pushEvent(`Genererar batch ${generationRounds + 1}/${maxRounds} (${remaining} kvar)`);
+      await updateProgress({
+        completed: Math.min(acceptedQuestions.length, amount),
+        total: amount
+      }, `Genererar ${Math.min(acceptedQuestions.length, amount)}/${amount}`, {
+        targetCount: amount,
+        provider: effectiveProvider,
+        model: selectedProvider?.model || null,
+        round: generationRounds + 1,
+        remaining,
+        generatedCount: totalGenerated,
+        acceptedCount: acceptedQuestions.length
+      });
       const batchQuestions = await generateBatch(batchAmount);
       generationRounds += 1;
       totalGenerated += batchQuestions.length;
@@ -320,11 +364,15 @@ async function generateQuestionsInBackground(env, taskId, params) {
         stalledRounds = 0;
       }
 
-      await updateTaskProgress(env.DB, taskId, {
+      await updateProgress({
         completed: Math.min(acceptedQuestions.length, amount),
         total: amount
       }, `Genererar ${Math.min(acceptedQuestions.length, amount)}/${amount}`, {
         targetCount: amount,
+        provider: effectiveProvider,
+        model: selectedProvider?.model || null,
+        round: generationRounds,
+        remaining: amount - acceptedQuestions.length,
         generatedCount: totalGenerated,
         duplicatesBlocked: duplicateCount,
         ruleFiltered: ruleFilteredCount,
@@ -335,8 +383,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const finalQuestions = acceptedQuestions.slice(0, amount);
     const shortfall = amount - finalQuestions.length;
     
-    await updateTaskProgress(env.DB, taskId, { completed: 0, total: amount }, `Sparar 0/${amount}`, {
+    pushEvent(`Sparar 0/${amount}`);
+    await updateProgress({ completed: 0, total: amount }, `Sparar 0/${amount}`, {
       targetCount: amount,
+      provider: effectiveProvider,
+      model: selectedProvider?.model || null,
       generatedCount: totalGenerated,
       duplicatesBlocked: duplicateCount,
       ruleFiltered: ruleFilteredCount,
@@ -353,18 +404,23 @@ async function generateQuestionsInBackground(env, taskId, params) {
       targetAudience,
       freshnessConfig
     }, {
-      onProgress: async ({ savedCount, errorCount }) => {
-        await updateTaskProgress(env.DB, taskId, {
+      onProgress: async ({ savedCount, errorCount, lastQuestionId, lastQuestionText }) => {
+        pushEvent(`Sparade ${savedCount}/${amount}`);
+        await updateProgress({
           completed: savedCount,
           total: amount
         }, `Sparar ${savedCount}/${amount}`, {
           targetCount: amount,
+          provider: effectiveProvider,
+          model: selectedProvider?.model || null,
           generatedCount: totalGenerated,
           duplicatesBlocked: duplicateCount,
           ruleFiltered: ruleFilteredCount,
           acceptedCount: finalQuestions.length,
           savedCount,
-          errorCount
+          errorCount,
+          lastSavedQuestionId: lastQuestionId || null,
+          lastSavedQuestion: summarizeProgressText(lastQuestionText)
         });
       }
     });
@@ -379,11 +435,14 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const validationProvider = validationCandidates[0] || null;
     const shouldRunValidation = savedQuestions.length > 0 && validationCandidates.length > 0;
 
-    await updateTaskProgress(env.DB, taskId, {
+    pushEvent('Klar med generering');
+    await updateProgress({
       completed: savedQuestions.length,
       total: amount
     }, 'Klar med generering', {
       targetCount: amount,
+      provider: effectiveProvider,
+      model: selectedProvider?.model || null,
       generatedCount: totalGenerated,
       duplicatesBlocked: duplicateCount,
       ruleFiltered: ruleFilteredCount,
@@ -506,8 +565,27 @@ async function generateQuestionsInBackground(env, taskId, params) {
  * Validate questions in background
  */
 async function validateQuestionsInBackground(env, taskId, questions, generatorProvider, metadata = {}, rulesConfig = null) {
+  const progressEvents = [];
+
+  const pushEvent = (message) => {
+    if (!message) return;
+    progressEvents.push({ at: Date.now(), message });
+    if (progressEvents.length > 6) {
+      progressEvents.shift();
+    }
+  };
+
+  const updateProgress = async (progressValue, phase, details = {}) => {
+    await updateTaskProgress(env.DB, taskId, progressValue, phase, {
+      ...details,
+      events: [...progressEvents],
+      lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
+    });
+  };
+
   try {
     console.log(`[Validation ${taskId}] Starting validation of ${questions.length} questions`);
+    pushEvent(`Startar validering (${questions.length} frågor)`);
     
     // Ensure database is initialized (background tasks bypass middleware)
     const { ensureDatabase } = await import('../lib/ensureDatabase.js');
@@ -549,7 +627,8 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
 
     // Update progress to show we're starting
     try {
-      await updateTaskProgress(env.DB, taskId, { completed: 0, total: totalCount }, 'Förbereder validering', {
+      pushEvent('Förbereder validering');
+      await updateProgress({ completed: 0, total: totalCount }, 'Förbereder validering', {
         totalCount,
         validatedCount: 0,
         invalidCount: 0,
@@ -590,17 +669,28 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
           answerInQuestionPrompt,
           totalCount,
           autoCorrectionEnabled: rulesConfig?.global?.autoCorrection?.enabled === true,
-          onProgress: async ({ index, validatedCount, invalidCount, skippedCount, correctedCount, provider }) => {
-            await updateTaskProgress(env.DB, taskId, {
-              completed: index,
+          onProgress: async ({ index, validatedCount, invalidCount, skippedCount, correctedCount, provider, questionId, questionPreview, step, phase }) => {
+            const resolvedIndex = Number.isFinite(index) ? index : 0;
+            const displayIndex = step === 'start'
+              ? Math.min(resolvedIndex + 1, totalCount)
+              : Math.min(resolvedIndex, totalCount);
+            const phaseText = phase || `Validerar ${displayIndex}/${totalCount}`;
+            if (step === 'start') {
+              pushEvent(`Validerar ${displayIndex}/${totalCount}`);
+            }
+            await updateProgress({
+              completed: resolvedIndex,
               total: totalCount
-            }, `Validerar ${index}/${totalCount}`, {
+            }, phaseText, {
               totalCount,
               validatedCount,
               invalidCount,
               skippedCount,
               correctedCount,
-              provider
+              provider,
+              currentQuestionId: questionId || null,
+              currentQuestion: summarizeProgressText(questionPreview),
+              step: step || null
             });
           }
         }
@@ -614,7 +704,8 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     }
     
     console.log(`[Validation ${taskId}] About to update progress to 100%`);
-    await updateTaskProgress(env.DB, taskId, {
+    pushEvent('Validering klar');
+    await updateProgress({
       completed: totalCount,
       total: totalCount
     }, 'Validering klar', {
@@ -1101,6 +1192,20 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
         const currentProvider = activeProvider.provider;
 
         try {
+          if (reportProgress) {
+            await reportProgress({
+              index: i,
+              validatedCount,
+              invalidCount,
+              skippedCount,
+              correctedCount,
+              provider: currentProviderName,
+              questionId: question.id,
+              questionPreview: summarizeProgressText(question.question_sv),
+              step: 'start',
+              phase: `Validerar ${i + 1}/${questions.length}`
+            });
+          }
           const validationResult = await currentProvider.validateQuestion(question, {
             category: context.category,
             ageGroup: context.ageGroup,
@@ -1212,7 +1317,10 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               invalidCount,
               skippedCount,
               correctedCount,
-              provider: currentProviderName
+              provider: currentProviderName,
+              questionId: question.id,
+              questionPreview: summarizeProgressText(question.question_sv),
+              step: 'done'
             });
           }
 
@@ -1431,7 +1539,9 @@ async function saveQuestionsToDatabase(db, questions, metadata, progress = null)
       if (typeof onProgress === 'function') {
         await onProgress({
           savedCount: savedQuestions.length,
-          errorCount: errors.length
+          errorCount: errors.length,
+          lastQuestionId: id,
+          lastQuestionText: q.question_sv
         });
       }
     } catch (error) {
@@ -1449,7 +1559,9 @@ async function saveQuestionsToDatabase(db, questions, metadata, progress = null)
       if (typeof onProgress === 'function') {
         await onProgress({
           savedCount: savedQuestions.length,
-          errorCount: errors.length
+          errorCount: errors.length,
+          lastQuestionId: id,
+          lastQuestionText: q.question_sv
         });
       }
     }
