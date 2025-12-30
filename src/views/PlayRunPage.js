@@ -406,7 +406,10 @@ const PlayRunPage = () => {
     trackingEnabled: trackingEnabled && !isNative && !isPassiveSession, // Använd inte hook på native
     distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
     currentQuestionIndex: currentOrderIndex,
-    totalQuestions: totalQuestions
+    totalQuestions: totalQuestions,
+    storageKeyPrefix: runId && currentParticipant?.id
+      ? `distanceTracking:${runId}:${currentParticipant.id}`
+      : ''
   });
   const { resetQuestionDistance } = distanceTracking;
 
@@ -418,12 +421,16 @@ const PlayRunPage = () => {
     resetForNextQuestion: resetTimedQuestion,
     wasTriggeredByTimer
   } = useTimeQuestionTrigger({
-    isEnabled: Boolean(isTimeBased && !isPassiveSession),
+    isEnabled: Boolean(isTimeBased),
+    isPaused: isPassiveSession,
     intervalMinutes: currentRun?.minutesBetweenQuestions || 5,
     currentQuestionIndex: currentOrderIndex,
     totalQuestions,
     onTimerScheduled: scheduleNativeTimeNotification,
-    onTimerCleared: cancelNativeTimeNotification
+    onTimerCleared: cancelNativeTimeNotification,
+    storageKeyPrefix: runId && currentParticipant?.id
+      ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+      : ''
   });
 
   const formattedTimeRemaining = useMemo(() => formatCountdown(timeRemainingMs), [timeRemainingMs]);
@@ -436,12 +443,15 @@ const PlayRunPage = () => {
     
     // Om currentOrderIndex > 0 betyder det att användaren redan svarat på tidigare frågor
     // Rensa sessionStorage för dessa (men INTE för currentOrderIndex - den pågår!)
-    console.log('[PlayRunPage] Cleaning up sessionStorage for answered questions (0 to', currentOrderIndex - 1, ')');
+    console.log('[PlayRunPage] Cleaning up timer storage for answered questions (0 to', currentOrderIndex - 1, ')');
     for (let i = 0; i < currentOrderIndex; i++) {
-      const storageKey = `timeQuestionTrigger_q${i}`;
-      sessionStorage.removeItem(storageKey);
+      const storageKeyPrefix = runId && currentParticipant?.id
+        ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+        : '';
+      const storageKey = storageKeyPrefix ? `${storageKeyPrefix}:q${i}` : `timeQuestionTrigger_q${i}`;
+      localStorage.removeItem(storageKey);
     }
-  }, [runId, isTimeBased, currentOrderIndex]);
+  }, [runId, isTimeBased, currentOrderIndex, currentParticipant?.id]);
 
   // Schemalägger nästa time-based fråga när användaren svarar (currentOrderIndex ökar)
   useEffect(() => {
