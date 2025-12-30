@@ -29,10 +29,8 @@ const Header = ({ title = 'Quizter', children }) => {
   const [showAbout, setShowAbout] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
-  const {
-    unreadCount: taskUnreadCount,
-    hasActiveTrackedTasks,
-  } = useBackgroundTasks();
+  const [shouldPulseMessages, setShouldPulseMessages] = useState(false);
+  const { unreadCount: taskUnreadCount } = useBackgroundTasks();
   const [guestAlias, setGuestAlias] = useState(() => {
     if (typeof window === 'undefined') return '';
     return userPreferencesService.getAlias();
@@ -44,6 +42,7 @@ const Header = ({ title = 'Quizter', children }) => {
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
   const knownMessageIdsRef = useRef(new Set());
   const notificationPermissionRequestedRef = useRef(false);
+  const messagePulseTimeoutRef = useRef(null);
 
   useLayoutEffect(() => {
     if (typeof window === 'undefined') {
@@ -164,6 +163,16 @@ const Header = ({ title = 'Quizter', children }) => {
     }
   }, []);
 
+  const triggerMessagePulse = useCallback(() => {
+    setShouldPulseMessages(true);
+    if (messagePulseTimeoutRef.current) {
+      clearTimeout(messagePulseTimeoutRef.current);
+    }
+    messagePulseTimeoutRef.current = setTimeout(() => {
+      setShouldPulseMessages(false);
+    }, 6000);
+  }, []);
+
   useEffect(() => {
     if (!isMenuOpen) return;
     try {
@@ -196,7 +205,7 @@ const Header = ({ title = 'Quizter', children }) => {
     }
   }, [currentUser]);
 
-    // Hämta aktuell oläst-meddelanderäkning
+  // Hämta aktuell oläst-meddelanderäkning
   useEffect(() => {
     let isMounted = true;
     const deviceId = analyticsService.getDeviceId();
@@ -207,6 +216,9 @@ const Header = ({ title = 'Quizter', children }) => {
         const count = await messageService.getUnreadCount(userId, deviceId);
         if (isMounted) {
           setUnreadMessageCount(count);
+          if (count === 0) {
+            setShouldPulseMessages(false);
+          }
         }
       } catch (error) {
         console.error('[Header] Failed to load unread message count:', error);
@@ -250,6 +262,7 @@ const Header = ({ title = 'Quizter', children }) => {
 
       const latestUnread = newMessages.find((m) => !m.read && !m.deleted);
       if (latestUnread) {
+        triggerMessagePulse();
         await notifyAboutMessage(latestUnread);
       }
     });
@@ -260,7 +273,21 @@ const Header = ({ title = 'Quizter', children }) => {
         unsubscribe();
       }
     };
-  }, [currentUser, notifyAboutMessage]);
+  }, [currentUser, notifyAboutMessage, triggerMessagePulse]);
+
+  useEffect(() => {
+    if (showMessages) {
+      setShouldPulseMessages(false);
+    }
+  }, [showMessages]);
+
+  useEffect(() => {
+    return () => {
+      if (messagePulseTimeoutRef.current) {
+        clearTimeout(messagePulseTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -390,20 +417,14 @@ const Header = ({ title = 'Quizter', children }) => {
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? 'opacity-0' : ''}`} />
               <span className={`block h-0.5 bg-gray-300 transition-all ${isMenuOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
             </div>
-            {/* Badge för bakgrundsjobb (endast superuser), meddelanden eller lokala rundor */}
-            {isSuperUser && taskUnreadCount > 0 ? (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full text-xs font-bold text-black flex items-center justify-center animate-pulse">
-                {taskUnreadCount}
-              </span>
-            ) : unreadMessageCount > 0 ? (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs font-bold text-white flex items-center justify-center animate-pulse">
+            {/* Badge: visa endast när nya meddelanden finns */}
+            {unreadMessageCount > 0 ? (
+              <span
+                className={`absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs font-bold text-white flex items-center justify-center ${
+                  shouldPulseMessages ? 'animate-pulse' : ''
+                }`}
+              >
                 {unreadMessageCount}
-              </span>
-            ) : isSuperUser && hasActiveTrackedTasks ? (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping" />
-            ) : hasLocalRuns ? (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-cyan-500 rounded-full text-xs font-bold text-black flex items-center justify-center">
-                {localCreatedCount + localJoinedCount}
               </span>
             ) : null}
           </button>
