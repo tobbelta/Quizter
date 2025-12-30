@@ -41,21 +41,18 @@ const JoinRunPage = () => {
     }
 
     const requiresGuest = !currentUser || currentUser.isAnonymous;
-    if (requiresGuest && !alias.trim()) {
-      setError('Ange ett alias för att delta.');
-      return;
-    }
-
     let participantUser = currentUser;
-    if (requiresGuest && alias.trim()) {
-      const cleanAlias = alias.trim();
+    const cleanAlias = alias.trim();
+    if (contact) {
+      userPreferencesService.saveContact(contact);
+    }
+    if (requiresGuest && cleanAlias) {
       userPreferencesService.saveAlias(cleanAlias);
       setAlias(cleanAlias);
       setAliasCommitted(true);
-      if (contact) {
-        userPreferencesService.saveContact(contact);
-      }
       participantUser = await loginAsGuest({ alias: cleanAlias, contact });
+    } else if (requiresGuest && !participantUser) {
+      participantUser = await loginAsGuest({ contact });
     }
 
     try {
@@ -188,12 +185,12 @@ const JoinRunPage = () => {
       if (currentUser && !currentUser.isAnonymous) {
         handleJoin(upperCode);
       }
-      // Om användaren är anonym men har sparat alias, anslut direkt
-      else if (currentUser?.isAnonymous && aliasCommitted) {
+      // Om användaren är anonym, anslut direkt (alias är valfritt)
+      else if (currentUser?.isAnonymous) {
         handleJoin(upperCode);
       }
     }
-  }, [location.search, currentUser, isAuthInitialized, aliasCommitted, handleJoin]);
+  }, [location.search, currentUser, isAuthInitialized, handleJoin]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -251,13 +248,13 @@ const JoinRunPage = () => {
         {(!currentUser || currentUser?.isAnonymous) && !aliasCommitted && (
           <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
             <div>
-              <h2 className="text-base font-semibold text-cyan-200">Ditt alias</h2>
+              <h2 className="text-base font-semibold text-cyan-200">Ditt namn</h2>
               <p className="text-xs text-gray-400">
-                {alias ? 'Detta alias sparas på din enhet och används vid framtida anslutningar.' : 'Ange ett alias för att delta.'}
+                {alias ? 'Detta alias sparas på din enhet och används vid framtida anslutningar.' : 'Alias är valfritt. Lämna tomt så används ett automatiskt ID.'}
               </p>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-200">Alias</label>
+              <label className="mb-1 block text-sm font-semibold text-slate-200">Alias (valfritt)</label>
               <input
                 value={alias}
                 onChange={(event) => {

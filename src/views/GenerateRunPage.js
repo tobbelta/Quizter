@@ -55,7 +55,6 @@ const GenerateRunPage = () => {
   const initialAlias = React.useMemo(() => userPreferencesService.getAlias() || '', []);
   const [alias, setAlias] = useState(initialAlias);
   const [aliasCommitted, setAliasCommitted] = useState(() => Boolean(initialAlias.trim()));
-  const [showAliasDialog, setShowAliasDialog] = useState(false);
   const [error, setError] = useState('');
   const [paymentError, setPaymentError] = useState('');
   const [paymentConfig, setPaymentConfig] = useState(null);
@@ -92,35 +91,37 @@ const GenerateRunPage = () => {
       };
     }
 
-    const aliasValue = alias?.trim() || form.name?.trim() || 'G?st';
+    const aliasValue = alias?.trim() || '';
     const storedContact = userPreferencesService.getContact();
 
     try {
-      userPreferencesService.saveAlias(aliasValue);
-      setAlias(aliasValue);
-      setAliasCommitted(true);
+      if (aliasValue) {
+        userPreferencesService.saveAlias(aliasValue);
+        setAlias(aliasValue);
+        setAliasCommitted(true);
+      }
       if (storedContact) {
         userPreferencesService.saveContact(storedContact);
       }
       const guestUser = await loginAsGuest({
-        alias: aliasValue,
+        alias: aliasValue || undefined,
         contact: storedContact || undefined
       });
 
       if (!guestUser) {
-        throw new Error('G?st-inloggning misslyckades');
+        throw new Error('Gäst-inloggning misslyckades');
       }
 
       return {
         id: guestUser.uid || guestUser.id || 'anonymous',
-        name: guestUser.displayName || guestUser.name || aliasValue || 'G?st',
+        name: guestUser.displayName || guestUser.name || aliasValue || guestUser.id || 'anonymous',
         user: guestUser
       };
     } catch (guestError) {
       console.error('[GenerateRunPage] Kunde inte skapa g?stidentitet:', guestError);
       throw guestError;
     }
-  }, [alias, currentUser, form.name, loginAsGuest]);
+  }, [alias, currentUser, loginAsGuest]);
 
   const handleShare = React.useCallback(async () => {
     if (!generatedRun || !joinLink) {
@@ -509,7 +510,7 @@ const GenerateRunPage = () => {
       });
 
       const participantUser = creatorIdentity?.user || currentUser;
-      const participantAlias = participantUser?.name || alias?.trim() || form.name?.trim() || 'G?st';
+      const participantAlias = participantUser?.name || alias?.trim() || participantUser?.id || 'anonymous';
       const participantContact = participantUser?.contact || userPreferencesService.getContact() || '';
       const participantPayload = {
         userId: participantUser?.isAnonymous ? null : participantUser?.id,
@@ -547,12 +548,6 @@ const GenerateRunPage = () => {
     event.preventDefault();
     setError('');
     setPaymentError('');
-
-    // Om användaren är anonym och inte har angett alias, visa dialog
-    if (currentUser?.isAnonymous && !alias.trim()) {
-      setShowAliasDialog(true);
-      return;
-    }
 
     // Logga att användaren försöker skapa en runda
     logFormSubmit('Create Run Form', {
@@ -716,59 +711,6 @@ const GenerateRunPage = () => {
         />
       )}
 
-      {/* Alias dialog - visas om användaren inte har angett alias */}
-      {showAliasDialog && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-cyan-500/40 bg-slate-900 p-6 shadow-2xl">
-            <h2 className="text-xl font-semibold text-slate-100 mb-4">Ange ditt alias</h2>
-            <p className="text-sm text-gray-300 mb-6">
-              För att skapa en runda behöver vi veta vad du vill kallas. Aliaset sparas på enheten.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-cyan-200 mb-2">Alias</label>
-                <input
-                  type="text"
-                  value={alias}
-                  onChange={(e) => setAlias(e.target.value)}
-                  placeholder="T.ex. Erik"
-                  autoFocus
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-3 text-slate-100 focus:border-cyan-400 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowAliasDialog(false)}
-                  className="flex-1 rounded-lg border border-slate-600 bg-slate-800 px-4 py-3 font-semibold text-slate-100 hover:bg-slate-700"
-                >
-                  Avbryt
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!alias.trim()) {
-                      setError('Ange ett alias');
-                      return;
-                    }
-                    const cleanAlias = alias.trim();
-                    userPreferencesService.saveAlias(cleanAlias);
-                    setAliasCommitted(true);
-                    await loginAsGuest({ alias: cleanAlias });
-                    setShowAliasDialog(false);
-                    // Trigga submit igen
-                    handleSubmit({ preventDefault: () => {} });
-                  }}
-                  className="flex-1 rounded-lg bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
-                >
-                  Fortsätt
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {!generatedRun ? (
         <section className="space-y-8">
           <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-center shadow-lg">
@@ -793,7 +735,7 @@ const GenerateRunPage = () => {
             <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
               <h3 className="text-sm font-semibold text-cyan-200">Ditt alias</h3>
               <div className="space-y-1.5">
-                <label className="block text-xs text-gray-400">Alias (visas för deltagare)</label>
+                <label className="block text-xs text-gray-400">Alias (valfritt)</label>
                 <input
                   type="text"
                   value={alias}
@@ -805,7 +747,7 @@ const GenerateRunPage = () => {
                 />
               </div>
               <p className="text-xs text-gray-400">
-                Aliaset sparas på denna enhet och kommer ihåg nästa gång.
+                Lämna tomt så används ett automatiskt ID. Aliaset sparas om du fyller i det.
               </p>
             </div>
           )}
