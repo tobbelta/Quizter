@@ -107,6 +107,30 @@ const PlayRunPage = () => {
   const scheduledTimeNotificationRef = useRef(null);
   const instanceId = useMemo(() => runSessionService.getInstanceId(), []);
   const [isPassiveSession, setIsPassiveSession] = useState(false);
+  const [forceQuestionVisible, setForceQuestionVisible] = useState(false);
+  const questionVisibilityKey = useMemo(() => {
+    if (!runId || !currentParticipant?.id) return '';
+    return `quizter:questionVisible:${runId}:${currentParticipant.id}`;
+  }, [runId, currentParticipant?.id]);
+
+  const readQuestionVisibility = useCallback(() => {
+    if (!questionVisibilityKey || typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(questionVisibilityKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }, [questionVisibilityKey]);
+
+  const writeQuestionVisibility = useCallback((payload) => {
+    if (!questionVisibilityKey || typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(questionVisibilityKey, JSON.stringify(payload));
+    } catch (error) {
+      // Ignore
+    }
+  }, [questionVisibilityKey]);
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
   const isAppForeground = useAppVisibility();
@@ -308,12 +332,30 @@ const PlayRunPage = () => {
   useEffect(() => {
     setSelectedOption(null);
     setFeedback(null);
+    const storedVisibility = readQuestionVisibility();
+    const storedIndex = Number.isFinite(storedVisibility?.questionIndex)
+      ? storedVisibility.questionIndex
+      : null;
+    const currentQuestionId = orderedQuestions[currentOrderIndex]?.id || null;
+    const shouldRestore = Boolean(
+      storedVisibility?.visible
+      && storedIndex === currentOrderIndex
+      && (!storedVisibility?.questionId || storedVisibility.questionId === currentQuestionId)
+    );
+
+    if (shouldRestore) {
+      setQuestionVisible(true);
+      setForceQuestionVisible(true);
+      return;
+    }
+    setForceQuestionVisible(false);
+
     if (isTimeBased) {
       setQuestionVisible(false);
     } else {
       setQuestionVisible(!manualMode);
     }
-  }, [currentParticipant?.currentOrder, isTimeBased, manualMode]);
+  }, [currentParticipant?.currentOrder, isTimeBased, manualMode, orderedQuestions, currentOrderIndex, readQuestionVisibility]);
 
 
   const orderedQuestions = useMemo(() => {
@@ -636,14 +678,26 @@ const PlayRunPage = () => {
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
   const shouldShowQuestion = isTimeBased
-    ? timedShouldShowQuestion
+    ? forceQuestionVisible || timedShouldShowQuestion
     : isDistanceBased
-      ? (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
-      : (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-baserad: checkpoint eller manuell
+      ? forceQuestionVisible || (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
+      : forceQuestionVisible || (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-baserad: checkpoint eller manuell
 
   const currentQuestion = shouldShowQuestion
     ? orderedQuestions[currentOrderIndex] || null
     : null;
+
+  useEffect(() => {
+    if (!questionVisibilityKey || isPassiveSession) return;
+    const payload = {
+      visible: Boolean(currentQuestion),
+      questionIndex: currentOrderIndex,
+      questionId: currentQuestion?.id || null,
+      updatedAt: Date.now()
+    };
+    writeQuestionVisibility(payload);
+    setForceQuestionVisible(Boolean(currentQuestion));
+  }, [currentQuestion, currentOrderIndex, questionVisibilityKey, writeQuestionVisibility, isPassiveSession]);
 
   useEffect(() => {
     if (!isTimeBased || !timedShouldShowQuestion) {
@@ -876,8 +930,11 @@ const PlayRunPage = () => {
     
     // För time-based runs: rensa timer och shouldShowQuestion för DENNA fråga innan vi svarar
     if (isTimeBased) {
-      const storageKey = `timeQuestionTrigger_q${currentOrderIndex}`;
-      sessionStorage.removeItem(storageKey);
+      const storageKeyPrefix = runId && currentParticipant?.id
+        ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+        : '';
+      const storageKey = storageKeyPrefix ? `${storageKeyPrefix}:q${currentOrderIndex}` : `timeQuestionTrigger_q${currentOrderIndex}`;
+      localStorage.removeItem(storageKey);
       console.log('[PlayRunPage] Cleared timer for answered question', currentOrderIndex);
       
       // VIKTIGT: Rensa shouldShowQuestion INNAN currentOrderIndex ökar
