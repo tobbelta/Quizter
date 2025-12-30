@@ -54,8 +54,8 @@ const AdminPaymentsPage = () => {
     loadSettings();
   }, [isSuperUser, loadSettings, navigate]);
 
-  const providerList = settings?.providers || [];
-  const methodCatalog = catalog?.methods || [];
+  const providerList = useMemo(() => settings?.providers || [], [settings?.providers]);
+  const methodCatalog = useMemo(() => catalog?.methods || [], [catalog?.methods]);
 
   const updateSettings = (updates) => {
     setSettings((prev) => ({

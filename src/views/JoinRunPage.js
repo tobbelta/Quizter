@@ -112,7 +112,7 @@ const JoinRunPage = () => {
     if (!pendingJoin) return;
 
     try {
-      const { run, participantDetails, joinCode } = pendingJoin;
+      const { participantDetails, joinCode } = pendingJoin;
       const { run: joinedRun } = await joinRunByCode(joinCode, {
         ...participantDetails,
         paymentId: paymentResult?.paymentId || null
