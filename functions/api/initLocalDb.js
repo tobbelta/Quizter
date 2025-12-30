@@ -154,6 +154,7 @@ export async function onRequestGet({ env }) {
         run_id TEXT NOT NULL,
         user_id TEXT,
         alias TEXT NOT NULL,
+        device_id TEXT,
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
@@ -246,6 +247,48 @@ export async function onRequestGet({ env }) {
         provider_type TEXT,
         is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
+      );
+
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        created_by TEXT
+      );
+
+      CREATE TABLE message_states (
+        message_id TEXT NOT NULL,
+        recipient_type TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        read_at INTEGER,
+        deleted_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        PRIMARY KEY (message_id, recipient_type, recipient_id)
+      );
+
+      CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
       );
 
       CREATE TABLE ai_rule_sets (

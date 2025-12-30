@@ -44,6 +44,7 @@ const normalizeParticipant = (participant) => {
     runId: participant.run_id,
     userId: participant.user_id,
     alias: participant.alias,
+    deviceId: participant.device_id || null,
     joinedAt: normalizeTimestamp(participant.joined_at),
     completedAt: normalizeTimestamp(participant.completed_at),
     lastSeen: normalizeTimestamp(participant.last_seen)
@@ -80,12 +81,19 @@ export async function onRequest(context) {
 
   await ensureDatabase(env.DB);
 
-  const isAnonymous = userId.startsWith('anon:');
-  const anonKey = isAnonymous ? userId.slice(5).trim() : null;
+  const isDevice = userId.startsWith('device:');
+  const isAnonymous = isDevice || userId.startsWith('anon:');
+  const anonKey = userId.startsWith('anon:') ? userId.slice(5).trim() : null;
+  const deviceKey = isDevice ? userId.slice(7).trim() : null;
 
   try {
     let participants = [];
-    if (anonKey) {
+    if (deviceKey) {
+      const participantsResult = await env.DB.prepare(
+        'SELECT * FROM participants WHERE device_id = ? ORDER BY joined_at DESC'
+      ).bind(deviceKey).all();
+      participants = participantsResult.results || [];
+    } else if (anonKey) {
       const participant = await env.DB.prepare('SELECT * FROM participants WHERE id = ?')
         .bind(anonKey)
         .first();

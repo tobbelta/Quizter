@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import MessageDialog from '../components/shared/MessageDialog';
 import { questionService } from '../services/questionService';
+import { messageService } from '../services/messageService';
 
 const SuperUserUsersPage = () => {
   const navigate = useNavigate();
@@ -17,11 +18,26 @@ const SuperUserUsersPage = () => {
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [showMessageForm, setShowMessageForm] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageForm, setMessageForm] = useState({
+    title: '',
+    body: '',
+    type: 'info'
+  });
   const [selectedUser, setSelectedUser] = useState(null);
   const [userRuns, setUserRuns] = useState([]);
   const [isRunsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('sv');
+  const isSelectableUser = (user) => {
+    if (!user?.id) return false;
+    if (user.id === currentUser?.id) return false;
+    if (user.isAnonymous && !user.deviceId) return false;
+    return true;
+  };
+
+  const getSelectableUsers = (list) => list.filter((user) => isSelectableUser(user));
 
   useEffect(() => {
     if (!isSuperUser) {
@@ -47,11 +63,8 @@ const SuperUserUsersPage = () => {
   }, [isSuperUser, navigate]);
 
   const handleToggleUser = (userId) => {
-    if (userId?.startsWith('anon:')) {
-      return;
-    }
-    // Förhindra att man markerar sig själv
-    if (userId === currentUser?.id) {
+    const targetUser = users.find((entry) => entry.id === userId);
+    if (targetUser && !isSelectableUser(targetUser)) {
       return;
     }
 
@@ -67,8 +80,7 @@ const SuperUserUsersPage = () => {
   };
 
   const handleSelectAll = () => {
-    // Filtrera bort nuvarande användare från alla användare
-    const selectableUsers = filteredUsers.filter(u => u.id !== currentUser?.id && !u.isAnonymous);
+    const selectableUsers = getSelectableUsers(filteredUsers);
 
     if (selectedUsers.size === selectableUsers.length) {
       setSelectedUsers(new Set());
@@ -104,6 +116,75 @@ const SuperUserUsersPage = () => {
         message: 'Kunde inte radera alla användare. Se konsolen för detaljer.',
         type: 'error'
       });
+    }
+  };
+
+  const handleSendMessage = async (event) => {
+    event.preventDefault();
+    const title = messageForm.title.trim();
+    const body = messageForm.body.trim();
+    if (!title || !body) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ogiltigt meddelande',
+        message: 'Titel och meddelande får inte vara tomma.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    const recipients = Array.from(selectedUsers)
+      .map((userId) => users.find((entry) => entry.id === userId))
+      .filter((user) => user && isSelectableUser(user));
+    if (recipients.length === 0) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Ingen mottagare',
+        message: 'Välj minst en användare att skicka till.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setSendingMessage(true);
+    try {
+      const payload = {
+        title,
+        body,
+        type: messageForm.type,
+        adminId: currentUser?.id || null,
+        metadata: { source: 'users_page' }
+      };
+      await Promise.all(
+        recipients.map((user) => {
+          const isAnonymous = user?.isAnonymous && user?.deviceId;
+          return messageService.sendMessage({
+            ...payload,
+            targetType: isAnonymous ? 'device' : 'user',
+            targetId: isAnonymous ? user.deviceId : user.id,
+            userId: isAnonymous ? null : user.id,
+            deviceId: isAnonymous ? user.deviceId : null
+          }, currentUser?.email || '');
+        })
+      );
+      setDialogConfig({
+        isOpen: true,
+        title: 'Meddelande skickat',
+        message: `Meddelande skickat till ${recipients.length} användare.`,
+        type: 'success'
+      });
+      setShowMessageForm(false);
+      setMessageForm({ title: '', body: '', type: 'info' });
+    } catch (error) {
+      console.error('Kunde inte skicka meddelande:', error);
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte skicka meddelande',
+        message: error.message || 'Kunde inte skicka meddelande.',
+        type: 'error'
+      });
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -166,9 +247,11 @@ const SuperUserUsersPage = () => {
     const matchesSearch =
       user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.id?.toLowerCase().includes(searchTerm.toLowerCase());
+      user.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.deviceId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
+  const selectableUsers = getSelectableUsers(filteredUsers);
 
   if (!isSuperUser) {
     return null;
@@ -193,10 +276,19 @@ const SuperUserUsersPage = () => {
               onClick={handleSelectAll}
               className="rounded bg-slate-700 px-4 py-2 font-semibold text-gray-200 hover:bg-slate-600"
             >
-              {selectedUsers.size === filteredUsers.filter(u => u.id !== currentUser?.id).length
+              {selectableUsers.length > 0 && selectedUsers.size === selectableUsers.length
                 ? 'Avmarkera alla'
                 : 'Markera alla'}
             </button>
+
+            {selectedUsers.size > 0 && (
+              <button
+                onClick={() => setShowMessageForm((prev) => !prev)}
+                className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400"
+              >
+                {showMessageForm ? 'Stäng meddelande' : `Skicka meddelande (${selectedUsers.size})`}
+              </button>
+            )}
 
             {selectedUsers.size > 0 && (
               <button
@@ -209,6 +301,58 @@ const SuperUserUsersPage = () => {
           </div>
         </div>
 
+        {showMessageForm && selectedUsers.size > 0 && (
+          <form onSubmit={handleSendMessage} className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-900/60 p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-emerald-200">
+                  Skicka meddelande till {selectedUsers.size} användare
+                </h3>
+                <span className="text-xs text-slate-400">Kräver användare eller device-id</span>
+              </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-gray-200">Rubrik</label>
+              <input
+                type="text"
+                value={messageForm.title}
+                onChange={(event) => setMessageForm((prev) => ({ ...prev, title: event.target.value }))}
+                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-gray-200"
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-gray-200">Meddelande</label>
+              <textarea
+                value={messageForm.body}
+                onChange={(event) => setMessageForm((prev) => ({ ...prev, body: event.target.value }))}
+                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2 text-gray-200 min-h-28"
+                required
+              />
+            </div>
+            <div className="flex flex-wrap gap-3 items-center justify-between">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-gray-300">Typ</label>
+                <select
+                  value={messageForm.type}
+                  onChange={(event) => setMessageForm((prev) => ({ ...prev, type: event.target.value }))}
+                  className="rounded bg-slate-800 border border-slate-600 px-3 py-2 text-gray-200"
+                >
+                  <option value="info">Info</option>
+                  <option value="success">Framgång</option>
+                  <option value="warning">Varning</option>
+                  <option value="error">Fel</option>
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={sendingMessage}
+                className="rounded bg-emerald-500 px-4 py-2 font-semibold text-black hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-300"
+              >
+                {sendingMessage ? 'Skickar...' : 'Skicka'}
+              </button>
+            </div>
+          </form>
+        )}
+
         {isLoading ? (
           <div className="text-center py-12 text-gray-400">Laddar användare...</div>
         ) : filteredUsers.length === 0 ? (
@@ -219,6 +363,7 @@ const SuperUserUsersPage = () => {
               const isCurrentUser = user.id === currentUser?.id;
               const isSuperUserAccount = user.superUser === true;
               const isAnonymousUser = user.isAnonymous === true;
+              const canSelect = isSelectableUser(user);
 
               return (
                 <div
@@ -236,7 +381,7 @@ const SuperUserUsersPage = () => {
                       type="checkbox"
                       checked={selectedUsers.has(user.id)}
                       onChange={() => handleToggleUser(user.id)}
-                      disabled={isCurrentUser || isAnonymousUser}
+                      disabled={!canSelect}
                       className="mt-1 w-5 h-5 rounded disabled:opacity-30"
                     />
 
@@ -271,6 +416,11 @@ const SuperUserUsersPage = () => {
                           <span className="font-semibold">ID:</span> {user.id}
                         </div>
                       </div>
+                      {user.isAnonymous && user.deviceId && (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Device ID: <span className="font-mono">{user.deviceId}</span>
+                        </div>
+                      )}
 
                       {user.createdAt && (
                         <div className="mt-2 text-xs text-gray-500">

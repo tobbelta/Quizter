@@ -126,6 +126,7 @@ async function ensureParticipantsSchema(db) {
     { name: 'alias', ddl: 'alias TEXT' },
     { name: 'joined_at', ddl: 'joined_at INTEGER' },
     { name: 'run_id', ddl: 'run_id TEXT' },
+    { name: 'device_id', ddl: 'device_id TEXT' },
     { name: 'payment_status', ddl: 'payment_status TEXT' },
     { name: 'payment_amount', ddl: 'payment_amount INTEGER' },
     { name: 'payment_currency', ddl: 'payment_currency TEXT' },
@@ -251,6 +252,113 @@ async function ensurePaymentsSchema(db) {
   ]);
 }
 
+async function ensureMessagesSchema(db) {
+  const messagesExists = await tableExists(db, 'messages');
+  if (!messagesExists) {
+    await db.prepare(`
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        created_by TEXT
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'messages', [
+    { name: 'title', ddl: 'title TEXT' },
+    { name: 'body', ddl: 'body TEXT' },
+    { name: 'type', ddl: 'type TEXT' },
+    { name: 'target_type', ddl: 'target_type TEXT' },
+    { name: 'target_id', ddl: 'target_id TEXT' },
+    { name: 'metadata', ddl: 'metadata TEXT' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+    { name: 'updated_at', ddl: 'updated_at INTEGER' },
+    { name: 'created_by', ddl: 'created_by TEXT' },
+  ]);
+
+  const statesExists = await tableExists(db, 'message_states');
+  if (!statesExists) {
+    await db.prepare(`
+      CREATE TABLE message_states (
+        message_id TEXT NOT NULL,
+        recipient_type TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        read_at INTEGER,
+        deleted_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        PRIMARY KEY (message_id, recipient_type, recipient_id)
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'message_states', [
+    { name: 'message_id', ddl: 'message_id TEXT' },
+    { name: 'recipient_type', ddl: 'recipient_type TEXT' },
+    { name: 'recipient_id', ddl: 'recipient_id TEXT' },
+    { name: 'read_at', ddl: 'read_at INTEGER' },
+    { name: 'deleted_at', ddl: 'deleted_at INTEGER' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+    { name: 'updated_at', ddl: 'updated_at INTEGER' },
+  ]);
+
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_messages_target ON messages(target_type, target_id)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_message_states_recipient ON message_states(recipient_type, recipient_id)').run();
+}
+
+async function ensureAnalyticsSchema(db) {
+  const analyticsExists = await tableExists(db, 'analytics_events');
+  if (!analyticsExists) {
+    await db.prepare(`
+      CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'analytics_events', [
+    { name: 'device_id', ddl: 'device_id TEXT' },
+    { name: 'user_id', ddl: 'user_id TEXT' },
+    { name: 'event_type', ddl: 'event_type TEXT' },
+    { name: 'timestamp', ddl: 'timestamp INTEGER' },
+    { name: 'device_type', ddl: 'device_type TEXT' },
+    { name: 'os', ddl: 'os TEXT' },
+    { name: 'browser', ddl: 'browser TEXT' },
+    { name: 'timezone', ddl: 'timezone TEXT' },
+    { name: 'user_agent', ddl: 'user_agent TEXT' },
+    { name: 'language', ddl: 'language TEXT' },
+    { name: 'screen_resolution', ddl: 'screen_resolution TEXT' },
+    { name: 'path', ddl: 'path TEXT' },
+    { name: 'metadata', ddl: 'metadata TEXT' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+  ]);
+
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_timestamp ON analytics_events(timestamp)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_device ON analytics_events(device_id)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type)').run();
+}
+
 async function addMissingColumns(db) {
   try {
     await ensureRunsSchema(db);
@@ -261,6 +369,8 @@ async function addMissingColumns(db) {
     await ensureAudienceTables(db);
     await ensureAiRulesTable(db);
     await ensurePaymentsSchema(db);
+    await ensureMessagesSchema(db);
+    await ensureAnalyticsSchema(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
     try {
@@ -421,6 +531,7 @@ export async function ensureDatabase(db) {
         run_id TEXT NOT NULL,
         user_id TEXT,
         alias TEXT NOT NULL,
+        device_id TEXT,
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
@@ -504,6 +615,45 @@ export async function ensureDatabase(db) {
         is_custom BOOLEAN DEFAULT FALSE,
         updated_at INTEGER
       )`,
+      `CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        created_by TEXT
+      )`,
+      `CREATE TABLE message_states (
+        message_id TEXT NOT NULL,
+        recipient_type TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        read_at INTEGER,
+        deleted_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        PRIMARY KEY (message_id, recipient_type, recipient_id)
+      )`,
+      `CREATE TABLE analytics_events (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        user_id TEXT,
+        event_type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        device_type TEXT,
+        os TEXT,
+        browser TEXT,
+        timezone TEXT,
+        user_agent TEXT,
+        language TEXT,
+        screen_resolution TEXT,
+        path TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      )`,
       `CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,
         scope_id TEXT NOT NULL,
@@ -540,6 +690,8 @@ export async function ensureDatabase(db) {
     await ensureCategoriesTable(db);
     await ensureAudienceTables(db);
     await ensurePaymentsSchema(db);
+    await ensureMessagesSchema(db);
+    await ensureAnalyticsSchema(db);
     dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed

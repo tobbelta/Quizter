@@ -13,31 +13,70 @@ const clampInterval = (minutes) => {
 };
 
 // Helper för att spara/ladda timer state
-const getStorageKey = (index) => `timeQuestionTrigger_q${index}`;
+const getStorageKey = (prefix, index) => {
+  if (!prefix) return `timeQuestionTrigger_q${index}`;
+  return `${prefix}:q${index}`;
+};
 
-const saveTimerState = (questionIndex, targetTimestamp) => {
+const getVisibleKey = (prefix) => {
+  if (!prefix) return 'timeQuestionTrigger_visible';
+  return `${prefix}:visible`;
+};
+
+const loadVisibleIndex = (prefix) => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getVisibleKey(prefix));
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const saveVisibleIndex = (prefix, index) => {
   if (typeof window === 'undefined') return;
   try {
-    sessionStorage.setItem(getStorageKey(questionIndex), targetTimestamp.toString());
+    if (!Number.isFinite(index)) return;
+    localStorage.setItem(getVisibleKey(prefix), String(index));
+  } catch (error) {
+    // Ignore
+  }
+};
+
+const clearVisibleIndex = (prefix) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(getVisibleKey(prefix));
+  } catch (error) {
+    // Ignore
+  }
+};
+
+const saveTimerState = (storageKeyPrefix, questionIndex, targetTimestamp) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(getStorageKey(storageKeyPrefix, questionIndex), targetTimestamp.toString());
   } catch (e) {
     console.warn('[TimeQuestionTrigger] Could not save timer state', e);
   }
 };
 
-const loadTimerState = (questionIndex) => {
+const loadTimerState = (storageKeyPrefix, questionIndex) => {
   if (typeof window === 'undefined') return null;
   try {
-    const saved = sessionStorage.getItem(getStorageKey(questionIndex));
+    const saved = localStorage.getItem(getStorageKey(storageKeyPrefix, questionIndex));
     return saved ? parseInt(saved, 10) : null;
   } catch (e) {
     return null;
   }
 };
 
-const clearTimerState = (questionIndex) => {
+const clearTimerState = (storageKeyPrefix, questionIndex) => {
   if (typeof window === 'undefined') return;
   try {
-    sessionStorage.removeItem(getStorageKey(questionIndex));
+    localStorage.removeItem(getStorageKey(storageKeyPrefix, questionIndex));
   } catch (e) {
     // Ignore
   }
@@ -45,21 +84,33 @@ const clearTimerState = (questionIndex) => {
 
 const useTimeQuestionTrigger = ({
   isEnabled,
+  isPaused = false,
   intervalMinutes,
   currentQuestionIndex,
   totalQuestions,
   onTimerScheduled,
-  onTimerCleared
+  onTimerCleared,
+  storageKeyPrefix = ''
 }) => {
   const safeMinutes = clampInterval(intervalMinutes);
   const intervalMs = useMemo(() => safeMinutes * MS_PER_MINUTE, [safeMinutes]);
+  const initialVisibleIndex = useMemo(() => {
+    if (!isEnabled) return null;
+    return loadVisibleIndex(storageKeyPrefix);
+  }, [isEnabled, storageKeyPrefix]);
 
-  const [shouldShowQuestion, setShouldShowQuestion] = useState(() => !isEnabled);
+  const [shouldShowQuestion, setShouldShowQuestion] = useState(() => {
+    if (!isEnabled) return true;
+    return initialVisibleIndex === currentQuestionIndex;
+  });
   const [timeRemainingMs, setTimeRemainingMs] = useState(() => {
     if (!isEnabled) return 0;
+    if (initialVisibleIndex === currentQuestionIndex) {
+      return 0;
+    }
     
     // Försök ladda sparad timer
-    const savedTarget = loadTimerState(currentQuestionIndex);
+    const savedTarget = loadTimerState(storageKeyPrefix, currentQuestionIndex);
     if (savedTarget) {
       const remaining = Math.max(0, savedTarget - Date.now());
       return remaining;
@@ -94,7 +145,8 @@ const useTimeQuestionTrigger = ({
     questionShownByTimerRef.current = true; // Mark that timer triggered this
     setShouldShowQuestion(true);
     setTimeRemainingMs(0);
-  }, [clearTimers, currentQuestionIndex]);
+    saveVisibleIndex(storageKeyPrefix, currentQuestionIndex);
+  }, [clearTimers, currentQuestionIndex, storageKeyPrefix]);
 
   const resetForNextQuestion = useCallback(() => {
     console.log('[TimeQuestionTrigger] resetForNextQuestion called - setting shouldShowQuestion=false');
@@ -102,19 +154,20 @@ const useTimeQuestionTrigger = ({
     questionShownByTimerRef.current = false; // Reset flag
     setShouldShowQuestion(false);
     setTimeRemainingMs(intervalMs);
-  }, [clearTimers, intervalMs]);
+    clearVisibleIndex(storageKeyPrefix);
+  }, [clearTimers, intervalMs, storageKeyPrefix]);
 
   const armNextQuestion = useCallback(() => {
     console.log('[TimeQuestionTrigger] 🔵 armNextQuestion called for index:', currentQuestionIndex, 'isEnabled:', isEnabled);
     
-    if (!isEnabled) {
+    if (!isEnabled || isPaused) {
       console.log('[TimeQuestionTrigger] Not enabled, returning');
       return;
     }
     if (currentQuestionIndex >= totalQuestions) {
       console.log('[TimeQuestionTrigger] All questions done, showing question now');
       showQuestionNow();
-      clearTimerState(currentQuestionIndex);
+      clearTimerState(storageKeyPrefix, currentQuestionIndex);
       return;
     }
 
@@ -127,9 +180,16 @@ const useTimeQuestionTrigger = ({
     console.log('[TimeQuestionTrigger] Cleared old timers for questions 0 to', currentQuestionIndex - 1);
     
     // Kolla om vi har en sparad timer för denna fråga
-    const savedTarget = loadTimerState(currentQuestionIndex);
+    const savedTarget = loadTimerState(storageKeyPrefix, currentQuestionIndex);
     let target;
     
+    if (savedTarget && savedTarget <= Date.now()) {
+      console.log('[TimeQuestionTrigger] Saved timer already expired for question', currentQuestionIndex);
+      showQuestionNow();
+      clearTimerState(storageKeyPrefix, currentQuestionIndex);
+      return;
+    }
+
     if (savedTarget && savedTarget > Date.now()) {
       // Återställ från sparad timer
       target = savedTarget;
@@ -137,7 +197,7 @@ const useTimeQuestionTrigger = ({
     } else {
       // Skapa ny timer
       target = Date.now() + intervalMs;
-      saveTimerState(currentQuestionIndex, target);
+      saveTimerState(storageKeyPrefix, currentQuestionIndex, target);
       console.log('[TimeQuestionTrigger] Created new timer for question', currentQuestionIndex, 'intervalMs:', intervalMs);
     }
     
@@ -155,7 +215,7 @@ const useTimeQuestionTrigger = ({
     timeoutRef.current = setTimeout(() => {
       console.log('[TimeQuestionTrigger] ⏰ setTimeout fired for question', currentQuestionIndex);
       showQuestionNow();
-      clearTimerState(currentQuestionIndex);
+      clearTimerState(storageKeyPrefix, currentQuestionIndex);
     }, remainingMs);
 
     tickerRef.current = setInterval(() => {
@@ -165,23 +225,49 @@ const useTimeQuestionTrigger = ({
       if (remaining === 0) {
         console.log('[TimeQuestionTrigger] ⏰ Ticker reached 0 for question', currentQuestionIndex);
         showQuestionNow();
-        clearTimerState(currentQuestionIndex);
+        clearTimerState(storageKeyPrefix, currentQuestionIndex);
       }
     }, 1000);
-  }, [clearTimers, currentQuestionIndex, intervalMs, isEnabled, onTimerScheduled, showQuestionNow, totalQuestions]);
+  }, [clearTimers, currentQuestionIndex, intervalMs, isEnabled, isPaused, onTimerScheduled, showQuestionNow, storageKeyPrefix, totalQuestions]);
 
   useEffect(() => {
     if (!isEnabled) {
       clearTimers();
       setShouldShowQuestion(true);
       setTimeRemainingMs(0);
+      clearVisibleIndex(storageKeyPrefix);
       return;
     }
 
-    if (!targetTimestampRef.current && currentQuestionIndex === 0) {
+    if (isPaused) {
+      clearTimers(false);
+      return;
+    }
+
+    if (loadVisibleIndex(storageKeyPrefix) === currentQuestionIndex) {
+      setShouldShowQuestion(true);
+      setTimeRemainingMs(0);
+      clearTimers(false);
+      return;
+    }
+
+    if (!targetTimestampRef.current && !shouldShowQuestion) {
       armNextQuestion();
     }
-  }, [armNextQuestion, clearTimers, currentQuestionIndex, isEnabled]);
+  }, [armNextQuestion, clearTimers, currentQuestionIndex, isEnabled, isPaused, shouldShowQuestion, storageKeyPrefix]);
+
+  useEffect(() => {
+    if (!isEnabled) return;
+    const visibleIndex = loadVisibleIndex(storageKeyPrefix);
+    if (visibleIndex === currentQuestionIndex) {
+      setShouldShowQuestion(true);
+      setTimeRemainingMs(0);
+      return;
+    }
+    if (!shouldShowQuestion && !targetTimestampRef.current) {
+      armNextQuestion();
+    }
+  }, [armNextQuestion, currentQuestionIndex, isEnabled, shouldShowQuestion, storageKeyPrefix]);
 
   useEffect(() => clearTimers, [clearTimers]);
 

@@ -16,7 +16,7 @@ const JoinRunPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, loginAsGuest, isAuthInitialized } = useAuth();
-  const { joinRunByCode } = useRun();
+  const { joinRunByCode, attachToRun } = useRun();
 
   const [joinCode, setJoinCode] = useState('');
   const initialAlias = useMemo(() => userPreferencesService.getAlias() || '', []);
@@ -41,21 +41,18 @@ const JoinRunPage = () => {
     }
 
     const requiresGuest = !currentUser || currentUser.isAnonymous;
-    if (requiresGuest && !alias.trim()) {
-      setError('Ange ett alias för att delta.');
-      return;
-    }
-
     let participantUser = currentUser;
-    if (requiresGuest && alias.trim()) {
-      const cleanAlias = alias.trim();
+    const cleanAlias = alias.trim();
+    if (contact) {
+      userPreferencesService.saveContact(contact);
+    }
+    if (requiresGuest && cleanAlias) {
       userPreferencesService.saveAlias(cleanAlias);
       setAlias(cleanAlias);
       setAliasCommitted(true);
-      if (contact) {
-        userPreferencesService.saveContact(contact);
-      }
       participantUser = await loginAsGuest({ alias: cleanAlias, contact });
+    } else if (requiresGuest && !participantUser) {
+      participantUser = await loginAsGuest({ contact });
     }
 
     try {
@@ -63,6 +60,17 @@ const JoinRunPage = () => {
       if (!run) {
         setError(`Ingen runda hittades med anslutningskod "${upperCode}"`);
         return;
+      }
+
+      const existingJoined = localStorageService.getJoinedRuns().find((entry) => entry.runId === run.id);
+      if (existingJoined?.participantId) {
+        try {
+          await attachToRun(run.id, existingJoined.participantId);
+          navigate(`/run/${run.id}/play`);
+          return;
+        } catch (attachError) {
+          localStorageService.removeJoinedRun(run.id);
+        }
       }
 
       const isHost = Boolean(participantUser?.id && run.createdBy && participantUser.id === run.createdBy);
@@ -75,6 +83,12 @@ const JoinRunPage = () => {
         contact: participantUser?.contact,
         isAnonymous: participantUser?.isAnonymous,
       };
+      if (participantUser?.isAnonymous) {
+        const deviceId = analyticsService.getDeviceId();
+        if (deviceId) {
+          participantDetails.deviceId = deviceId;
+        }
+      }
 
       if (requiresPayment) {
         setPendingJoin({
@@ -88,9 +102,7 @@ const JoinRunPage = () => {
 
       const { run: joinedRun } = await joinRunByCode(upperCode, participantDetails);
 
-      if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
-      }
+      localStorageService.addJoinedRun(joinedRun, participantDetails);
 
       analyticsService.logVisit('join_run', {
         runId: joinedRun.id,
@@ -105,7 +117,7 @@ const JoinRunPage = () => {
     } catch (joinError) {
       setError(joinError.message);
     }
-  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate]);
+  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate, attachToRun]);
 
   const handlePaymentSuccess = useCallback(async (paymentResult) => {
     setShowPaymentModal(false);
@@ -118,9 +130,7 @@ const JoinRunPage = () => {
         paymentId: paymentResult?.paymentId || null
       });
 
-      if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
-      }
+      localStorageService.addJoinedRun(joinedRun, participantDetails);
 
       analyticsService.logVisit('join_run', {
         runId: joinedRun.id,
@@ -136,7 +146,7 @@ const JoinRunPage = () => {
     } catch (joinError) {
       setPaymentError(joinError.message || 'Kunde inte ansluta efter betalning.');
     }
-  }, [pendingJoin, joinRunByCode, currentUser, navigate]);
+  }, [pendingJoin, joinRunByCode, navigate]);
 
   const handlePaymentCancel = () => {
     setShowPaymentModal(false);
@@ -182,12 +192,12 @@ const JoinRunPage = () => {
       if (currentUser && !currentUser.isAnonymous) {
         handleJoin(upperCode);
       }
-      // Om användaren är anonym men har sparat alias, anslut direkt
-      else if (currentUser?.isAnonymous && aliasCommitted) {
+      // Om användaren är anonym, anslut direkt (alias är valfritt)
+      else if (currentUser?.isAnonymous) {
         handleJoin(upperCode);
       }
     }
-  }, [location.search, currentUser, isAuthInitialized, aliasCommitted, handleJoin]);
+  }, [location.search, currentUser, isAuthInitialized, handleJoin]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -245,13 +255,13 @@ const JoinRunPage = () => {
         {(!currentUser || currentUser?.isAnonymous) && !aliasCommitted && (
           <div className="space-y-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
             <div>
-              <h2 className="text-base font-semibold text-cyan-200">Ditt alias</h2>
+              <h2 className="text-base font-semibold text-cyan-200">Ditt namn</h2>
               <p className="text-xs text-gray-400">
-                {alias ? 'Detta alias sparas på din enhet och används vid framtida anslutningar.' : 'Ange ett alias för att delta.'}
+                {alias ? 'Detta alias sparas på din enhet och används vid framtida anslutningar.' : 'Alias är valfritt. Lämna tomt så används ett automatiskt ID.'}
               </p>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-semibold text-slate-200">Alias</label>
+              <label className="mb-1 block text-sm font-semibold text-slate-200">Alias (valfritt)</label>
               <input
                 value={alias}
                 onChange={(event) => {

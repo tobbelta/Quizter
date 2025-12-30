@@ -183,6 +183,15 @@ export const updateJoinedRunProgress = (runId) => {
   safeSet(JOINED_RUNS_KEY, updated);
 };
 
+/**
+ * Tar bort en deltagande runda
+ */
+export const removeJoinedRun = (runId) => {
+  const runs = getJoinedRuns();
+  const updated = runs.filter(r => r.runId !== runId);
+  safeSet(JOINED_RUNS_KEY, updated);
+};
+
 export const localStorageService = {
   addCreatedRun,
   addJoinedRun,
@@ -194,5 +203,6 @@ export const localStorageService = {
   clearLocalData,
   getDataForMigration,
   updateCreatedRunStatus,
-  updateJoinedRunProgress
+  updateJoinedRunProgress,
+  removeJoinedRun
 };
