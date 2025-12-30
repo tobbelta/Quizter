@@ -339,7 +339,16 @@ const MyRunsPage = () => {
                   </p>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {run.status === 'active' && (
+                    <button
+                      onClick={() => navigate(`/join?code=${run.joinCode || ''}`)}
+                      disabled={!run.joinCode}
+                      className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-600 px-3 py-2 rounded text-sm font-medium text-black"
+                    >
+                      Anslut
+                    </button>
+                  )}
                   <button
                     onClick={() => navigate(`/run/${run.id}/admin`)}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded text-sm font-medium"
