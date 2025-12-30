@@ -187,15 +187,17 @@ const SuperUserAnalyticsPage = () => {
         return messageService.sendMessage({
           title: messageTitle,
           message: messageBody,
+          targetType: 'device',
+          targetId: deviceId,
           userId: device?.userId || null,
           deviceId: deviceId,
-          adminId: currentUser?.uid || null,
+          adminId: currentUser?.id || null,
           type: 'system',
           metadata: {
             sentFrom: 'analytics_page',
             sentBy: 'superuser'
           }
-        });
+        }, currentUser?.email || '');
       });
 
       await Promise.all(promises);

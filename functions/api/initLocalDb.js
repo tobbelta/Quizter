@@ -248,6 +248,30 @@ export async function onRequestGet({ env }) {
         updated_at INTEGER
       );
 
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        type TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        created_by TEXT
+      );
+
+      CREATE TABLE message_states (
+        message_id TEXT NOT NULL,
+        recipient_type TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        read_at INTEGER,
+        deleted_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER,
+        PRIMARY KEY (message_id, recipient_type, recipient_id)
+      );
+
       CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,
         scope_id TEXT NOT NULL,

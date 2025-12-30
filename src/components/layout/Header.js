@@ -200,7 +200,7 @@ const Header = ({ title = 'Quizter', children }) => {
   useEffect(() => {
     let isMounted = true;
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
 
     const loadUnread = async () => {
       try {
@@ -226,7 +226,7 @@ const Header = ({ title = 'Quizter', children }) => {
     }
 
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
 
     if (!deviceId && !userId) {
       setUnreadMessageCount(0);
