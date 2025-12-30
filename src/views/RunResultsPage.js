@@ -18,6 +18,7 @@ const RunResultsPage = () => {
   const navigate = useNavigate();
   const { currentRun, participants, currentParticipant, loadRunById, refreshParticipants } = useRun();
   const { currentUser, isAuthenticated } = useAuth();
+  const [anonymousAccessDenied, setAnonymousAccessDenied] = useState(false);
   const [showDetailedResults, setShowDetailedResults] = useState(false);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [donationFeedback, setDonationFeedback] = useState('');
@@ -39,6 +40,27 @@ const RunResultsPage = () => {
       loadRunById(runId).catch((error) => console.warn('Kunde inte ladda runda', error));
     }
   }, [currentRun, loadRunById, runId]);
+
+  useEffect(() => {
+    if (!runId) return;
+    const isAnonymous = !currentUser || currentUser.isAnonymous;
+    if (!isAnonymous) return;
+
+    let allowed = false;
+    try {
+      const key = `quizter:resultsAccess:${runId}`;
+      allowed = sessionStorage.getItem(key) === 'allowed';
+      if (allowed) {
+        sessionStorage.removeItem(key);
+      }
+    } catch (error) {
+      allowed = false;
+    }
+
+    if (!allowed) {
+      setAnonymousAccessDenied(true);
+    }
+  }, [currentUser, runId]);
 
   useEffect(() => {
     let isActive = true;
@@ -294,6 +316,26 @@ const RunResultsPage = () => {
     currentRun.createdBy === currentUser.id ||
     currentRun.createdByName === currentUser.name
   );
+
+  if (anonymousAccessDenied) {
+    return (
+      <div className="min-h-screen bg-slate-950">
+        <Header title="Resultat" />
+        <div className="mx-auto max-w-lg px-4 pt-24 text-center text-gray-200">
+          <h1 className="text-2xl font-semibold mb-4">Resultat sparas på konton</h1>
+          <p className="text-sm text-gray-300 mb-6">
+            Som oregistrerad spelare kan du bara se resultat direkt efter rundan. Skapa ett konto för att spara historik.
+          </p>
+          <button
+            onClick={() => navigate('/register')}
+            className="rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-black"
+          >
+            Skapa konto
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentRun) {
     return (

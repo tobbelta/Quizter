@@ -45,65 +45,53 @@ export const AuthProvider = ({ children }) => {
   }, [currentUser]);
 
 
-  /** Loggar in användare (alla kan skapa/ansluta rundor) */
-  const login = useCallback(async ({ email, password, name }) => {
-    // Kolla superuser-status via Cloudflare API
-    let isSuperUser = false;
-    if (email) {
-      try {
-        const response = await fetch('/api/isSuperuser', {
-          method: 'GET',
-          headers: { 'x-user-email': email }
-        });
-        const data = await response.json();
-        isSuperUser = data.isSuperuser === true;
-      } catch (err) {
-        console.warn('Kunde inte kolla superuser-status', err);
-      }
+  /** Loggar in användare via backend */
+  const login = useCallback(async ({ email, password }) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Kunde inte logga in.');
     }
-    const user = {
-      id: uuidv4(),
-      name: name || 'Användare',
-      email,
-      contact: email,
-      isAnonymous: false,
-      isSuperUser
-    };
-    if (process.env.NODE_ENV !== 'production') {
-      console.info('[Auth] login (lokalt) lyckades', { email, isSuperUser });
-    }
+    const user = data.user;
     setCurrentUser(user);
     setAuthInitialized(true);
     return user;
   }, []);
 
 
-  /** Registrerar användare och loggar in kontot direkt. */
-  const register = useCallback(async ({ name, email, password, contact }) => {
+  /** Startar registrering (skickar verifieringsmail). */
+  const register = useCallback(async ({ name, email }) => {
     if (!name?.trim()) {
       throw new Error('Ange ett namn.');
     }
-    let isSuperUser = false;
-    if (email) {
-      try {
-        const response = await fetch('/api/isSuperuser', {
-          method: 'GET',
-          headers: { 'x-user-email': email }
-        });
-        const data = await response.json();
-        isSuperUser = data.isSuperuser === true;
-      } catch (err) {
-        console.warn('Kunde inte kolla superuser-status', err);
-      }
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), email })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Kunde inte skapa konto.');
     }
-    const user = {
-      id: uuidv4(),
-      name: name.trim(),
-      email: email || null,
-      contact: contact || email || null,
-      isAnonymous: false,
-      isSuperUser
-    };
+    return data;
+  }, []);
+
+  /** Slutför registrering efter verifiering och loggar in. */
+  const completeRegistration = useCallback(async ({ token, password }) => {
+    const response = await fetch('/api/auth/completeRegistration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Kunde inte slutföra registreringen.');
+    }
+    const user = data.user;
     setCurrentUser(user);
     setAuthInitialized(true);
     return user;
@@ -136,6 +124,7 @@ export const AuthProvider = ({ children }) => {
     isAuthInitialized,
     login,
     register,
+    completeRegistration,
     loginAsGuest,
     logout
   }), [
@@ -143,6 +132,7 @@ export const AuthProvider = ({ children }) => {
     isAuthInitialized,
     login,
     register,
+    completeRegistration,
     loginAsGuest,
     logout
   ]);

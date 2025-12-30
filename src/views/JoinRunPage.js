@@ -29,6 +29,30 @@ const JoinRunPage = () => {
   const [pendingJoin, setPendingJoin] = useState(null);
   const [paymentError, setPaymentError] = useState('');
 
+  const confirmReplaceAnonymousRun = useCallback(async (nextRunId) => {
+    const existingRuns = localStorageService.getJoinedRuns();
+    const existing = existingRuns.length > 0 ? existingRuns[0] : null;
+    if (!existing || existing.runId === nextRunId) {
+      return true;
+    }
+
+    const confirmed = window.confirm(
+      'Du har redan en aktiv runda på denna enhet. Om du ansluter till en ny runda avslutas den nuvarande. Fortsätta?'
+    );
+    if (!confirmed) return false;
+
+    try {
+      if (existing.participantId) {
+        await runRepository.completeRun(existing.runId, existing.participantId);
+      }
+    } catch (error) {
+      console.warn('[JoinRunPage] Kunde inte avsluta tidigare runda:', error);
+    }
+
+    localStorageService.clearAnonymousRuns();
+    return true;
+  }, []);
+
   const handleJoin = useCallback(async (code) => {
     setError('');
     setSuccess('');
@@ -65,6 +89,11 @@ const JoinRunPage = () => {
         return;
       }
 
+      if (participantUser?.isAnonymous) {
+        const canProceed = await confirmReplaceAnonymousRun(run.id);
+        if (!canProceed) return;
+      }
+
       const isHost = Boolean(participantUser?.id && run.createdBy && participantUser.id === run.createdBy);
       const playerAmount = Number(run.paymentPlayerAmount || 0);
       const requiresPayment = playerAmount > 0 && !isHost;
@@ -86,10 +115,10 @@ const JoinRunPage = () => {
         return;
       }
 
-      const { run: joinedRun } = await joinRunByCode(upperCode, participantDetails);
+      const { run: joinedRun, participant } = await joinRunByCode(upperCode, participantDetails);
 
       if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
+        localStorageService.replaceJoinedRun(joinedRun, participant);
       }
 
       analyticsService.logVisit('join_run', {
@@ -105,7 +134,7 @@ const JoinRunPage = () => {
     } catch (joinError) {
       setError(joinError.message);
     }
-  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate]);
+  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate, confirmReplaceAnonymousRun]);
 
   const handlePaymentSuccess = useCallback(async (paymentResult) => {
     setShowPaymentModal(false);
@@ -113,13 +142,13 @@ const JoinRunPage = () => {
 
     try {
       const { participantDetails, joinCode } = pendingJoin;
-      const { run: joinedRun } = await joinRunByCode(joinCode, {
+      const { run: joinedRun, participant } = await joinRunByCode(joinCode, {
         ...participantDetails,
         paymentId: paymentResult?.paymentId || null
       });
 
       if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
+        localStorageService.replaceJoinedRun(joinedRun, participant);
       }
 
       analyticsService.logVisit('join_run', {
@@ -209,7 +238,7 @@ const JoinRunPage = () => {
 
       {localInfo.length > 0 && (
         <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">
-          Du har sparade rundor på denna enhet. Du hittar dem under <span className="font-semibold">Mina rundor</span> i menyn.
+          Du har en aktiv runda sparad på denna enhet. Du hittar den under <span className="font-semibold">Mina rundor</span> i menyn.
         </div>
       )}
 

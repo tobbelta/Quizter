@@ -23,6 +23,7 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS target_audiences;
       DROP TABLE IF EXISTS age_groups;
       DROP TABLE IF EXISTS donations;
+      DROP TABLE IF EXISTS email_settings;
       DROP TABLE IF EXISTS provider_settings;
       DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
@@ -32,7 +33,13 @@ export async function onRequestGet({ env }) {
         email TEXT UNIQUE,
         display_name TEXT,
         created_at INTEGER NOT NULL,
-        is_super_user BOOLEAN DEFAULT FALSE
+        is_super_user BOOLEAN DEFAULT FALSE,
+        password_hash TEXT,
+        password_salt TEXT,
+        email_verified BOOLEAN DEFAULT FALSE,
+        verification_token TEXT,
+        verification_expires INTEGER,
+        updated_at INTEGER
       );
       
       CREATE TABLE questions (
@@ -157,6 +164,8 @@ export async function onRequestGet({ env }) {
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
+        active_instance_id TEXT,
+        active_instance_at INTEGER,
         payment_status TEXT,
         payment_amount INTEGER,
         payment_currency TEXT,
@@ -191,6 +200,12 @@ export async function onRequestGet({ env }) {
       );
 
       CREATE TABLE payment_settings (
+        id TEXT PRIMARY KEY,
+        config TEXT NOT NULL,
+        updated_at INTEGER
+      );
+
+      CREATE TABLE email_settings (
         id TEXT PRIMARY KEY,
         config TEXT NOT NULL,
         updated_at INTEGER

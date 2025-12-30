@@ -132,6 +132,36 @@ async function ensureParticipantsSchema(db) {
     { name: 'payment_provider_id', ddl: 'payment_provider_id TEXT' },
     { name: 'payment_id', ddl: 'payment_id TEXT' },
     { name: 'is_anonymous', ddl: 'is_anonymous BOOLEAN DEFAULT FALSE' },
+    { name: 'active_instance_id', ddl: 'active_instance_id TEXT' },
+    { name: 'active_instance_at', ddl: 'active_instance_at INTEGER' },
+  ]);
+}
+
+async function ensureUsersSchema(db) {
+  const exists = await tableExists(db, 'users');
+  if (!exists) {
+    await db.prepare(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE,
+        display_name TEXT,
+        created_at INTEGER NOT NULL,
+        is_super_user BOOLEAN DEFAULT FALSE
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'users', [
+    { name: 'email', ddl: 'email TEXT' },
+    { name: 'display_name', ddl: 'display_name TEXT' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+    { name: 'is_super_user', ddl: 'is_super_user BOOLEAN DEFAULT FALSE' },
+    { name: 'password_hash', ddl: 'password_hash TEXT' },
+    { name: 'password_salt', ddl: 'password_salt TEXT' },
+    { name: 'email_verified', ddl: 'email_verified BOOLEAN DEFAULT FALSE' },
+    { name: 'verification_token', ddl: 'verification_token TEXT' },
+    { name: 'verification_expires', ddl: 'verification_expires INTEGER' },
+    { name: 'updated_at', ddl: 'updated_at INTEGER' },
   ]);
 }
 
@@ -249,10 +279,22 @@ async function ensurePaymentsSchema(db) {
     { name: 'created_at', ddl: 'created_at INTEGER' },
     { name: 'updated_at', ddl: 'updated_at INTEGER' },
   ]);
+
+  const emailSettingsExists = await tableExists(db, 'email_settings');
+  if (!emailSettingsExists) {
+    await db.prepare(`
+      CREATE TABLE email_settings (
+        id TEXT PRIMARY KEY,
+        config TEXT NOT NULL,
+        updated_at INTEGER
+      )
+    `).run();
+  }
 }
 
 async function addMissingColumns(db) {
   try {
+    await ensureUsersSchema(db);
     await ensureRunsSchema(db);
     await ensureParticipantsSchema(db);
     await ensureAnswersSchema(db);
@@ -314,7 +356,13 @@ export async function ensureDatabase(db) {
         email TEXT UNIQUE,
         display_name TEXT,
         created_at INTEGER NOT NULL,
-        is_super_user BOOLEAN DEFAULT FALSE
+        is_super_user BOOLEAN DEFAULT FALSE,
+        password_hash TEXT,
+        password_salt TEXT,
+        email_verified BOOLEAN DEFAULT FALSE,
+        verification_token TEXT,
+        verification_expires INTEGER,
+        updated_at INTEGER
       )`,
       `CREATE TABLE questions (
         id TEXT PRIMARY KEY,
@@ -424,6 +472,8 @@ export async function ensureDatabase(db) {
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,
+        active_instance_id TEXT,
+        active_instance_at INTEGER,
         payment_status TEXT,
         payment_amount INTEGER,
         payment_currency TEXT,
@@ -451,6 +501,11 @@ export async function ensureDatabase(db) {
         FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE SET NULL
       )`,
       `CREATE TABLE payment_settings (
+        id TEXT PRIMARY KEY,
+        config TEXT NOT NULL,
+        updated_at INTEGER
+      )`,
+      `CREATE TABLE email_settings (
         id TEXT PRIMARY KEY,
         config TEXT NOT NULL,
         updated_at INTEGER

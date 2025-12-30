@@ -68,6 +68,19 @@ export const addCreatedRun = (runData) => {
 };
 
 /**
+ * Ersätter lokala rundor (t.ex. för anonyma användare med max 1 runda).
+ */
+export const replaceCreatedRun = (runData) => {
+  if (!runData?.id) return;
+  const now = Date.now();
+  safeSet(CREATED_RUNS_KEY, [{
+    runId: runData.id,
+    createdAt: now,
+    updatedAt: now
+  }]);
+};
+
+/**
  * Lägger till en deltagande runda i localStorage
  * Sparar endast runId + participantId - all data finns i backend
  */
@@ -94,6 +107,20 @@ export const addJoinedRun = (runData, participantData) => {
     });
     safeSet(JOINED_RUNS_KEY, runs);
   }
+};
+
+/**
+ * Ersätter deltagna rundor (t.ex. för anonyma användare med max 1 runda).
+ */
+export const replaceJoinedRun = (runData, participantData) => {
+  if (!runData?.id) return;
+  const now = Date.now();
+  safeSet(JOINED_RUNS_KEY, [{
+    runId: runData.id,
+    participantId: participantData?.id || participantData?.participantId || null,
+    joinedAt: now,
+    updatedAt: now
+  }]);
 };
 
 /**
@@ -183,6 +210,25 @@ export const updateJoinedRunProgress = (runId) => {
   safeSet(JOINED_RUNS_KEY, updated);
 };
 
+/**
+ * Tar bort en deltagande runda
+ */
+export const removeJoinedRun = (runId) => {
+  const runs = getJoinedRuns();
+  const updated = runs.filter(r => r.runId !== runId);
+  safeSet(JOINED_RUNS_KEY, updated);
+};
+
+export const clearAnonymousRuns = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(CREATED_RUNS_KEY);
+    window.localStorage.removeItem(JOINED_RUNS_KEY);
+  } catch (error) {
+    console.warn('[LocalStorage] Kunde inte rensa anonyma rundor:', error);
+  }
+};
+
 export const localStorageService = {
   addCreatedRun,
   addJoinedRun,
@@ -194,5 +240,9 @@ export const localStorageService = {
   clearLocalData,
   getDataForMigration,
   updateCreatedRunStatus,
-  updateJoinedRunProgress
+  updateJoinedRunProgress,
+  replaceCreatedRun,
+  replaceJoinedRun,
+  removeJoinedRun,
+  clearAnonymousRuns
 };

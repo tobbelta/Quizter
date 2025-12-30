@@ -135,6 +135,7 @@ export const RunProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [participants, setParticipants] = useState([]);
+  const sessionStateRef = useRef({ instanceId: null, isActive: true });
 
   // Derived state (optimerad för performance)
   const runId = currentRun?.id || null;
@@ -147,6 +148,10 @@ export const RunProvider = ({ children }) => {
   useEffect(() => {
     participantIdRef.current = currentParticipant?.id || null;
   }, [currentParticipant]);
+
+  useEffect(() => {
+    sessionStateRef.current.isActive = true;
+  }, [runId]);
 
   // === CORE BUSINESS LOGIC METHODS (memoized för performance) ===
 
@@ -417,6 +422,18 @@ export const RunProvider = ({ children }) => {
     return { participant: updatedParticipant, correct };
   }, [currentRun, currentParticipant, refreshParticipants]);
 
+  const setSessionInstanceId = useCallback((instanceId) => {
+    sessionStateRef.current.instanceId = instanceId || null;
+  }, []);
+
+  const pauseSession = useCallback(() => {
+    sessionStateRef.current.isActive = false;
+  }, []);
+
+  const resumeSession = useCallback(() => {
+    sessionStateRef.current.isActive = true;
+  }, []);
+
   /**
    * Markerar deltagare som klar med rundan
    * Triggar completion-logik och final scoring
@@ -595,7 +612,11 @@ export const RunProvider = ({ children }) => {
 
     // Heartbeat-funktion med error handling
     const sendHeartbeat = () => {
-      runRepository.heartbeatParticipant(runId, participantId)
+      if (!sessionStateRef.current.isActive) return;
+      const payload = sessionStateRef.current.instanceId
+        ? { instanceId: sessionStateRef.current.instanceId }
+        : null;
+      runRepository.heartbeatParticipant(runId, participantId, payload)
         .catch((error) => {
           console.warn('[RunContext] Heartbeat misslyckades:', error);
 
@@ -678,6 +699,9 @@ export const RunProvider = ({ children }) => {
     attachToRun,
     submitAnswer,
     completeRunForParticipant,
+    pauseSession,
+    resumeSession,
+    setSessionInstanceId,
 
     // Utility functions
     refreshParticipants
@@ -699,6 +723,9 @@ export const RunProvider = ({ children }) => {
     attachToRun,
     submitAnswer,
     completeRunForParticipant,
+    pauseSession,
+    resumeSession,
+    setSessionInstanceId,
     refreshParticipants
   ]);
 

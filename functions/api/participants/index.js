@@ -47,7 +47,13 @@ export async function onRequest(context) {
           return await registerParticipant(env.DB, body);
         } else {
           // POST /api/participants/{id}/heartbeat - Update last seen
-          return await heartbeatParticipant(env.DB, participantId);
+          let payload = null;
+          try {
+            payload = await request.json();
+          } catch (error) {
+            payload = null;
+          }
+          return await heartbeatParticipant(env.DB, participantId, payload);
         }
 
       case 'DELETE':
@@ -333,11 +339,19 @@ async function registerParticipant(db, data) {
 /**
  * Update participant heartbeat
  */
-async function heartbeatParticipant(db, participantId) {
+async function heartbeatParticipant(db, participantId, payload = null) {
   try {
     const now = Math.floor(Date.now() / 1000);
-    
-    const result = await db.prepare('UPDATE participants SET last_seen = ? WHERE id = ?').bind(now, participantId).run();
+
+    const instanceId = payload?.instanceId || payload?.instance_id || null;
+    let result;
+    if (instanceId) {
+      result = await db.prepare(
+        'UPDATE participants SET last_seen = ?, active_instance_id = ?, active_instance_at = ? WHERE id = ?'
+      ).bind(now, instanceId, now, participantId).run();
+    } else {
+      result = await db.prepare('UPDATE participants SET last_seen = ? WHERE id = ?').bind(now, participantId).run();
+    }
     
     if (result.changes === 0) {
       return new Response(JSON.stringify({ 
@@ -350,7 +364,9 @@ async function heartbeatParticipant(db, participantId) {
 
     return new Response(JSON.stringify({
       success: true,
-      last_seen: now
+      last_seen: now,
+      active_instance_id: instanceId || null,
+      active_instance_at: instanceId ? now : null
     }), {
       headers: { 'Content-Type': 'application/json' }
     });

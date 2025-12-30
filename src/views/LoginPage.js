@@ -11,7 +11,6 @@ const LoginPage = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -27,7 +26,7 @@ const LoginPage = () => {
     setError('');
 
     try {
-      await login({ email, password, name });
+      await login({ email, password });
       navigate('/');
     } catch (authError) {
       setError(authError?.message || 'Kunde inte logga in. Kontrollera dina uppgifter.');
@@ -45,20 +44,6 @@ const LoginPage = () => {
           <h1 className="text-2xl font-bold mb-6 text-center">Logga in</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-200 mb-1">
-                Namn (valfritt)
-              </label>
-              <input
-                type="text"
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                placeholder="Ditt namn"
-              />
-            </div>
-
             <div>
               <label className="block text-sm font-semibold text-gray-200 mb-1">
                 E-post

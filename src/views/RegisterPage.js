@@ -2,25 +2,23 @@
  * RegisterPage - Registrering av nya användare
  */
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 
 const RegisterPage = () => {
-  const navigate = useNavigate();
   const { register } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [contact, setContact] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!name.trim() || !email.trim() || !password) {
-      setError('Fyll i namn, e-post och lösenord.');
+    if (!name.trim() || !email.trim()) {
+      setError('Fyll i namn och e-post.');
       return;
     }
 
@@ -28,8 +26,8 @@ const RegisterPage = () => {
     setError('');
 
     try {
-      await register({ name, email, password, contact });
-      navigate('/');
+      await register({ name, email });
+      setEmailSent(true);
     } catch (authError) {
       setError(authError?.message || 'Kunde inte skapa konto.');
     } finally {
@@ -76,34 +74,11 @@ const RegisterPage = () => {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-200 mb-1">
-                Lösenord *
-              </label>
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                placeholder="********"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-200 mb-1">
-                Kontakt (valfritt)
-              </label>
-              <input
-                type="text"
-                autoComplete="tel"
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                className="w-full rounded bg-slate-800 border border-slate-600 px-3 py-2"
-                placeholder="Telefon eller annan kontakt"
-              />
-            </div>
+            {emailSent && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-900/30 p-3 text-sm text-emerald-100">
+                Ett verifieringsmail har skickats. Öppna länken i mejlet för att välja lösenord.
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 text-sm text-red-200">
@@ -116,7 +91,7 @@ const RegisterPage = () => {
               disabled={isLoading}
               className="w-full rounded-lg px-4 py-3 font-semibold transition-colors bg-cyan-500 hover:bg-cyan-400 text-black disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Skapar konto...' : 'Skapa konto'}
+              {isLoading ? 'Skickar mail...' : 'Skicka verifieringsmail'}
             </button>
           </form>
 

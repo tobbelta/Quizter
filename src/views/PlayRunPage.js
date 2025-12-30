@@ -7,6 +7,7 @@ import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { useRun } from '../context/RunContext';
+import { useAuth } from '../context/AuthContext';
 import { questionService } from '../services/questionService';
 import RunMap from '../components/run/RunMap';
 import useRunLocation from '../hooks/useRunLocation';
@@ -21,6 +22,9 @@ import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
 import { buildJoinLink } from '../utils/joinLink';
 import useQRCode from '../hooks/useQRCode';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
+import { localStorageService } from '../services/localStorageService';
+import { runSessionService } from '../services/runSessionService';
+import { runRepository } from '../repositories/runRepository';
 import {
   ensureNotificationPermissions,
   notifyQuestionAvailable,
@@ -70,13 +74,17 @@ const formatCountdown = (ms) => {
 const PlayRunPage = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const {
     currentRun,
     currentParticipant,
     loadRunById,
     submitAnswer,
     completeRunForParticipant,
-    refreshParticipants
+    refreshParticipants,
+    pauseSession,
+    resumeSession,
+    setSessionInstanceId
   } = useRun();
   const {
     trackingEnabled,
@@ -102,9 +110,91 @@ const PlayRunPage = () => {
   const notifiedQuestionIdsRef = useRef(new Set());
   const handlingNotificationRef = useRef(false);
   const scheduledTimeNotificationRef = useRef(null);
+  const instanceId = useMemo(() => runSessionService.getInstanceId(), []);
+  const [isPassiveSession, setIsPassiveSession] = useState(false);
+  const [serverActiveInstanceId, setServerActiveInstanceId] = useState(null);
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
   const isAppForeground = useAppVisibility();
+
+  useEffect(() => {
+    setSessionInstanceId(instanceId);
+  }, [instanceId, setSessionInstanceId]);
+
+  const evaluatePassiveState = useCallback((localActiveId, serverActiveId) => {
+    if (localActiveId && localActiveId !== instanceId) return true;
+    if (serverActiveId && serverActiveId !== instanceId) return true;
+    return false;
+  }, [instanceId]);
+
+  const activateSession = useCallback(() => {
+    if (!runId || !instanceId) return;
+    runSessionService.setActiveInstance(runId, instanceId);
+    setIsPassiveSession(false);
+    resumeSession();
+    if (currentParticipant?.id) {
+      runRepository.heartbeatParticipant(runId, currentParticipant.id, { instanceId });
+    }
+  }, [instanceId, runId, resumeSession, currentParticipant?.id]);
+
+  useEffect(() => {
+    if (!runId || !instanceId) return undefined;
+
+    const localActive = runSessionService.getActiveInstance(runId);
+    if (!localActive) {
+      runSessionService.setActiveInstance(runId, instanceId);
+      setIsPassiveSession(false);
+    } else {
+      setIsPassiveSession(evaluatePassiveState(localActive, serverActiveInstanceId));
+    }
+
+    const unsubscribe = runSessionService.subscribe(runId, (nextActive) => {
+      setIsPassiveSession(evaluatePassiveState(nextActive, serverActiveInstanceId));
+    });
+
+    const handleBeforeUnload = () => {
+      runSessionService.releaseActiveInstance(runId, instanceId);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      runSessionService.releaseActiveInstance(runId, instanceId);
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [evaluatePassiveState, instanceId, runId, serverActiveInstanceId]);
+
+  useEffect(() => {
+    if (!runId || !currentParticipant?.id) return undefined;
+    let cancelled = false;
+
+    const refreshServerState = async () => {
+      try {
+        const participant = await runRepository.getParticipant(runId, currentParticipant.id);
+        if (cancelled) return;
+        const activeInstance = participant?.activeInstanceId || null;
+        setServerActiveInstanceId(activeInstance);
+        setIsPassiveSession(evaluatePassiveState(runSessionService.getActiveInstance(runId), activeInstance));
+      } catch (error) {
+        // Ignorera tillfälliga fel
+      }
+    };
+
+    refreshServerState();
+    const intervalId = window.setInterval(refreshServerState, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [currentParticipant?.id, evaluatePassiveState, runId]);
+
+  useEffect(() => {
+    if (isPassiveSession) {
+      pauseSession();
+    } else {
+      resumeSession();
+    }
+  }, [isPassiveSession, pauseSession, resumeSession]);
 
   const cancelNativeTimeNotification = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) {
@@ -862,8 +952,21 @@ const PlayRunPage = () => {
     if (!runIdentifier) {
       return;
     }
+    if (currentUser?.isAnonymous) {
+      try {
+        sessionStorage.setItem(`quizter:resultsAccess:${runIdentifier}`, 'allowed');
+      } catch (error) {
+        console.warn('[PlayRunPage] Kunde inte spara resultat-token:', error);
+      }
+      try {
+        localStorage.removeItem('tipspromenad:activeParticipant');
+      } catch (error) {
+        console.warn('[PlayRunPage] Kunde inte rensa aktiv deltagare:', error);
+      }
+      localStorageService.clearAnonymousRuns();
+    }
     navigate(`/run/${runIdentifier}/results`);
-  }, [completeRunForParticipant, currentRun?.id, navigate]);
+  }, [completeRunForParticipant, currentRun?.id, navigate, currentUser?.isAnonymous]);
 
   const submitAnswerFromNotification = useCallback(async (questionId, answerIndex) => {
     if (questionId == null || typeof answerIndex !== 'number' || Number.isNaN(answerIndex) || answerIndex < 0) {
@@ -1053,6 +1156,20 @@ const PlayRunPage = () => {
 
       {/* Huvudinnehåll - karta */}
       <main className="flex-1 relative overflow-hidden">
+        {isPassiveSession && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80">
+            <div className="rounded-xl border border-amber-400/60 bg-slate-900/90 px-6 py-5 text-center text-slate-100">
+              <p className="text-sm mb-3">Den här spelvyn är passiv eftersom rundan är aktiv på en annan enhet.</p>
+              <button
+                type="button"
+                onClick={activateSession}
+                className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-black"
+              >
+                Aktivera här
+              </button>
+            </div>
+          </div>
+        )}
         <RunMap
           checkpoints={currentRun.checkpoints || []}
           userPosition={coords}

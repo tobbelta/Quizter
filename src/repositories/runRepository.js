@@ -104,6 +104,8 @@ const normalizeParticipantRow = (participant) => {
     joinedAt: participant.joinedAt ?? normalizeTimestamp(participant.joined_at),
     completedAt: participant.completedAt ?? normalizeTimestamp(participant.completed_at),
     lastSeen: participant.lastSeen ?? normalizeTimestamp(participant.last_seen),
+    activeInstanceId: participant.activeInstanceId ?? participant.active_instance_id ?? null,
+    activeInstanceAt: participant.activeInstanceAt ?? normalizeTimestamp(participant.active_instance_at),
     paymentStatus: participant.paymentStatus ?? participant.payment_status ?? null,
     paymentAmount: participant.paymentAmount ?? participant.payment_amount ?? null,
     paymentCurrency: participant.paymentCurrency ?? participant.payment_currency ?? null,
@@ -392,10 +394,11 @@ export const runRepository = {
   /**
    * Heartbeat för deltagare
    */
-  heartbeatParticipant: async (runId, participantId) => {
+  heartbeatParticipant: async (runId, participantId, payload = null) => {
     try {
       await apiCall(`/api/participants/${participantId}`, {
         method: 'POST',
+        body: payload ? JSON.stringify(payload) : undefined,
       });
     } catch (error) {
       console.error('[runRepository] Failed to heartbeat participant:', error);

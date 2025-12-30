@@ -34,7 +34,13 @@ CREATE TABLE users (
   email TEXT UNIQUE,
   display_name TEXT,
   created_at INTEGER NOT NULL,
-  is_super_user BOOLEAN DEFAULT FALSE
+  is_super_user BOOLEAN DEFAULT FALSE,
+  password_hash TEXT,
+  password_salt TEXT,
+  email_verified BOOLEAN DEFAULT FALSE,
+  verification_token TEXT,
+  verification_expires INTEGER,
+  updated_at INTEGER
 );
 
 -- ----------------------------------------------------------------------------
@@ -154,6 +160,8 @@ CREATE TABLE participants (
   joined_at INTEGER NOT NULL,
   completed_at INTEGER,
   last_seen INTEGER,
+  active_instance_id TEXT,
+  active_instance_at INTEGER,
   FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
@@ -204,6 +212,16 @@ CREATE TABLE provider_settings (
   max_questions_per_request INTEGER,
   provider_type TEXT,
   is_custom BOOLEAN DEFAULT FALSE,
+  updated_at INTEGER
+);
+
+-- ----------------------------------------------------------------------------
+-- `email_settings`
+-- Configurable email providers for verification emails.
+-- ----------------------------------------------------------------------------
+CREATE TABLE email_settings (
+  id TEXT PRIMARY KEY,
+  config TEXT NOT NULL,
   updated_at INTEGER
 );
 

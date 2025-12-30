@@ -1,7 +1,7 @@
 /**
  * Vy för att skapa en auto-genererad runda på plats.
  */
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
@@ -16,6 +16,7 @@ import { errorLogService } from '../services/errorLogService';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { categoryService } from '../services/categoryService';
 import { DEFAULT_CATEGORY_OPTIONS } from '../data/categoryOptions';
+import { runRepository } from '../repositories/runRepository';
 import useQRCode from '../hooks/useQRCode';
 import useRunLocation from '../hooks/useRunLocation';
 import { useBreadcrumbs } from '../hooks/useBreadcrumbs';
@@ -76,6 +77,28 @@ const GenerateRunPage = () => {
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
   const [categoryOptions, setCategoryOptions] = useState(DEFAULT_CATEGORY_OPTIONS);
+
+  const confirmReplaceAnonymousRun = useCallback(async () => {
+    const existingRuns = localStorageService.getJoinedRuns();
+    const existing = existingRuns.length > 0 ? existingRuns[0] : null;
+    if (!existing) return true;
+
+    const confirmed = window.confirm(
+      'Du har redan en aktiv runda på denna enhet. Om du skapar en ny runda avslutas den nuvarande. Fortsätta?'
+    );
+    if (!confirmed) return false;
+
+    try {
+      if (existing.participantId) {
+        await runRepository.completeRun(existing.runId, existing.participantId);
+      }
+    } catch (error) {
+      console.warn('[GenerateRunPage] Kunde inte avsluta tidigare runda:', error);
+    }
+
+    localStorageService.clearAnonymousRuns();
+    return true;
+  }, []);
 
   const joinLink = React.useMemo(() => (
     generatedRun ? buildJoinLink(generatedRun.joinCode) : ''
@@ -470,8 +493,8 @@ const GenerateRunPage = () => {
   const handleSaveRun = () => {
     if (!generatedRun) return;
 
-    if (!currentUser) {
-      localStorageService.addCreatedRun(generatedRun);
+    if (!currentUser || currentUser.isAnonymous) {
+      localStorageService.replaceCreatedRun(generatedRun);
     }
 
     if (shareTimeoutRef.current) {
@@ -516,13 +539,13 @@ const GenerateRunPage = () => {
       const shouldPersistLocal = !participantUser || participantUser.isAnonymous;
 
       if (shouldPersistLocal) {
-        localStorageService.addCreatedRun(run);
+        localStorageService.replaceCreatedRun(run);
       }
 
       try {
         const { participant } = await joinRunByCode(run.joinCode, participantPayload);
         if (shouldPersistLocal) {
-          localStorageService.addJoinedRun(run, participant);
+          localStorageService.replaceJoinedRun(run, participant);
         }
         navigate(`/run/${run.id}/play`, { replace: true });
       } catch (joinError) {
@@ -542,6 +565,12 @@ const GenerateRunPage = () => {
     if (currentUser?.isAnonymous && !alias.trim()) {
       setShowAliasDialog(true);
       return;
+    }
+
+    const isAnonymousUser = !currentUser || currentUser.isAnonymous;
+    if (isAnonymousUser) {
+      const canProceed = await confirmReplaceAnonymousRun();
+      if (!canProceed) return;
     }
 
     // Logga att användaren försöker skapa en runda
