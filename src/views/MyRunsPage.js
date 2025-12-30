@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useRun } from '../context/RunContext';
 import { runRepository } from '../repositories/runRepository';
 import { localStorageService } from '../services/localStorageService';
 import Header from '../components/layout/Header';
@@ -13,12 +14,14 @@ import MessageDialog from '../components/shared/MessageDialog';
 const MyRunsPage = () => {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated } = useAuth();
+  const { attachToRun } = useRun();
   const [myRuns, setMyRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRuns, setSelectedRuns] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [joinedRuns, setJoinedRuns] = useState(() => localStorageService.getJoinedRuns());
 
   useEffect(() => {
     const loadMyRuns = async () => {
@@ -67,6 +70,7 @@ const MyRunsPage = () => {
         );
 
         setMyRuns(sortedRuns);
+        setJoinedRuns(localStorageService.getJoinedRuns());
       } catch (error) {
         console.error('Kunde inte ladda rundor:', error);
       } finally {
@@ -76,6 +80,17 @@ const MyRunsPage = () => {
 
     loadMyRuns();
   }, [currentUser, isAuthenticated]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleStorage = (event) => {
+      if (!event.key || event.key === 'quizter:local:joinedRuns') {
+        setJoinedRuns(localStorageService.getJoinedRuns());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   const handleToggleRun = (runId) => {
     setSelectedRuns(prev => {
@@ -129,6 +144,20 @@ const MyRunsPage = () => {
         message: 'Kunde inte radera alla rundor. Se konsolen för detaljer.',
         type: 'error'
       });
+    }
+  };
+
+  const handleContinueRun = async (runId, participantId, joinCode) => {
+    if (!runId || !participantId) return;
+    try {
+      await attachToRun(runId, participantId);
+      navigate(`/run/${runId}/play`);
+    } catch (error) {
+      console.warn('[MyRuns] Kunde inte återansluta till runda:', error);
+      localStorageService.removeJoinedRun(runId);
+      if (joinCode) {
+        navigate(`/join?code=${joinCode}`);
+      }
     }
   };
 
@@ -275,7 +304,9 @@ const MyRunsPage = () => {
             />
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {paginatedRuns.map((run) => (
+            {paginatedRuns.map((run) => {
+              const joinedEntry = joinedRuns.find((entry) => entry.runId === run.id && entry.participantId);
+              return (
               <div
                 key={run.id}
                 className={`bg-slate-800 border rounded-lg p-6 hover:bg-slate-750 transition-colors ${
@@ -340,7 +371,14 @@ const MyRunsPage = () => {
                 )}
 
                 <div className="flex flex-wrap gap-2">
-                  {run.status === 'active' && (
+                  {joinedEntry ? (
+                    <button
+                      onClick={() => handleContinueRun(run.id, joinedEntry.participantId, run.joinCode)}
+                      className="flex-1 bg-cyan-500 hover:bg-cyan-400 px-3 py-2 rounded text-sm font-medium text-black"
+                    >
+                      Fortsätt
+                    </button>
+                  ) : run.status === 'active' ? (
                     <button
                       onClick={() => navigate(`/join?code=${run.joinCode || ''}`)}
                       disabled={!run.joinCode}
@@ -348,7 +386,7 @@ const MyRunsPage = () => {
                     >
                       Anslut
                     </button>
-                  )}
+                  ) : null}
                   <button
                     onClick={() => navigate(`/run/${run.id}/admin`)}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded text-sm font-medium"
@@ -370,7 +408,8 @@ const MyRunsPage = () => {
                   </button>
                 </div>
               </div>
-            ))}
+            );
+            })}
             </div>
 
             <Pagination

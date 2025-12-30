@@ -135,6 +135,7 @@ export const RunProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [participants, setParticipants] = useState([]);
+  const [isSessionPaused, setIsSessionPaused] = useState(false);
 
   // Derived state (optimerad för performance)
   const runId = currentRun?.id || null;
@@ -147,6 +148,14 @@ export const RunProvider = ({ children }) => {
   useEffect(() => {
     participantIdRef.current = currentParticipant?.id || null;
   }, [currentParticipant]);
+
+  const pauseSession = useCallback(() => {
+    setIsSessionPaused(true);
+  }, []);
+
+  const resumeSession = useCallback(() => {
+    setIsSessionPaused(false);
+  }, []);
 
   // === CORE BUSINESS LOGIC METHODS (memoized för performance) ===
 
@@ -361,7 +370,7 @@ export const RunProvider = ({ children }) => {
    * @returns {Promise<Array>} Uppdaterad deltagarlista
    */
   const refreshParticipants = useCallback(async () => {
-    if (!runId) return [];
+    if (!runId || isSessionPaused) return [];
 
     const participantsList = await runRepository.listParticipants(runId);
     setParticipants(participantsList);
@@ -380,7 +389,7 @@ export const RunProvider = ({ children }) => {
     }
 
     return participantsList;
-  }, [runId]);
+  }, [runId, isSessionPaused]);
 
   /**
    * Skickar svar på fråga och uppdaterar deltagarens poäng
@@ -391,6 +400,9 @@ export const RunProvider = ({ children }) => {
    * @throws {Error} Om runda/deltagare/fråga saknas
    */
   const submitAnswer = useCallback(async ({ questionId, answerIndex }) => {
+    if (isSessionPaused) {
+      throw new Error('Den här fliken är passiv. Aktivera fliken för att fortsätta.');
+    }
     // Validera state
     if (!currentRun || !currentParticipant) {
       throw new Error('Ingen aktiv runda eller deltagare. Kontrollera din session.');
@@ -415,13 +427,17 @@ export const RunProvider = ({ children }) => {
     await refreshParticipants(); // Synkronisera med andra deltagare
 
     return { participant: updatedParticipant, correct };
-  }, [currentRun, currentParticipant, refreshParticipants]);
+  }, [currentRun, currentParticipant, refreshParticipants, isSessionPaused]);
 
   /**
    * Markerar deltagare som klar med rundan
    * Triggar completion-logik och final scoring
    */
   const completeRunForParticipant = useCallback(async () => {
+    if (isSessionPaused) {
+      console.warn('[RunContext] Försökte avsluta runda från passiv flik');
+      return;
+    }
     if (!runId || !participantId) {
       console.warn('[RunContext] Försökte markera deltagare som klar utan aktiv session');
       return;
@@ -433,7 +449,7 @@ export const RunProvider = ({ children }) => {
     } catch (error) {
       console.warn('[RunContext] Kunde inte markera deltagare som klar:', error);
     }
-  }, [runId, participantId, refreshParticipants]);
+  }, [runId, participantId, refreshParticipants, isSessionPaused]);
 
   /**
    * Stänger runda för nya deltagare (admin-funktion)
@@ -538,7 +554,7 @@ export const RunProvider = ({ children }) => {
    * Uppdaterar automatiskt vid admin-ändringar
    */
   useEffect(() => {
-    if (!runId) return () => {};
+    if (!runId || isSessionPaused) return () => {};
 
     const unsubscribe = runRepository.subscribeRuns((runs) => {
       const updatedRun = runs.find((run) => run.id === runId);
@@ -549,14 +565,14 @@ export const RunProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [runId]);
+  }, [runId, isSessionPaused]);
 
   /**
    * Real-time participant updates: Lyssnar på deltagare-ändringar
    * Uppdaterar leaderboard och status i real-time
    */
   useEffect(() => {
-    if (!runId) return () => {};
+    if (!runId || isSessionPaused) return () => {};
 
     const unsubscribe = runRepository.subscribeParticipants(runId, (participantSnapshot) => {
       setParticipants(participantSnapshot);
@@ -576,14 +592,14 @@ export const RunProvider = ({ children }) => {
     });
 
     return unsubscribe;
-  }, [runId]);
+  }, [runId, isSessionPaused]);
 
   /**
    * Participant heartbeat: Håller deltagaren markerad som aktiv
    * Optimerad med visibility API för batteribesparning
    */
   useEffect(() => {
-    if (!runId || !participantId) return undefined;
+    if (!runId || !participantId || isSessionPaused) return undefined;
     if (typeof window === 'undefined') return undefined;
 
     // Hjälpare för att städa bort en deltagarsession som inte längre finns i databasen
@@ -636,7 +652,7 @@ export const RunProvider = ({ children }) => {
       }
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [runId, participantId]);
+  }, [runId, participantId, isSessionPaused]);
 
   /**
    * Initial participant load: Laddar deltagarlistan när ny runda aktiveras
@@ -664,6 +680,7 @@ export const RunProvider = ({ children }) => {
     questions,
     participants,
     currentParticipant,
+    isSessionPaused,
 
     // Run lifecycle (admin & user actions)
     createHostedRun,
@@ -680,13 +697,16 @@ export const RunProvider = ({ children }) => {
     completeRunForParticipant,
 
     // Utility functions
-    refreshParticipants
+    refreshParticipants,
+    pauseSession,
+    resumeSession
   }), [
     // State dependencies
     currentRun,
     questions,
     participants,
     currentParticipant,
+    isSessionPaused,
 
     // Function dependencies (alla är memoized med useCallback)
     createHostedRun,
@@ -699,7 +719,9 @@ export const RunProvider = ({ children }) => {
     attachToRun,
     submitAnswer,
     completeRunForParticipant,
-    refreshParticipants
+    refreshParticipants,
+    pauseSession,
+    resumeSession
   ]);
 
   return (

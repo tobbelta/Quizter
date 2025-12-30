@@ -15,6 +15,7 @@ import useElapsedTime from '../hooks/useElapsedTime';
 import useTimeQuestionTrigger from '../hooks/useTimeQuestionTrigger';
 import useAppVisibility from '../hooks/useAppVisibility';
 import backgroundLocationService from '../services/backgroundLocationService';
+import { runSessionService } from '../services/runSessionService';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
 import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
@@ -76,7 +77,9 @@ const PlayRunPage = () => {
     loadRunById,
     submitAnswer,
     completeRunForParticipant,
-    refreshParticipants
+    refreshParticipants,
+    pauseSession,
+    resumeSession
   } = useRun();
   const {
     trackingEnabled,
@@ -102,9 +105,60 @@ const PlayRunPage = () => {
   const notifiedQuestionIdsRef = useRef(new Set());
   const handlingNotificationRef = useRef(false);
   const scheduledTimeNotificationRef = useRef(null);
+  const instanceId = useMemo(() => runSessionService.getInstanceId(), []);
+  const [isPassiveSession, setIsPassiveSession] = useState(false);
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
   const isAppForeground = useAppVisibility();
+
+  const activateSession = useCallback(() => {
+    if (!runId || !instanceId) return;
+    runSessionService.setActiveInstance(runId, instanceId);
+    setIsPassiveSession(false);
+  }, [instanceId, runId]);
+
+  useEffect(() => {
+    if (!runId || !instanceId) return undefined;
+
+    const syncActiveState = (activeId) => {
+      if (!activeId) {
+        runSessionService.setActiveInstance(runId, instanceId);
+        setIsPassiveSession(false);
+        return;
+      }
+      setIsPassiveSession(activeId !== instanceId);
+    };
+
+    syncActiveState(runSessionService.getActiveInstance(runId));
+
+    const unsubscribe = runSessionService.subscribe(runId, (nextActive) => {
+      syncActiveState(nextActive);
+    });
+
+    const handleBeforeUnload = () => {
+      runSessionService.releaseActiveInstance(runId, instanceId);
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      runSessionService.releaseActiveInstance(runId, instanceId);
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [instanceId, runId]);
+
+  useEffect(() => {
+    if (isPassiveSession) {
+      pauseSession();
+    } else {
+      resumeSession();
+    }
+  }, [isPassiveSession, pauseSession, resumeSession]);
+
+  useEffect(() => () => resumeSession(), [resumeSession]);
 
   const cancelNativeTimeNotification = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) {
@@ -349,7 +403,7 @@ const PlayRunPage = () => {
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
     coords,
-    trackingEnabled: trackingEnabled && !isNative, // Använd inte hook på native
+    trackingEnabled: trackingEnabled && !isNative && !isPassiveSession, // Använd inte hook på native
     distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
     currentQuestionIndex: currentOrderIndex,
     totalQuestions: totalQuestions
@@ -364,7 +418,7 @@ const PlayRunPage = () => {
     resetForNextQuestion: resetTimedQuestion,
     wasTriggeredByTimer
   } = useTimeQuestionTrigger({
-    isEnabled: Boolean(isTimeBased),
+    isEnabled: Boolean(isTimeBased && !isPassiveSession),
     intervalMinutes: currentRun?.minutesBetweenQuestions || 5,
     currentQuestionIndex: currentOrderIndex,
     totalQuestions,
@@ -1009,6 +1063,33 @@ const PlayRunPage = () => {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 text-center">
         <p className="text-gray-300">Hämtar rundainformation…</p>
+      </div>
+    );
+  }
+
+  if (isPassiveSession) {
+    return (
+      <div className="min-h-screen bg-slate-950">
+        <Header title={currentRun?.name || 'Runda'} />
+        <div className="mx-auto max-w-md px-4 pt-28 pb-8 text-center">
+          <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-6 shadow-xl">
+            <div className="text-3xl">⏸️</div>
+            <h1 className="mt-3 text-xl font-semibold text-slate-100">Den här fliken är passiv</h1>
+            <p className="mt-2 text-sm text-slate-300">
+              Rundan är aktiv i en annan flik eller ett annat fönster på samma enhet.
+            </p>
+            <button
+              type="button"
+              onClick={activateSession}
+              className="mt-5 w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
+            >
+              Aktivera här
+            </button>
+            <p className="mt-3 text-xs text-slate-400">
+              När du aktiverar den här fliken blir andra instanser passiva.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }

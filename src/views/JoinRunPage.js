@@ -16,7 +16,7 @@ const JoinRunPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, loginAsGuest, isAuthInitialized } = useAuth();
-  const { joinRunByCode } = useRun();
+  const { joinRunByCode, attachToRun } = useRun();
 
   const [joinCode, setJoinCode] = useState('');
   const initialAlias = useMemo(() => userPreferencesService.getAlias() || '', []);
@@ -62,6 +62,17 @@ const JoinRunPage = () => {
         return;
       }
 
+      const existingJoined = localStorageService.getJoinedRuns().find((entry) => entry.runId === run.id);
+      if (existingJoined?.participantId) {
+        try {
+          await attachToRun(run.id, existingJoined.participantId);
+          navigate(`/run/${run.id}/play`);
+          return;
+        } catch (attachError) {
+          localStorageService.removeJoinedRun(run.id);
+        }
+      }
+
       const isHost = Boolean(participantUser?.id && run.createdBy && participantUser.id === run.createdBy);
       const playerAmount = Number(run.paymentPlayerAmount || 0);
       const requiresPayment = playerAmount > 0 && !isHost;
@@ -91,9 +102,7 @@ const JoinRunPage = () => {
 
       const { run: joinedRun } = await joinRunByCode(upperCode, participantDetails);
 
-      if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
-      }
+      localStorageService.addJoinedRun(joinedRun, participantDetails);
 
       analyticsService.logVisit('join_run', {
         runId: joinedRun.id,
@@ -108,7 +117,7 @@ const JoinRunPage = () => {
     } catch (joinError) {
       setError(joinError.message);
     }
-  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate]);
+  }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate, attachToRun]);
 
   const handlePaymentSuccess = useCallback(async (paymentResult) => {
     setShowPaymentModal(false);
@@ -121,9 +130,7 @@ const JoinRunPage = () => {
         paymentId: paymentResult?.paymentId || null
       });
 
-      if (!currentUser || currentUser.isAnonymous) {
-        localStorageService.addJoinedRun(joinedRun, participantDetails);
-      }
+      localStorageService.addJoinedRun(joinedRun, participantDetails);
 
       analyticsService.logVisit('join_run', {
         runId: joinedRun.id,
