@@ -154,6 +154,7 @@ export async function onRequestGet({ env }) {
         run_id TEXT NOT NULL,
         user_id TEXT,
         alias TEXT NOT NULL,
+        device_id TEXT,
         joined_at INTEGER NOT NULL,
         completed_at INTEGER,
         last_seen INTEGER,

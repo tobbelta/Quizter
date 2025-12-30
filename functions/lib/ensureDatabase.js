@@ -126,6 +126,7 @@ async function ensureParticipantsSchema(db) {
     { name: 'alias', ddl: 'alias TEXT' },
     { name: 'joined_at', ddl: 'joined_at INTEGER' },
     { name: 'run_id', ddl: 'run_id TEXT' },
+    { name: 'device_id', ddl: 'device_id TEXT' },
     { name: 'payment_status', ddl: 'payment_status TEXT' },
     { name: 'payment_amount', ddl: 'payment_amount INTEGER' },
     { name: 'payment_currency', ddl: 'payment_currency TEXT' },

@@ -517,6 +517,12 @@ const GenerateRunPage = () => {
         contact: participantContact || null,
         isAnonymous: participantUser?.isAnonymous ?? true
       };
+      if (participantUser?.isAnonymous) {
+        const deviceId = analyticsService.getDeviceId();
+        if (deviceId) {
+          participantPayload.deviceId = deviceId;
+        }
+      }
       const shouldPersistLocal = !participantUser || participantUser.isAnonymous;
 
       if (shouldPersistLocal) {

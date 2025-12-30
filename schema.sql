@@ -151,6 +151,7 @@ CREATE TABLE participants (
   run_id TEXT NOT NULL,
   user_id TEXT, -- Nullable for anonymous participants
   alias TEXT NOT NULL, -- Display name for the run
+  device_id TEXT, -- Device ID for anonymous users
   joined_at INTEGER NOT NULL,
   completed_at INTEGER,
   last_seen INTEGER,

@@ -33,8 +33,7 @@ const SuperUserUsersPage = () => {
   const isSelectableUser = (user) => {
     if (!user?.id) return false;
     if (user.id === currentUser?.id) return false;
-    if (user.isAnonymous) return false;
-    if (user.id.startsWith('anon:')) return false;
+    if (user.isAnonymous && !user.deviceId) return false;
     return true;
   };
 
@@ -64,11 +63,8 @@ const SuperUserUsersPage = () => {
   }, [isSuperUser, navigate]);
 
   const handleToggleUser = (userId) => {
-    if (userId?.startsWith('anon:')) {
-      return;
-    }
-    // Förhindra att man markerar sig själv
-    if (userId === currentUser?.id) {
+    const targetUser = users.find((entry) => entry.id === userId);
+    if (targetUser && !isSelectableUser(targetUser)) {
       return;
     }
 
@@ -137,13 +133,10 @@ const SuperUserUsersPage = () => {
       return;
     }
 
-    const targets = Array.from(selectedUsers).filter((userId) => {
-      if (!userId) return false;
-      if (userId === currentUser?.id) return false;
-      if (userId.startsWith('anon:')) return false;
-      return true;
-    });
-    if (targets.length === 0) {
+    const recipients = Array.from(selectedUsers)
+      .map((userId) => users.find((entry) => entry.id === userId))
+      .filter((user) => user && isSelectableUser(user));
+    if (recipients.length === 0) {
       setDialogConfig({
         isOpen: true,
         title: 'Ingen mottagare',
@@ -159,20 +152,25 @@ const SuperUserUsersPage = () => {
         title,
         body,
         type: messageForm.type,
-        targetType: 'user',
         adminId: currentUser?.id || null,
         metadata: { source: 'users_page' }
       };
       await Promise.all(
-        targets.map((userId) => messageService.sendMessage({
-          ...payload,
-          targetId: userId
-        }, currentUser?.email || ''))
+        recipients.map((user) => {
+          const isAnonymous = user?.isAnonymous && user?.deviceId;
+          return messageService.sendMessage({
+            ...payload,
+            targetType: isAnonymous ? 'device' : 'user',
+            targetId: isAnonymous ? user.deviceId : user.id,
+            userId: isAnonymous ? null : user.id,
+            deviceId: isAnonymous ? user.deviceId : null
+          }, currentUser?.email || '');
+        })
       );
       setDialogConfig({
         isOpen: true,
         title: 'Meddelande skickat',
-        message: `Meddelande skickat till ${targets.length} användare.`,
+        message: `Meddelande skickat till ${recipients.length} användare.`,
         type: 'success'
       });
       setShowMessageForm(false);
@@ -249,7 +247,8 @@ const SuperUserUsersPage = () => {
     const matchesSearch =
       user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.id?.toLowerCase().includes(searchTerm.toLowerCase());
+      user.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.deviceId?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
   const selectableUsers = getSelectableUsers(filteredUsers);
@@ -305,11 +304,11 @@ const SuperUserUsersPage = () => {
         {showMessageForm && selectedUsers.size > 0 && (
           <form onSubmit={handleSendMessage} className="mb-6 rounded-xl border border-emerald-500/30 bg-slate-900/60 p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold text-emerald-200">
-                Skicka meddelande till {selectedUsers.size} användare
-              </h3>
-              <span className="text-xs text-slate-400">Endast registrerade användare</span>
-            </div>
+                <h3 className="text-lg font-semibold text-emerald-200">
+                  Skicka meddelande till {selectedUsers.size} användare
+                </h3>
+                <span className="text-xs text-slate-400">Kräver användare eller device-id</span>
+              </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-gray-200">Rubrik</label>
               <input
@@ -364,6 +363,7 @@ const SuperUserUsersPage = () => {
               const isCurrentUser = user.id === currentUser?.id;
               const isSuperUserAccount = user.superUser === true;
               const isAnonymousUser = user.isAnonymous === true;
+              const canSelect = isSelectableUser(user);
 
               return (
                 <div
@@ -381,7 +381,7 @@ const SuperUserUsersPage = () => {
                       type="checkbox"
                       checked={selectedUsers.has(user.id)}
                       onChange={() => handleToggleUser(user.id)}
-                      disabled={isCurrentUser || isAnonymousUser}
+                      disabled={!canSelect}
                       className="mt-1 w-5 h-5 rounded disabled:opacity-30"
                     />
 
@@ -416,6 +416,11 @@ const SuperUserUsersPage = () => {
                           <span className="font-semibold">ID:</span> {user.id}
                         </div>
                       </div>
+                      {user.isAnonymous && user.deviceId && (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Device ID: <span className="font-mono">{user.deviceId}</span>
+                        </div>
+                      )}
 
                       {user.createdAt && (
                         <div className="mt-2 text-xs text-gray-500">

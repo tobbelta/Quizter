@@ -75,6 +75,12 @@ const JoinRunPage = () => {
         contact: participantUser?.contact,
         isAnonymous: participantUser?.isAnonymous,
       };
+      if (participantUser?.isAnonymous) {
+        const deviceId = analyticsService.getDeviceId();
+        if (deviceId) {
+          participantDetails.deviceId = deviceId;
+        }
+      }
 
       if (requiresPayment) {
         setPendingJoin({

@@ -36,7 +36,7 @@ export async function onRequest(context) {
     const userMap = new Map(users.map((user) => [user.id, user]));
 
     const participantsResult = await env.DB.prepare(`
-      SELECT id, alias, user_id, joined_at, last_seen, completed_at
+      SELECT id, alias, user_id, device_id, joined_at, last_seen, completed_at
       FROM participants
       ORDER BY joined_at DESC
     `).all();
@@ -45,11 +45,14 @@ export async function onRequest(context) {
     (participantsResult.results || []).forEach((participant) => {
       if (!participant.user_id) {
         const aliasValue = (participant.alias || 'Anonym').trim();
-        const key = aliasValue.toLowerCase() || `anon:${participant.id}`;
+        const deviceId = String(participant.device_id || '').trim();
+        const fallbackKey = aliasValue.toLowerCase() || participant.id;
+        const key = deviceId ? `device:${deviceId}` : `anon:${fallbackKey}`;
         const existing = anonymousMap.get(key);
         const nextEntry = {
-          id: `anon:${aliasValue || 'Anonym'}`,
+          id: key,
           name: aliasValue || 'Anonym',
+          deviceId: deviceId || null,
           contact: null,
           createdAt: normalizeTimestamp(participant.joined_at),
           lastSeen: normalizeTimestamp(participant.last_seen),
