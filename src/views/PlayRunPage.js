@@ -349,6 +349,17 @@ const PlayRunPage = () => {
   const [backgroundDistance, setBackgroundDistance] = useState(0);
   const [backgroundDistanceToNext, setBackgroundDistanceToNext] = useState(0);
 
+  const answeredCount = currentParticipant?.answers?.length || 0;
+
+  const currentOrderIndex = useMemo(() => {
+    if (!currentParticipant) return 0;
+    const fallbackOrder = Math.max(1, answeredCount + 1);
+    const rawOrder = Number.isFinite(currentParticipant.currentOrder)
+      ? currentParticipant.currentOrder
+      : fallbackOrder;
+    return Math.max(0, rawOrder - 1);
+  }, [answeredCount, currentParticipant]);
+
   useEffect(() => {
     setSelectedOption(null);
     setFeedback(null);
@@ -434,16 +445,6 @@ const PlayRunPage = () => {
     runId,
     totalQuestions
   ]);
-
-  const answeredCount = currentParticipant?.answers?.length || 0;
-  const currentOrderIndex = useMemo(() => {
-    if (!currentParticipant) return 0;
-    const fallbackOrder = Math.max(1, answeredCount + 1);
-    const rawOrder = Number.isFinite(currentParticipant.currentOrder)
-      ? currentParticipant.currentOrder
-      : fallbackOrder;
-    return Math.max(0, rawOrder - 1);
-  }, [answeredCount, currentParticipant]);
 
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
