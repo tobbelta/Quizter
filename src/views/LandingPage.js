@@ -4,12 +4,14 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import PageLayout from '../components/layout/PageLayout';
 import PaymentModal from '../components/payment/PaymentModal';
 import { paymentService } from '../services/paymentService';
 
 const LandingPage = () => {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [isBetaExpanded, setIsBetaExpanded] = useState(false);
   const [searchParams] = useSearchParams();
   const [paymentConfig, setPaymentConfig] = useState(null);
