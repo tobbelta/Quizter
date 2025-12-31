@@ -141,6 +141,7 @@ const PlayRunPage = () => {
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
   const isAppForeground = useAppVisibility();
+  const showStatsOverlay = !isTimeBased && trackingEnabled;
 
   useEffect(() => {
     setSessionInstanceId(instanceId);
@@ -729,6 +730,7 @@ const PlayRunPage = () => {
     ? orderedQuestions[currentOrderIndex] || null
     : null;
 
+
   useEffect(() => {
     if (!questionVisibilityKey || isPassiveSession) return;
     const payload = {
@@ -970,6 +972,56 @@ const PlayRunPage = () => {
   const hasAnsweredAll = answeredCount >= totalQuestions;
   const requiresReturnToStart = currentRun?.type === 'route-based' && !manualMode;
   const hasCompleted = hasAnsweredAll && (!requiresReturnToStart || nearStartPoint);
+  const nextStepLabel = useMemo(() => {
+    if (hasAnsweredAll) {
+      return hasCompleted
+        ? 'Rundan är klar – se resultat.'
+        : 'Gå tillbaka till startpunkten för att avsluta.';
+    }
+
+    if (currentQuestion) {
+      return `Fråga ${currentOrderIndex + 1}/${totalQuestions} är tillgänglig.`;
+    }
+
+    if (isTimeBased) {
+      return `Nästa fråga om ${formattedTimeRemaining}.`;
+    }
+
+    if (isDistanceBased) {
+      if (!trackingEnabled) {
+        return 'Aktivera GPS för att få nästa fråga.';
+      }
+      const remainingDistance = isNative
+        ? backgroundDistanceToNext
+        : distanceTracking.distanceToNextQuestion;
+      if (Number.isFinite(remainingDistance)) {
+        return `Nästa fråga om ${formatDistance(remainingDistance)}.`;
+      }
+      return 'Nästa fråga är på väg.';
+    }
+
+    if (!trackingEnabled) {
+      return 'Aktivera GPS för att se nästa checkpoint.';
+    }
+    if (distanceToCheckpoint != null) {
+      return `Nästa checkpoint om ${formatDistance(distanceToCheckpoint)}.`;
+    }
+    return 'Gå till nästa checkpoint.';
+  }, [
+    backgroundDistanceToNext,
+    currentOrderIndex,
+    currentQuestion,
+    distanceToCheckpoint,
+    distanceTracking.distanceToNextQuestion,
+    formattedTimeRemaining,
+    hasAnsweredAll,
+    hasCompleted,
+    isDistanceBased,
+    isNative,
+    isTimeBased,
+    totalQuestions,
+    trackingEnabled
+  ]);
 
   /** Skickar in valt svar och visar feedback kortvarigt. */
   const handleSubmit = async (event) => {
@@ -1282,6 +1334,14 @@ const PlayRunPage = () => {
           <div className="absolute inset-x-4 top-4 z-30">
             <div className="mx-auto max-w-md rounded-xl border border-cyan-400/40 bg-slate-900/90 px-4 py-2 text-center text-sm text-cyan-100 shadow-lg">
               {restoredQuestionNotice}
+            </div>
+          </div>
+        )}
+
+        {nextStepLabel && (
+          <div className={`absolute inset-x-4 ${showStatsOverlay ? 'top-24' : 'top-4'} z-20`}>
+            <div className="rounded-xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-center text-sm text-slate-100 shadow-lg">
+              {nextStepLabel}
             </div>
           </div>
         )}
