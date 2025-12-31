@@ -1,4 +1,5 @@
 import { getEmailSettingsSnapshot } from './emailSettings.js';
+import { recordEmailEvent } from './emailLogs.js';
 
 const encodeBase64 = (value) => {
   if (typeof btoa === 'function') {
@@ -35,21 +36,50 @@ const replaceTemplate = (template, values) => {
   return output;
 };
 
-export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
+export const sendEmail = async (env, { to, subject, html, text, replyTo, fromEmail: overrideFromEmail, fromName: overrideFromName, resendOf }) => {
   const { settings } = await getEmailSettingsSnapshot(env, { includeSecrets: true });
   const activeProvider = settings.providers.find((provider) => provider.id === settings.activeProviderId && provider.isEnabled);
 
   if (!activeProvider || !activeProvider.secretKey) {
+    await recordEmailEvent(env, {
+      providerId: settings.activeProviderId || null,
+      providerType: activeProvider?.type || null,
+      status: 'failed',
+      to,
+      subject,
+      payload: { to, subject, html, text, replyTo },
+      error: 'Ingen aktiv e-postprovider är konfigurerad.',
+      resendOf
+    });
     throw new Error('Ingen aktiv e-postprovider är konfigurerad.');
   }
 
-  const fromEmail = settings.fromEmail?.trim();
+  const fromEmail = (overrideFromEmail || settings.fromEmail || '').trim();
   if (!fromEmail) {
+    await recordEmailEvent(env, {
+      providerId: activeProvider.id,
+      providerType: activeProvider.type,
+      status: 'failed',
+      to,
+      subject,
+      payload: { to, subject, html, text, replyTo },
+      error: 'Avsändaradress saknas i e-postinställningar.',
+      resendOf
+    });
     throw new Error('Avsändaradress saknas i e-postinställningar.');
   }
 
-  const fromName = settings.fromName?.trim() || '';
+  const fromName = (overrideFromName || settings.fromName || '').trim();
   const replyToValue = replyTo || settings.replyTo || undefined;
+  const payloadForLog = {
+    to,
+    subject,
+    html: html || '',
+    text: text || '',
+    replyTo: replyToValue || null,
+    fromEmail,
+    fromName
+  };
 
   const payload = {
     to,
@@ -78,10 +108,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         },
         body: JSON.stringify(body)
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Resend fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `Resend fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`Resend fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     case 'sendgrid': {
@@ -105,10 +156,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         },
         body: JSON.stringify(body)
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`SendGrid fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `SendGrid fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`SendGrid fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     case 'mailgun': {
@@ -131,10 +203,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         },
         body: form
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Mailgun fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `Mailgun fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`Mailgun fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     case 'postmark': {
@@ -154,10 +247,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         },
         body: JSON.stringify(body)
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Postmark fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `Postmark fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`Postmark fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     case 'mailersend': {
@@ -177,10 +291,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         },
         body: JSON.stringify(body)
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`MailerSend fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `MailerSend fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`MailerSend fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     case 'custom': {
@@ -209,10 +344,31 @@ export const sendEmail = async (env, { to, subject, html, text, replyTo }) => {
         headers,
         body
       });
+      const responseText = await response.text();
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Custom email fel: ${response.status} ${errorText}`);
+        await recordEmailEvent(env, {
+          providerId: activeProvider.id,
+          providerType: activeProvider.type,
+          status: 'failed',
+          to,
+          subject,
+          payload: payloadForLog,
+          response: responseText,
+          error: `Custom email fel: ${response.status}`,
+          resendOf
+        });
+        throw new Error(`Custom email fel: ${response.status} ${responseText}`);
       }
+      await recordEmailEvent(env, {
+        providerId: activeProvider.id,
+        providerType: activeProvider.type,
+        status: 'sent',
+        to,
+        subject,
+        payload: payloadForLog,
+        response: responseText || null,
+        resendOf
+      });
       return;
     }
     default:

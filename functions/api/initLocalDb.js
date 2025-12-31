@@ -24,6 +24,7 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS age_groups;
       DROP TABLE IF EXISTS donations;
       DROP TABLE IF EXISTS email_settings;
+      DROP TABLE IF EXISTS email_events;
       DROP TABLE IF EXISTS provider_settings;
       DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
@@ -209,6 +210,20 @@ export async function onRequestGet({ env }) {
         id TEXT PRIMARY KEY,
         config TEXT NOT NULL,
         updated_at INTEGER
+      );
+
+      CREATE TABLE email_events (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT,
+        provider_type TEXT,
+        status TEXT NOT NULL,
+        to_email TEXT,
+        subject TEXT,
+        payload TEXT,
+        response TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        resend_of TEXT
       );
 
       CREATE TABLE payments (

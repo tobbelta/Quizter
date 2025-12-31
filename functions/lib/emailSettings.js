@@ -11,6 +11,7 @@ export const EMAIL_PROVIDER_CATALOG = [
 ];
 
 const DEFAULT_PROVIDER_ID = 'resend';
+const RETENTION_OPTIONS = [30, 90, 180];
 
 const normalizeProviderId = (value) => {
   if (!value) return null;
@@ -38,6 +39,7 @@ const DEFAULT_SETTINGS = {
   fromEmail: '',
   fromName: 'Quizter',
   replyTo: '',
+  retentionDays: 90,
   providers: buildDefaultProviders()
 };
 
@@ -78,11 +80,13 @@ const buildProviders = (storedProviders = []) => {
 };
 
 const normalizeSettings = (stored = {}) => {
+  const retention = Number(stored.retentionDays);
   return {
     activeProviderId: normalizeProviderId(stored.activeProviderId) || DEFAULT_SETTINGS.activeProviderId,
     fromEmail: stored.fromEmail || DEFAULT_SETTINGS.fromEmail,
     fromName: stored.fromName || DEFAULT_SETTINGS.fromName,
     replyTo: stored.replyTo || DEFAULT_SETTINGS.replyTo,
+    retentionDays: RETENTION_OPTIONS.includes(retention) ? retention : DEFAULT_SETTINGS.retentionDays,
     providers: buildProviders(stored.providers || [])
   };
 };

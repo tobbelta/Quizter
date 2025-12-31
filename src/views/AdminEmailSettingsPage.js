@@ -129,6 +129,18 @@ const AdminEmailSettingsPage = () => {
                 <p className="mt-1 text-xs text-amber-300">Aktiv provider saknar API-nyckel eller är avstängd.</p>
               )}
             </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300">Spara loggar (dagar)</label>
+              <select
+                className="mt-1 w-full rounded bg-slate-800 border border-slate-700 px-3 py-2"
+                value={settings.retentionDays || 90}
+                onChange={(event) => updateSettings({ retentionDays: Number(event.target.value) })}
+              >
+                <option value={30}>30 dagar</option>
+                <option value={90}>90 dagar</option>
+                <option value={180}>180 dagar</option>
+              </select>
+            </div>
           </div>
         </div>
 

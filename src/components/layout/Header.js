@@ -652,6 +652,12 @@ const Header = ({ title = 'Quizter', children }) => {
                         E-post
                       </button>
                       <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/email-logs'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        E-postloggar
+                      </button>
+                      <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >

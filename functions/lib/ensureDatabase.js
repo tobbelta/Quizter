@@ -292,6 +292,40 @@ async function ensurePaymentsSchema(db) {
   }
 }
 
+async function ensureEmailEventsSchema(db) {
+  const exists = await tableExists(db, 'email_events');
+  if (!exists) {
+    await db.prepare(`
+      CREATE TABLE email_events (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT,
+        provider_type TEXT,
+        status TEXT NOT NULL,
+        to_email TEXT,
+        subject TEXT,
+        payload TEXT,
+        response TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        resend_of TEXT
+      )
+    `).run();
+  }
+
+  await ensureTableColumns(db, 'email_events', [
+    { name: 'provider_id', ddl: 'provider_id TEXT' },
+    { name: 'provider_type', ddl: 'provider_type TEXT' },
+    { name: 'status', ddl: 'status TEXT' },
+    { name: 'to_email', ddl: 'to_email TEXT' },
+    { name: 'subject', ddl: 'subject TEXT' },
+    { name: 'payload', ddl: 'payload TEXT' },
+    { name: 'response', ddl: 'response TEXT' },
+    { name: 'error', ddl: 'error TEXT' },
+    { name: 'created_at', ddl: 'created_at INTEGER' },
+    { name: 'resend_of', ddl: 'resend_of TEXT' },
+  ]);
+}
+
 async function addMissingColumns(db) {
   try {
     await ensureUsersSchema(db);
@@ -303,6 +337,7 @@ async function addMissingColumns(db) {
     await ensureAudienceTables(db);
     await ensureAiRulesTable(db);
     await ensurePaymentsSchema(db);
+    await ensureEmailEventsSchema(db);
   } catch (error) {
     console.log('[ensureDatabase] Table recreation error:', error.message);
     try {
@@ -509,6 +544,19 @@ export async function ensureDatabase(db) {
         id TEXT PRIMARY KEY,
         config TEXT NOT NULL,
         updated_at INTEGER
+      )`,
+      `CREATE TABLE email_events (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT,
+        provider_type TEXT,
+        status TEXT NOT NULL,
+        to_email TEXT,
+        subject TEXT,
+        payload TEXT,
+        response TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        resend_of TEXT
       )`,
       `CREATE TABLE payments (
         id TEXT PRIMARY KEY,

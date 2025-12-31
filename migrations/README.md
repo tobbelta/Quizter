@@ -92,6 +92,8 @@ ALTER TABLE background_tasks_backup RENAME TO background_tasks;
 - **002**: Background tasks table - första versionen
 - **003**: Add indexes for performance
 - **004**: 🔴 **PENDING** - Add payload, error, finished_at columns
+- **014**: Add user auth fields + email settings table
+- **015**: Add email events log table
 
 ## Nästa migration
 
