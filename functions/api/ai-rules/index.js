@@ -1,4 +1,5 @@
 import { ensureAiRulesTable, getAiRulesConfig, saveAiRulesConfig } from '../../lib/aiRules.js';
+import { logAuditEvent } from '../../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -41,6 +42,27 @@ export async function onRequest(context) {
       const payload = await request.json();
       await saveAiRulesConfig(env.DB, payload?.config || {});
       const config = await getAiRulesConfig(env.DB);
+      const actorEmail = request.headers.get('x-user-email');
+      const globalConfig = config?.global || {};
+      const targetAudiences = config?.targetAudiences || {};
+      try {
+        await logAuditEvent(env.DB, {
+          actorEmail,
+          action: 'update',
+          targetType: 'ai-rules',
+          details: {
+            globalEnabled: globalConfig?.enabled !== false,
+            answerInQuestion: Boolean(globalConfig?.answerInQuestion?.enabled ?? globalConfig?.answerInQuestion),
+            autoCorrection: Boolean(globalConfig?.autoCorrection?.enabled),
+            freshness: Boolean(globalConfig?.freshness?.enabled),
+            blocklistCount: Array.isArray(globalConfig?.blocklist) ? globalConfig.blocklist.length : 0,
+            maxLengthGroups: Object.keys(globalConfig?.maxQuestionLengthByAgeGroup || {}).length,
+            targetAudienceCount: Object.keys(targetAudiences).length
+          }
+        });
+      } catch (error) {
+        console.warn('[ai-rules] Audit log failed:', error.message);
+      }
       return new Response(JSON.stringify({ success: true, config }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
