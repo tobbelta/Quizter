@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import MessageDialog from '../components/shared/MessageDialog';
@@ -25,16 +25,16 @@ const AdminAuditLogsPage = () => {
   const [actorEmail, setActorEmail] = useState('');
   const [action, setAction] = useState('');
   const [limit, setLimit] = useState(50);
-  const [offset, setOffset] = useState(0);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const offsetRef = useRef(0);
 
   const hasMore = logs.length >= limit;
 
-  const loadLogs = async (reset = false) => {
+  const loadLogs = useCallback(async ({ reset = false } = {}) => {
     if (!currentUser?.email) return;
     setIsLoading(true);
     try {
-      const nextOffset = reset ? 0 : offset;
+      const nextOffset = reset ? 0 : offsetRef.current;
       const nextLogs = await auditLogService.getAuditLogs({
         limit,
         offset: nextOffset,
@@ -43,31 +43,31 @@ const AdminAuditLogsPage = () => {
         action,
         userEmail: currentUser.email
       });
-      setLogs(reset ? nextLogs : [...logs, ...nextLogs]);
-      setOffset(nextOffset + nextLogs.length);
+      setLogs((prev) => (reset ? nextLogs : [...prev, ...nextLogs]));
+      offsetRef.current = nextOffset + nextLogs.length;
       setError('');
     } catch (err) {
       setError(err.message || 'Kunde inte hämta loggar.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser?.email, limit, targetType, actorEmail, action]);
 
   useEffect(() => {
     if (!isSuperUser) {
       navigate('/');
       return;
     }
-    loadLogs(true);
-  }, [isSuperUser, navigate]);
+    loadLogs({ reset: true });
+  }, [isSuperUser, navigate, loadLogs]);
 
   useEffect(() => {
     if (!isSuperUser) return;
     const timeout = setTimeout(() => {
-      loadLogs(true);
+      loadLogs({ reset: true });
     }, 300);
     return () => clearTimeout(timeout);
-  }, [targetType, actorEmail, action, limit]);
+  }, [targetType, actorEmail, action, limit, isSuperUser, loadLogs]);
 
   const formattedLogs = useMemo(() => {
     return logs.map((entry) => {
@@ -209,7 +209,7 @@ const AdminAuditLogsPage = () => {
         <div className="flex justify-center">
           <button
             type="button"
-            onClick={() => loadLogs(false)}
+            onClick={() => loadLogs()}
             disabled={isLoading || !hasMore}
             className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-500 disabled:opacity-40"
           >
