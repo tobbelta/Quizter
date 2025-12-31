@@ -15,6 +15,7 @@ import LandingPage from './views/LandingPage';
 import LoginPage from './views/LoginPage';
 import RegisterPage from './views/RegisterPage';
 import VerifyEmailPage from './views/VerifyEmailPage';
+import AccountSettingsPage from './views/AccountSettingsPage';
 import GenerateRunPage from './views/GenerateRunPage';
 import JoinRunPage from './views/JoinRunPage';
 import PlayRunPage from './views/PlayRunPage';
@@ -28,6 +29,7 @@ import AdminAudienceSettingsPage from './views/AdminAudienceSettingsPage';
 import AdminPaymentsPage from './views/AdminPaymentsPage';
 import AdminEmailSettingsPage from './views/AdminEmailSettingsPage';
 import AdminEmailLogsPage from './views/AdminEmailLogsPage';
+import AdminAuditLogsPage from './views/AdminAuditLogsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
@@ -72,6 +74,7 @@ const AppRoutes = () => (
     <Route path="/login" element={<LoginPage />} />
     <Route path="/register" element={<RegisterPage />} />
     <Route path="/verify-email" element={<VerifyEmailPage />} />
+    <Route path="/account" element={<AccountSettingsPage />} />
     <Route path="/my-runs" element={<MyRunsPage />} />
 
     {/* Alla användare kan skapa och ansluta */}
@@ -210,6 +213,14 @@ const AppRoutes = () => (
         </RequireSuperUser>
       )}
     />
+    <Route
+      path="/admin/audit-logs"
+      element={(
+        <RequireSuperUser>
+          <AdminAuditLogsPage />
+        </RequireSuperUser>
+      )}
+    />
 
     <Route path="/superuser/all-runs" element={<Navigate to="/admin/all-runs" replace />} />
     <Route path="/superuser/users" element={<Navigate to="/admin/users" replace />} />
@@ -225,6 +236,7 @@ const AppRoutes = () => (
     <Route path="/superuser/payments" element={<Navigate to="/admin/payments" replace />} />
     <Route path="/superuser/email" element={<Navigate to="/admin/email" replace />} />
     <Route path="/superuser/email-logs" element={<Navigate to="/admin/email-logs" replace />} />
+    <Route path="/superuser/audit-logs" element={<Navigate to="/admin/audit-logs" replace />} />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

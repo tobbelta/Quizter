@@ -393,8 +393,6 @@ const SuperUserUsersPage = () => {
               const isAnonymousUser = user.isAnonymous === true;
               const isVerified = user.emailVerified === true;
               const canSelect = isSelectableUser(user);
-              const isVerified = user.emailVerified === true;
-              const canSelect = isSelectableUser(user);
 
               return (
                 <div

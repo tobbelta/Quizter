@@ -487,6 +487,42 @@ const Header = ({ title = 'Quizter', children }) => {
                   </div>
                 )}
 
+                {isSuperUser && (
+                  <div className="px-4 py-3 border-b border-slate-700">
+                    <div className="text-xs text-gray-500 font-semibold">SNABBLÄNKAR</div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/questions'); }}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-red-200 hover:border-red-400/60"
+                      >
+                        Frågebank
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/tasks'); }}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-red-200 hover:border-red-400/60"
+                      >
+                        Bakgrundsjobb
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/users'); }}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-red-200 hover:border-red-400/60"
+                      >
+                        Användare
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/ai-providers'); }}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-red-200 hover:border-red-400/60"
+                      >
+                        AI-provider
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Menyalternativ */}
                 <div className="py-2">
                   {/* Meddelanden */}
@@ -520,6 +556,15 @@ const Header = ({ title = 'Quizter', children }) => {
                   <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
                     INSTÄLLNINGAR
                   </div>
+
+                  {isAuthenticated && !currentUser?.isAnonymous && (
+                    <button
+                      onClick={() => { setIsMenuOpen(false); navigate('/account'); }}
+                      className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-gray-200"
+                    >
+                      Konto & profil
+                    </button>
+                  )}
 
                   {/* GPS-status och toggle */}
                   <div className="px-4 py-2">
@@ -677,6 +722,12 @@ const Header = ({ title = 'Quizter', children }) => {
                         className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
                       >
                         E-postloggar
+                      </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/audit-logs'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Ändringslogg
                       </button>
                       <button
                         onClick={() => { setIsMenuOpen(false); navigate('/admin/messages'); }}

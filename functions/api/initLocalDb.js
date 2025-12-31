@@ -26,6 +26,10 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS email_settings;
       DROP TABLE IF EXISTS email_events;
       DROP TABLE IF EXISTS provider_settings;
+      DROP TABLE IF EXISTS messages;
+      DROP TABLE IF EXISTS message_states;
+      DROP TABLE IF EXISTS analytics_events;
+      DROP TABLE IF EXISTS audit_logs;
       DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
       
@@ -320,6 +324,20 @@ export async function onRequestGet({ env }) {
         metadata TEXT,
         created_at INTEGER NOT NULL
       );
+
+      CREATE TABLE audit_logs (
+        id TEXT PRIMARY KEY,
+        actor_id TEXT,
+        actor_email TEXT,
+        action TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        details TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
+      CREATE INDEX idx_audit_logs_target_type ON audit_logs(target_type);
+      CREATE INDEX idx_audit_logs_actor_email ON audit_logs(actor_email);
 
       CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,

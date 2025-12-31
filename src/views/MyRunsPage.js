@@ -25,6 +25,8 @@ const MyRunsPage = () => {
   const [joinedRuns, setJoinedRuns] = useState(() => localStorageService.getJoinedRuns());
   const [participantsByRunId, setParticipantsByRunId] = useState({});
   const [, setStatusTick] = useState(0);
+  const activeRuns = myRuns.filter((run) => run.status === 'active');
+  const inactiveRuns = myRuns.filter((run) => run.status !== 'active');
 
   useEffect(() => {
     const loadMyRuns = async () => {
@@ -476,11 +478,142 @@ const MyRunsPage = () => {
     }
   };
 
-  // Paginering
-  const totalPages = Math.ceil(myRuns.length / itemsPerPage);
+  // Paginering (gäller avslutade rundor)
+  const totalPages = Math.max(1, Math.ceil(inactiveRuns.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedRuns = myRuns.slice(startIndex, endIndex);
+  const paginatedRuns = inactiveRuns.slice(startIndex, endIndex);
+
+  const renderRunCard = (run) => {
+    const joinedEntry = joinedRuns.find((entry) => entry.runId === run.id && entry.participantId);
+    const runStatus = statusForRun[run.id];
+    return (
+      <div
+        key={run.id}
+        className={`bg-slate-800 border rounded-lg p-6 hover:bg-slate-750 transition-colors ${
+          selectedRuns.has(run.id) ? 'border-cyan-500' : 'border-slate-600'
+        }`}
+      >
+        <div className="flex items-start gap-3 mb-3">
+          <input
+            type="checkbox"
+            checked={selectedRuns.has(run.id)}
+            onChange={() => handleToggleRun(run.id)}
+            className="mt-1 w-5 h-5 rounded"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between mb-2">
+              <h3 className="text-lg font-semibold text-white truncate">
+                {run.name || 'Namnlös runda'}
+              </h3>
+              <span className={`text-sm font-medium ${getStatusColor(run.status)}`}>
+                {getStatusLabel(run.status)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-sm text-gray-300 space-y-2 mb-4">
+          <div className="flex justify-between">
+            <span>Typ:</span>
+            <span>{getTypeLabel(run.type)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Skapad:</span>
+            <span>{formatDate(run.createdAt)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Frågor:</span>
+            <span>{getTotalQuestions(run)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Längd:</span>
+            <span>
+              {run.type === 'distance-based'
+                ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
+                : run.type === 'time-based'
+                  ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
+                  : run.lengthMeters
+                    ? `${Math.round(run.lengthMeters / 1000)} km`
+                    : 'Okänd'
+              }
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>Kod:</span>
+            <span className="font-mono text-purple-300">{run.joinCode || 'Ingen'}</span>
+          </div>
+        </div>
+
+        {run.status === 'active' && (
+          <div className="mb-4 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-gray-200">
+            <div className="flex items-center justify-between text-xs text-gray-400">
+              <span>Status</span>
+              <span>Live</span>
+            </div>
+            {runStatus ? (
+              <>
+                <div className="mt-1 font-semibold text-emerald-300">
+                  {runStatus.summary}
+                </div>
+                <div className="mt-1 text-xs text-gray-300">
+                  {`Svarade ${runStatus.answered}/${getTotalQuestions(run)} · Kvar ${runStatus.remaining}`}
+                </div>
+              </>
+            ) : (
+              <div className="mt-1 text-xs text-gray-400">
+                Anslut för att se status.
+              </div>
+            )}
+          </div>
+        )}
+
+        {run.description && (
+          <p className="text-sm text-gray-400 mb-4 line-clamp-2">
+            {run.description}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {joinedEntry ? (
+            <button
+              onClick={() => handleContinueRun(run.id, joinedEntry.participantId, run.joinCode)}
+              className="flex-1 bg-cyan-500 hover:bg-cyan-400 px-3 py-2 rounded text-sm font-medium text-black"
+            >
+              Fortsätt
+            </button>
+          ) : run.status === 'active' ? (
+            <button
+              onClick={() => navigate(`/join?code=${run.joinCode || ''}`)}
+              disabled={!run.joinCode}
+              className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-600 px-3 py-2 rounded text-sm font-medium text-black"
+            >
+              Anslut
+            </button>
+          ) : null}
+          <button
+            onClick={() => navigate(`/run/${run.id}/admin`)}
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded text-sm font-medium"
+          >
+            Administrera
+          </button>
+          <button
+            onClick={() => navigate(`/run/${run.id}/results`)}
+            className="flex-1 bg-slate-600 hover:bg-slate-700 px-3 py-2 rounded text-sm font-medium"
+          >
+            Resultat
+          </button>
+          <button
+            onClick={() => handleDeleteRun(run.id)}
+            className="bg-red-500 hover:bg-red-400 px-3 py-2 rounded text-sm font-medium"
+            title="Radera runda"
+          >
+            🗑️
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -536,156 +669,45 @@ const MyRunsPage = () => {
               </div>
             </div>
 
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              itemsPerPage={itemsPerPage}
-              totalItems={myRuns.length}
-              onItemsPerPageChange={setItemsPerPage}
-            />
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {paginatedRuns.map((run) => {
-              const joinedEntry = joinedRuns.find((entry) => entry.runId === run.id && entry.participantId);
-              const runStatus = statusForRun[run.id];
-              return (
-              <div
-                key={run.id}
-                className={`bg-slate-800 border rounded-lg p-6 hover:bg-slate-750 transition-colors ${
-                  selectedRuns.has(run.id) ? 'border-cyan-500' : 'border-slate-600'
-                }`}
-              >
-                <div className="flex items-start gap-3 mb-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedRuns.has(run.id)}
-                    onChange={() => handleToggleRun(run.id)}
-                    className="mt-1 w-5 h-5 rounded"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="text-lg font-semibold text-white truncate">
-                        {run.name || 'Namnlös runda'}
-                      </h3>
-                      <span className={`text-sm font-medium ${getStatusColor(run.status)}`}>
-                        {getStatusLabel(run.status)}
-                      </span>
-                    </div>
-                  </div>
+            {activeRuns.length > 0 && (
+              <section className="mb-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-emerald-200">Aktiva rundor</h2>
+                  <span className="text-xs text-gray-400">{activeRuns.length} st</span>
                 </div>
-
-                <div className="text-sm text-gray-300 space-y-2 mb-4">
-                  <div className="flex justify-between">
-                    <span>Typ:</span>
-                    <span>{getTypeLabel(run.type)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Skapad:</span>
-                    <span>{formatDate(run.createdAt)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Frågor:</span>
-                    <span>{getTotalQuestions(run)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Längd:</span>
-                    <span>
-                      {run.type === 'distance-based' 
-                        ? `${run.distanceBetweenQuestions || 500}m mellan frågor`
-                        : run.type === 'time-based'
-                          ? `${run.minutesBetweenQuestions || 5} min mellan frågor`
-                          : run.lengthMeters 
-                            ? `${Math.round(run.lengthMeters/1000)} km`
-                            : 'Okänd'
-                      }
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Kod:</span>
-                    <span className="font-mono text-purple-300">{run.joinCode || 'Ingen'}</span>
-                  </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {activeRuns.map((run) => renderRunCard(run))}
                 </div>
+              </section>
+            )}
 
-                {run.status === 'active' && (
-                  <div className="mb-4 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-gray-200">
-                    <div className="flex items-center justify-between text-xs text-gray-400">
-                      <span>Status</span>
-                      <span>Live</span>
-                    </div>
-                    {runStatus ? (
-                      <>
-                        <div className="mt-1 font-semibold text-emerald-300">
-                          {runStatus.summary}
-                        </div>
-                        <div className="mt-1 text-xs text-gray-300">
-                          {`Svarade ${runStatus.answered}/${getTotalQuestions(run)} · Kvar ${runStatus.remaining}`}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mt-1 text-xs text-gray-400">
-                        Anslut för att se status.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {run.description && (
-                  <p className="text-sm text-gray-400 mb-4 line-clamp-2">
-                    {run.description}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap gap-2">
-                  {joinedEntry ? (
-                    <button
-                      onClick={() => handleContinueRun(run.id, joinedEntry.participantId, run.joinCode)}
-                      className="flex-1 bg-cyan-500 hover:bg-cyan-400 px-3 py-2 rounded text-sm font-medium text-black"
-                    >
-                      Fortsätt
-                    </button>
-                  ) : run.status === 'active' ? (
-                    <button
-                      onClick={() => navigate(`/join?code=${run.joinCode || ''}`)}
-                      disabled={!run.joinCode}
-                      className="flex-1 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-600 px-3 py-2 rounded text-sm font-medium text-black"
-                    >
-                      Anslut
-                    </button>
-                  ) : null}
-                  <button
-                    onClick={() => navigate(`/run/${run.id}/admin`)}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 px-3 py-2 rounded text-sm font-medium"
-                  >
-                    Administrera
-                  </button>
-                  <button
-                    onClick={() => navigate(`/run/${run.id}/results`)}
-                    className="flex-1 bg-slate-600 hover:bg-slate-700 px-3 py-2 rounded text-sm font-medium"
-                  >
-                    Resultat
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRun(run.id)}
-                    className="bg-red-500 hover:bg-red-400 px-3 py-2 rounded text-sm font-medium"
-                    title="Radera runda"
-                  >
-                    🗑️
-                  </button>
-                </div>
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-200">Avslutade rundor</h2>
+                <span className="text-xs text-gray-400">{inactiveRuns.length} st</span>
               </div>
-            );
-            })}
-            </div>
+              {inactiveRuns.length === 0 ? (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-6 text-sm text-gray-400">
+                  Inga avslutade rundor ännu.
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {paginatedRuns.map((run) => renderRunCard(run))}
+                </div>
+              )}
+            </section>
 
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              itemsPerPage={itemsPerPage}
-              totalItems={myRuns.length}
-              onItemsPerPageChange={setItemsPerPage}
-            />
+            {inactiveRuns.length > 0 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                itemsPerPage={itemsPerPage}
+                totalItems={inactiveRuns.length}
+                onItemsPerPageChange={setItemsPerPage}
+              />
+            )}
+
           </>
         )}
       </div>

@@ -3,7 +3,7 @@
  * och förklarar kort hur Quizter fungerar.
  */
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageLayout from '../components/layout/PageLayout';
 import PaymentModal from '../components/payment/PaymentModal';
@@ -13,6 +13,7 @@ const LandingPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [isBetaExpanded, setIsBetaExpanded] = useState(false);
+  const [searchParams] = useSearchParams();
   const [paymentConfig, setPaymentConfig] = useState(null);
   const [showDonationModal, setShowDonationModal] = useState(false);
   const [donationAmount, setDonationAmount] = useState(2000);
@@ -40,6 +41,7 @@ const LandingPage = () => {
     };
   }, []);
 
+  const showWelcome = searchParams.get('welcome') === '1';
   const donationEnabled = Boolean(
     paymentConfig?.paymentsEnabled
     && paymentConfig?.donations?.enabled
@@ -63,6 +65,42 @@ const LandingPage = () => {
           </p>
         </div>
       </section>
+
+      {showWelcome && (
+        <section className="rounded-2xl border border-cyan-500/40 bg-cyan-500/10 p-6 text-left">
+          <h2 className="text-xl font-semibold text-cyan-200">Välkommen! Kom igång på 1 minut</h2>
+          <ol className="mt-4 space-y-3 text-sm text-gray-200">
+            <li>
+              <span className="font-semibold text-cyan-300">1.</span>{' '}
+              Skapa en runda eller anslut med kod.
+            </li>
+            <li>
+              <span className="font-semibold text-cyan-300">2.</span>{' '}
+              Tillåt GPS när du spelar, så får du checkpoints och karta.
+            </li>
+            <li>
+              <span className="font-semibold text-cyan-300">3.</span>{' '}
+              Dela QR/kod så att fler kan hoppa in.
+            </li>
+          </ol>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleCreateRun}
+              className="flex-1 rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-black hover:bg-cyan-400"
+            >
+              Skapa runda
+            </button>
+            <button
+              type="button"
+              onClick={handleStartRun}
+              className="flex-1 rounded-lg border border-cyan-400/40 bg-slate-900/70 px-4 py-2 font-semibold text-cyan-100 hover:border-cyan-300"
+            >
+              Anslut till runda
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5">
         <button

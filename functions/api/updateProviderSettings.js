@@ -3,6 +3,7 @@
  * Saves model + encrypted API keys + purpose toggles.
  */
 import { getProviderSettingsSnapshot, saveProviderSettings } from '../lib/providerSettings.js';
+import { logAuditEvent } from '../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -27,6 +28,30 @@ export async function onRequestPost(context) {
 
     await saveProviderSettings(env, settings);
     const { settings: nextSettings } = await getProviderSettingsSnapshot(env, { decryptKeys: false });
+    const actorEmail = request.headers.get('x-user-email');
+    const providers = nextSettings?.providers ? Object.values(nextSettings.providers) : [];
+    const purposes = nextSettings?.purposes || {};
+    const purposeSummary = Object.keys(purposes).reduce((acc, purpose) => {
+      const enabledForPurpose = purposes[purpose] || {};
+      acc[purpose] = Object.keys(enabledForPurpose).filter((key) => enabledForPurpose[key]);
+      return acc;
+    }, {});
+
+    try {
+      await logAuditEvent(env.DB, {
+        actorEmail,
+        action: 'update',
+        targetType: 'ai-providers',
+        details: {
+          providerCount: providers.length,
+          enabledProviders: providers.filter((provider) => provider.isEnabled).map((provider) => provider.providerId),
+          customProviders: providers.filter((provider) => provider.isCustom).map((provider) => provider.providerId),
+          purposeSummary
+        }
+      });
+    } catch (error) {
+      console.warn('[updateProviderSettings] Audit log failed:', error.message);
+    }
 
     return new Response(
       JSON.stringify({

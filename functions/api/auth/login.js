@@ -64,6 +64,7 @@ export async function onRequestPost(context) {
         name: user.display_name || user.email || 'Användare',
         email: user.email,
         contact: user.email,
+        emailVerified: user.email_verified === 1 || user.email_verified === true,
         isAnonymous: false,
         isSuperUser
       }

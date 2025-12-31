@@ -1,7 +1,7 @@
 /**
  * Resultatvy efter avslutad runda.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +27,8 @@ const RunResultsPage = () => {
   const [answersOverride, setAnswersOverride] = useState(null);
   const [answersByParticipant, setAnswersByParticipant] = useState({});
   const [participantDetailsById, setParticipantDetailsById] = useState({});
+  const [shareStatus, setShareStatus] = useState('');
+  const autoExpandedRef = useRef(false);
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
@@ -180,6 +182,21 @@ const RunResultsPage = () => {
     setShowDonationModal(false);
   };
 
+  const handleCopyLink = async () => {
+    if (typeof window === 'undefined') return;
+    const url = window.location.href;
+    try {
+      if (!navigator?.clipboard) {
+        throw new Error('Clipboard saknas');
+      }
+      await navigator.clipboard.writeText(url);
+      setShareStatus('Länken är kopierad.');
+    } catch (error) {
+      setShareStatus('Kunde inte kopiera länken.');
+    }
+    setTimeout(() => setShareStatus(''), 2500);
+  };
+
   const normalizedAnswers = useMemo(() => {
     const participantAnswers = currentParticipant
       ? answersByParticipant[currentParticipant.id]
@@ -194,6 +211,14 @@ const RunResultsPage = () => {
       correct: answer.correct ?? answer.is_correct ?? false
     }));
   }, [answersByParticipant, answersOverride, currentParticipant]);
+
+  useEffect(() => {
+    if (autoExpandedRef.current) return;
+    if (normalizedAnswers.length > 0) {
+      setShowDetailedResults(true);
+      autoExpandedRef.current = true;
+    }
+  }, [normalizedAnswers.length]);
 
   const scoredParticipants = useMemo(() => {
     const activeThresholdMs = 45000;
@@ -371,8 +396,21 @@ const RunResultsPage = () => {
                 {showDetailedResults ? 'Dölj' : 'Visa'} mina svar
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-semibold text-gray-200 hover:border-slate-500"
+            >
+              Kopiera länk
+            </button>
           </div>
         </div>
+
+        {shareStatus && (
+          <div className="rounded-2xl border border-cyan-500/40 bg-cyan-900/20 px-4 py-3 text-cyan-100">
+            {shareStatus}
+          </div>
+        )}
 
         {donationFeedback && (
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/30 px-4 py-3 text-emerald-100">
