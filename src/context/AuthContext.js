@@ -98,10 +98,12 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /** Skapar gästkonto (offline). */
-  const loginAsGuest = useCallback(async ({ alias, contact }) => {
+  const loginAsGuest = useCallback(async ({ alias, contact } = {}) => {
+    const id = uuidv4();
+    const cleanAlias = typeof alias === 'string' ? alias.trim() : '';
     const user = {
-      id: uuidv4(),
-      name: alias || 'Gäst',
+      id,
+      name: cleanAlias || id,
       contact: contact || null,
       isAnonymous: true,
       isSuperUser: false

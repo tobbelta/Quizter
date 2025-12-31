@@ -123,7 +123,9 @@ async function registerParticipant(db, data) {
     payment_id = null,
     paymentId = null,
     is_anonymous = null,
-    isAnonymous = null
+    isAnonymous = null,
+    device_id = null,
+    deviceId = null
   } = data;
 
   if (!run_id || !alias) {
@@ -161,6 +163,7 @@ async function registerParticipant(db, data) {
   }
 
   const resolvedIsAnonymous = Boolean(is_anonymous ?? isAnonymous ?? !user_id);
+  const resolvedDeviceId = String(device_id || deviceId || '').trim() || null;
   const anonymousPolicy = run?.anonymous_policy || 'allow';
   const maxAnonymous = Number.isFinite(Number(run?.max_anonymous))
     ? Math.max(0, Math.round(Number(run.max_anonymous)))
@@ -276,14 +279,15 @@ async function registerParticipant(db, data) {
     // Create participant
     await db.prepare(
       `INSERT INTO participants (
-        id, run_id, user_id, alias, joined_at, last_seen, payment_status, payment_amount,
+        id, run_id, user_id, alias, device_id, joined_at, last_seen, payment_status, payment_amount,
         payment_currency, payment_provider_id, payment_id, is_anonymous
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       participantId,
       run_id,
       user_id,
       normalizedAlias,
+      resolvedDeviceId,
       now,
       now,
       playerPaymentRequired ? 'paid' : null,
@@ -306,6 +310,7 @@ async function registerParticipant(db, data) {
       run_id: run_id,
       user_id: user_id,
       alias: normalizedAlias,
+      device_id: resolvedDeviceId,
       joined_at: now,
       last_seen: now,
       completed_at: null,

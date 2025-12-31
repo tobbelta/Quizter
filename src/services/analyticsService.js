@@ -1,13 +1,54 @@
 /**
  * Analytics Service - Hanterar besöksstatistik och användarspårning
  */
-// Legacy Firebase/Firestore analytics logic removed. Use Cloudflare API endpoint instead.
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
-// Helper functions commented out (not used without API implementation)
-// const getDeviceType = () => { ... }
-// const getOS = () => { ... }
-// const getBrowser = () => { ... }
-// const getTimezone = () => { ... }
+const buildQuery = (params = {}) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') return;
+    search.set(key, value);
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+};
+
+const getDeviceType = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent || '';
+  if (/ipad|tablet/i.test(ua)) return 'tablet';
+  if (/mobi|android/i.test(ua)) return 'mobile';
+  return 'desktop';
+};
+
+const getOS = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent || '';
+  if (/windows nt/i.test(ua)) return 'Windows';
+  if (/android/i.test(ua)) return 'Android';
+  if (/iphone|ipad|ipod/i.test(ua)) return 'iOS';
+  if (/mac os x/i.test(ua)) return 'macOS';
+  if (/linux/i.test(ua)) return 'Linux';
+  return 'unknown';
+};
+
+const getBrowser = () => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent || '';
+  if (/edg\//i.test(ua)) return 'Edge';
+  if (/chrome\//i.test(ua)) return 'Chrome';
+  if (/safari\//i.test(ua) && !/chrome\//i.test(ua)) return 'Safari';
+  if (/firefox\//i.test(ua)) return 'Firefox';
+  return 'unknown';
+};
+
+const getTimezone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+};
 
 /**
  * Genererar eller hämtar unikt device ID från localStorage
@@ -33,29 +74,34 @@ export const logVisit = async (eventType, metadata = {}) => {
   try {
     const deviceId = getDeviceId();
     if (!deviceId) return;
+    const resolvedMetadata = Object.fromEntries(Object.entries({ ...metadata }).filter(([, v]) => v !== undefined));
+    const userId = resolvedMetadata.userId || resolvedMetadata.user_id || null;
+    delete resolvedMetadata.userId;
+    delete resolvedMetadata.user_id;
 
-    // TODO: Replace with Cloudflare API endpoint
-    // const visitData = {
-    //   deviceId,
-    //   eventType,
-    //   timestamp: Date.now(),
-    //   deviceType: getDeviceType(),
-    //   os: getOS(),
-    //   browser: getBrowser(),
-    //   timezone: getTimezone(),
-    //   metadata: Object.fromEntries(Object.entries({
-    //     ...metadata,
-    //     userAgent: navigator.userAgent,
-    //     language: navigator.language,
-    //     screenResolution: `${window.screen.width}x${window.screen.height}`,
-    //     path: window.location.pathname
-    //   }).filter(([_, v]) => v !== undefined))
-    // };
-    // await fetch('/api/analytics', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(visitData)
-    // });
+    const visitData = {
+      deviceId,
+      userId,
+      eventType,
+      timestamp: Date.now(),
+      deviceType: getDeviceType(),
+      os: getOS(),
+      browser: getBrowser(),
+      timezone: getTimezone(),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      language: typeof navigator !== 'undefined' ? navigator.language : '',
+      screenResolution: typeof window !== 'undefined'
+        ? `${window.screen.width}x${window.screen.height}`
+        : '',
+      path: typeof window !== 'undefined' ? window.location.pathname : '',
+      metadata: resolvedMetadata
+    };
+
+    await fetch(`${API_BASE_URL}/api/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(visitData)
+    });
   } catch (error) {
     console.error('Error logging visit:', error);
   }
@@ -64,25 +110,29 @@ export const logVisit = async (eventType, metadata = {}) => {
 /**
  * Hämtar besöksstatistik för admin
  */
-export const getAnalytics = async (filters = {}) => {
-  // TODO: Replace with Cloudflare API endpoint
-  // const response = await fetch('/api/analytics');
-  // return await response.json();
-  
-  console.warn('Analytics retrieval not yet implemented with Cloudflare API');
-  return [];
+export const getAnalytics = async (filters = {}, userEmail = '') => {
+  try {
+    const query = buildQuery(filters);
+    const response = await fetch(`${API_BASE_URL}/api/analytics${query}`, {
+      headers: { 'x-user-email': userEmail || '' }
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Kunde inte hämta analytics');
+    }
+    return data.events || [];
+  } catch (error) {
+    console.warn('Analytics retrieval failed:', error);
+    return [];
+  }
 };
 
 /**
  * Hämtar statistik för en specifik enhet
  */
-export const getDeviceStats = async () => {
-  // TODO: Replace with Cloudflare API endpoint
-  // const response = await fetch(`/api/analytics?deviceId=${deviceId}`);
-  // return await response.json();
-  
-  console.warn('Device stats retrieval not yet implemented with Cloudflare API');
-  return [];
+export const getDeviceStats = async (deviceId, userEmail = '') => {
+  if (!deviceId) return [];
+  return getAnalytics({ deviceId }, userEmail);
 };
 
 /**
@@ -135,9 +185,16 @@ export const hasDonated = () => {
 /**
  * Hämta aggregerad statistik
  */
-export const getAggregatedStats = async () => {
+export const getAggregatedStats = async (userEmail = '') => {
   try {
-    const allEvents = await getAnalytics({ limit: 10000 });
+    const allEvents = await getAnalytics({ limit: 10000 }, userEmail);
+    const toDate = (value) => {
+      if (!value) return null;
+      if (value.toDate) return value.toDate();
+      if (typeof value === 'number') return new Date(value);
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
 
     const stats = {
       totalVisits: allEvents.length,
@@ -161,8 +218,9 @@ export const getAggregatedStats = async () => {
       }
 
       // Count by date
-      if (event.timestamp?.toDate) {
-        const date = event.timestamp.toDate().toISOString().split('T')[0];
+      const eventDate = toDate(event.timestamp);
+      if (eventDate) {
+        const date = eventDate.toISOString().split('T')[0];
         stats.devicesByDate[date] = stats.devicesByDate[date] || new Set();
         stats.devicesByDate[date].add(event.deviceId);
       }

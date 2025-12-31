@@ -245,4 +245,8 @@ export const localStorageService = {
   replaceJoinedRun,
   removeJoinedRun,
   clearAnonymousRuns
+  replaceCreatedRun,
+  replaceJoinedRun,
+  removeJoinedRun,
+  clearAnonymousRuns
 };

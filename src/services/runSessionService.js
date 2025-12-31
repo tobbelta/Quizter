@@ -1,9 +1,9 @@
 const INSTANCE_KEY = 'quizter:instanceId';
 const ACTIVE_PREFIX = 'quizter:activeRun:';
 
-const getStorage = (type) => {
+const getStorage = (storageType) => {
   if (typeof window === 'undefined') return null;
-  return type === 'session' ? window.sessionStorage : window.localStorage;
+  return storageType === 'session' ? window.sessionStorage : window.localStorage;
 };
 
 const buildKey = (runId) => `${ACTIVE_PREFIX}${runId}`;

@@ -1,6 +1,40 @@
-// Stub: Replace with API-based subscription if needed
-export const subscribeToMessages = (userId = null, deviceId = null, callback) => {
-  return () => {};
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
+const buildQuery = (params) => {
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') return;
+    search.set(key, value);
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+};
+
+export const subscribeToMessages = (userId = null, deviceId = null, callback, options = {}) => {
+  const intervalMs = Number(options.intervalMs) || 15000;
+  let isActive = true;
+  let intervalId = null;
+
+  const fetchMessages = async () => {
+    if (!isActive) return;
+    try {
+      const messages = await getMessages(userId, deviceId);
+      if (!isActive) return;
+      callback(messages);
+    } catch (error) {
+      console.warn('[messageService] Kunde inte hämta meddelanden:', error);
+    }
+  };
+
+  fetchMessages();
+  intervalId = setInterval(fetchMessages, intervalMs);
+
+  return () => {
+    isActive = false;
+    if (intervalId) {
+      clearInterval(intervalId);
+    }
+  };
 };
 
 /**
@@ -20,9 +54,20 @@ export const subscribeToMessages = (userId = null, deviceId = null, callback) =>
  * @param {Object} messageData.metadata - Extra metadata (optional)
  * @returns {Promise<string>} Meddelande-ID
  */
-export const sendMessage = async (messageData) => {
-  // Stub: Replace with API call to send message
-  return { success: false, error: 'MessageService disabled - use API endpoint' };
+export const sendMessage = async (messageData, userEmail = '') => {
+  const response = await fetch(`${API_BASE_URL}/api/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-email': userEmail || ''
+    },
+    body: JSON.stringify(messageData || {})
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte skicka meddelande.');
+  }
+  return data;
 };
 
 /**
@@ -32,44 +77,83 @@ export const sendMessage = async (messageData) => {
  * @returns {Promise<Array>} Array med meddelanden
  */
 export const getMessages = async (userId = null, deviceId = null) => {
-  // Stub: Replace with API call to fetch messages
-  return [];
+  const query = buildQuery({ userId, deviceId });
+  const response = await fetch(`${API_BASE_URL}/api/messages${query}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte hämta meddelanden.');
+  }
+  return data.messages || [];
 };
 
 /**
  * Markera meddelande som läst
  * @param {string} messageId - Meddelande-ID
  */
-export const markAsRead = async (messageId) => {
-  // Stub: Replace with API call to mark message as read
-  return { success: false, error: 'MessageService disabled - use API endpoint' };
+export const markAsRead = async (messageId, userId = null, deviceId = null) => {
+  const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}/read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, deviceId })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte markera meddelande som läst.');
+  }
+  return data;
 };
 
 /**
  * Radera meddelande (soft delete)
  * @param {string} messageId - Meddelande-ID
  */
-export const deleteMessage = async (messageId) => {
-  // Stub: Replace with API call to delete message
-  return { success: false, error: 'MessageService disabled - use API endpoint' };
+export const deleteMessage = async (messageId, userId = null, deviceId = null) => {
+  const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, deviceId })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte radera meddelande.');
+  }
+  return data;
 };
 
 /**
  * Radera meddelande permanent (hard delete)
  * @param {string} messageId - Meddelande-ID
  */
-export const permanentDeleteMessage = async (messageId) => {
-  // Stub: Replace with API call to permanently delete message
-  return { success: false, error: 'MessageService disabled - use API endpoint' };
+export const permanentDeleteMessage = async (messageId, userEmail = '') => {
+  const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-email': userEmail || ''
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte radera meddelande.');
+  }
+  return data;
 };
 
 /**
  * Hämta alla meddelanden (för admin)
  * @returns {Promise<Array>} Array med alla meddelanden
  */
-export const getAllMessages = async () => {
-  // Stub: Replace with API call to fetch all messages
-  return [];
+export const getAllMessages = async (userEmail = '') => {
+  const response = await fetch(`${API_BASE_URL}/api/messages/all`, {
+    headers: {
+      'x-user-email': userEmail || ''
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte hämta meddelanden.');
+  }
+  return data.messages || [];
 };
 
 /**
@@ -79,8 +163,13 @@ export const getAllMessages = async () => {
  * @returns {Promise<number>} Antal olästa meddelanden
  */
 export const getUnreadCount = async (userId = null, deviceId = null) => {
-  // Stub: Replace with API call to get unread count
-  return 0;
+  const query = buildQuery({ userId, deviceId });
+  const response = await fetch(`${API_BASE_URL}/api/messages/unread${query}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Kunde inte hämta olästa meddelanden.');
+  }
+  return data.count || 0;
 };
 
 export const messageService = {

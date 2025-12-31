@@ -16,6 +16,7 @@ import useElapsedTime from '../hooks/useElapsedTime';
 import useTimeQuestionTrigger from '../hooks/useTimeQuestionTrigger';
 import useAppVisibility from '../hooks/useAppVisibility';
 import backgroundLocationService from '../services/backgroundLocationService';
+import { runSessionService } from '../services/runSessionService';
 import { calculateDistanceMeters, formatDistance } from '../utils/geo';
 import Header from '../components/layout/Header';
 import ReportQuestionDialog from '../components/shared/ReportQuestionDialog';
@@ -23,7 +24,6 @@ import { buildJoinLink } from '../utils/joinLink';
 import useQRCode from '../hooks/useQRCode';
 import QRCodeDisplay from '../components/shared/QRCodeDisplay';
 import { localStorageService } from '../services/localStorageService';
-import { runSessionService } from '../services/runSessionService';
 import { runRepository } from '../repositories/runRepository';
 import {
   ensureNotificationPermissions,
@@ -84,6 +84,7 @@ const PlayRunPage = () => {
     refreshParticipants,
     pauseSession,
     resumeSession,
+    resumeSession,
     setSessionInstanceId
   } = useRun();
   const {
@@ -113,6 +114,31 @@ const PlayRunPage = () => {
   const instanceId = useMemo(() => runSessionService.getInstanceId(), []);
   const [isPassiveSession, setIsPassiveSession] = useState(false);
   const [serverActiveInstanceId, setServerActiveInstanceId] = useState(null);
+  const [forceQuestionVisible, setForceQuestionVisible] = useState(false);
+  const [restoredQuestionNotice, setRestoredQuestionNotice] = useState('');
+  const questionVisibilityKey = useMemo(() => {
+    if (!runId || !currentParticipant?.id) return '';
+    return `quizter:questionVisible:${runId}:${currentParticipant.id}`;
+  }, [runId, currentParticipant?.id]);
+
+  const readQuestionVisibility = useCallback(() => {
+    if (!questionVisibilityKey || typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(questionVisibilityKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }, [questionVisibilityKey]);
+
+  const writeQuestionVisibility = useCallback((payload) => {
+    if (!questionVisibilityKey || typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(questionVisibilityKey, JSON.stringify(payload));
+    } catch (error) {
+      // Ignore
+    }
+  }, [questionVisibilityKey]);
   const isDistanceBased = currentRun?.type === 'distance-based';
   const isTimeBased = currentRun?.type === 'time-based';
   const isAppForeground = useAppVisibility();
@@ -195,6 +221,8 @@ const PlayRunPage = () => {
       resumeSession();
     }
   }, [isPassiveSession, pauseSession, resumeSession]);
+
+  useEffect(() => () => resumeSession(), [resumeSession]);
 
   const cancelNativeTimeNotification = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) {
@@ -334,24 +362,6 @@ const PlayRunPage = () => {
   const manualMode = requiresTracking ? !trackingEnabled : false;
   const isNative = Capacitor.isNativePlatform();
 
-  // Timer för att mäta total tid
-  const { formattedTime } = useElapsedTime(true);
-
-  // State för background tracking (native only)
-  const [backgroundDistance, setBackgroundDistance] = useState(0);
-  const [backgroundDistanceToNext, setBackgroundDistanceToNext] = useState(0);
-
-  useEffect(() => {
-    setSelectedOption(null);
-    setFeedback(null);
-    if (isTimeBased) {
-      setQuestionVisible(false);
-    } else {
-      setQuestionVisible(!manualMode);
-    }
-  }, [currentParticipant?.currentOrder, isTimeBased, manualMode]);
-
-
   const orderedQuestions = useMemo(() => {
     const questionIds = Array.isArray(currentRun?.questionIds) ? currentRun.questionIds : [];
     return questionIds.map((id) => {
@@ -370,6 +380,55 @@ const PlayRunPage = () => {
     });
   }, [currentRun, selectedLanguage]);
   const totalQuestions = orderedQuestions.length;
+
+  // Timer för att mäta total tid
+  const { formattedTime } = useElapsedTime(true);
+
+  // State för background tracking (native only)
+  const [backgroundDistance, setBackgroundDistance] = useState(0);
+  const [backgroundDistanceToNext, setBackgroundDistanceToNext] = useState(0);
+
+  const answeredCount = currentParticipant?.answers?.length || 0;
+
+  const currentOrderIndex = useMemo(() => {
+    if (!currentParticipant) return 0;
+    const fallbackOrder = Math.max(1, answeredCount + 1);
+    const rawOrder = Number.isFinite(currentParticipant.currentOrder)
+      ? currentParticipant.currentOrder
+      : fallbackOrder;
+    return Math.max(0, rawOrder - 1);
+  }, [answeredCount, currentParticipant]);
+
+  useEffect(() => {
+    setSelectedOption(null);
+    setFeedback(null);
+    const storedVisibility = readQuestionVisibility();
+    const storedIndex = Number.isFinite(storedVisibility?.questionIndex)
+      ? storedVisibility.questionIndex
+      : null;
+    const currentQuestionId = orderedQuestions[currentOrderIndex]?.id || null;
+    const shouldRestore = Boolean(
+      storedVisibility?.visible
+      && storedIndex === currentOrderIndex
+      && (!storedVisibility?.questionId || storedVisibility.questionId === currentQuestionId)
+    );
+
+    if (shouldRestore) {
+      setQuestionVisible(true);
+      setForceQuestionVisible(true);
+      setRestoredQuestionNotice('Återställde synlig fråga.');
+      return;
+    }
+    setForceQuestionVisible(false);
+    setRestoredQuestionNotice('');
+
+    if (isTimeBased) {
+      setQuestionVisible(false);
+    } else {
+      setQuestionVisible(!manualMode);
+    }
+  }, [currentParticipant?.currentOrder, isTimeBased, manualMode, orderedQuestions, currentOrderIndex, readQuestionVisibility]);
+
 
   // Schedule native notification for time-based questions
   // Must be defined AFTER orderedQuestions and totalQuestions
@@ -426,23 +485,16 @@ const PlayRunPage = () => {
     totalQuestions
   ]);
 
-  const answeredCount = currentParticipant?.answers?.length || 0;
-  const currentOrderIndex = useMemo(() => {
-    if (!currentParticipant) return 0;
-    const fallbackOrder = Math.max(1, answeredCount + 1);
-    const rawOrder = Number.isFinite(currentParticipant.currentOrder)
-      ? currentParticipant.currentOrder
-      : fallbackOrder;
-    return Math.max(0, rawOrder - 1);
-  }, [answeredCount, currentParticipant]);
-
   // Spåra distans för ALLA typer (men bara trigga frågor för distance-based)
   const distanceTracking = useDistanceTracking({
     coords,
-    trackingEnabled: trackingEnabled && !isNative, // Använd inte hook på native
+    trackingEnabled: trackingEnabled && !isNative && !isPassiveSession, // Använd inte hook på native
     distanceBetweenQuestions: currentRun?.distanceBetweenQuestions || 500,
     currentQuestionIndex: currentOrderIndex,
-    totalQuestions: totalQuestions
+    totalQuestions: totalQuestions,
+    storageKeyPrefix: runId && currentParticipant?.id
+      ? `distanceTracking:${runId}:${currentParticipant.id}`
+      : ''
   });
   const { resetQuestionDistance } = distanceTracking;
 
@@ -455,11 +507,15 @@ const PlayRunPage = () => {
     wasTriggeredByTimer
   } = useTimeQuestionTrigger({
     isEnabled: Boolean(isTimeBased),
+    isPaused: isPassiveSession,
     intervalMinutes: currentRun?.minutesBetweenQuestions || 5,
     currentQuestionIndex: currentOrderIndex,
     totalQuestions,
     onTimerScheduled: scheduleNativeTimeNotification,
-    onTimerCleared: cancelNativeTimeNotification
+    onTimerCleared: cancelNativeTimeNotification,
+    storageKeyPrefix: runId && currentParticipant?.id
+      ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+      : ''
   });
 
   const formattedTimeRemaining = useMemo(() => formatCountdown(timeRemainingMs), [timeRemainingMs]);
@@ -472,12 +528,15 @@ const PlayRunPage = () => {
     
     // Om currentOrderIndex > 0 betyder det att användaren redan svarat på tidigare frågor
     // Rensa sessionStorage för dessa (men INTE för currentOrderIndex - den pågår!)
-    console.log('[PlayRunPage] Cleaning up sessionStorage for answered questions (0 to', currentOrderIndex - 1, ')');
+    console.log('[PlayRunPage] Cleaning up timer storage for answered questions (0 to', currentOrderIndex - 1, ')');
     for (let i = 0; i < currentOrderIndex; i++) {
-      const storageKey = `timeQuestionTrigger_q${i}`;
-      sessionStorage.removeItem(storageKey);
+      const storageKeyPrefix = runId && currentParticipant?.id
+        ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+        : '';
+      const storageKey = storageKeyPrefix ? `${storageKeyPrefix}:q${i}` : `timeQuestionTrigger_q${i}`;
+      localStorage.removeItem(storageKey);
     }
-  }, [runId, isTimeBased, currentOrderIndex]);
+  }, [runId, isTimeBased, currentOrderIndex, currentParticipant?.id]);
 
   // Schemalägger nästa time-based fråga när användaren svarar (currentOrderIndex ökar)
   useEffect(() => {
@@ -662,14 +721,34 @@ const PlayRunPage = () => {
 
   // Bestäm om frågan ska visas baserat på läge och närhet.
   const shouldShowQuestion = isTimeBased
-    ? timedShouldShowQuestion
+    ? forceQuestionVisible || timedShouldShowQuestion
     : isDistanceBased
-      ? (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
-      : (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-baserad: checkpoint eller manuell
+      ? forceQuestionVisible || (manualMode && questionVisible) || distanceTracking.shouldShowQuestion  // Distance-based: avstånd eller manuell
+      : forceQuestionVisible || (manualMode && questionVisible) || (!manualMode && nearCheckpoint);     // Route-baserad: checkpoint eller manuell
 
   const currentQuestion = shouldShowQuestion
     ? orderedQuestions[currentOrderIndex] || null
     : null;
+
+  useEffect(() => {
+    if (!questionVisibilityKey || isPassiveSession) return;
+    const payload = {
+      visible: Boolean(currentQuestion),
+      questionIndex: currentOrderIndex,
+      questionId: currentQuestion?.id || null,
+      updatedAt: Date.now()
+    };
+    writeQuestionVisibility(payload);
+    setForceQuestionVisible(Boolean(currentQuestion));
+  }, [currentQuestion, currentOrderIndex, questionVisibilityKey, writeQuestionVisibility, isPassiveSession]);
+
+  useEffect(() => {
+    if (!restoredQuestionNotice) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setRestoredQuestionNotice('');
+    }, 2500);
+    return () => window.clearTimeout(timeoutId);
+  }, [restoredQuestionNotice]);
 
   useEffect(() => {
     if (!isTimeBased || !timedShouldShowQuestion) {
@@ -902,8 +981,11 @@ const PlayRunPage = () => {
     
     // För time-based runs: rensa timer och shouldShowQuestion för DENNA fråga innan vi svarar
     if (isTimeBased) {
-      const storageKey = `timeQuestionTrigger_q${currentOrderIndex}`;
-      sessionStorage.removeItem(storageKey);
+      const storageKeyPrefix = runId && currentParticipant?.id
+        ? `timeQuestionTrigger:${runId}:${currentParticipant.id}`
+        : '';
+      const storageKey = storageKeyPrefix ? `${storageKeyPrefix}:q${currentOrderIndex}` : `timeQuestionTrigger_q${currentOrderIndex}`;
+      localStorage.removeItem(storageKey);
       console.log('[PlayRunPage] Cleared timer for answered question', currentOrderIndex);
       
       // VIKTIGT: Rensa shouldShowQuestion INNAN currentOrderIndex ökar
@@ -1116,6 +1198,33 @@ const PlayRunPage = () => {
     );
   }
 
+  if (isPassiveSession) {
+    return (
+      <div className="min-h-screen bg-slate-950">
+        <Header title={currentRun?.name || 'Runda'} />
+        <div className="mx-auto max-w-md px-4 pt-28 pb-8 text-center">
+          <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/70 p-6 shadow-xl">
+            <div className="text-3xl">⏸️</div>
+            <h1 className="mt-3 text-xl font-semibold text-slate-100">Den här fliken är passiv</h1>
+            <p className="mt-2 text-sm text-slate-300">
+              Rundan är aktiv i en annan flik eller ett annat fönster på samma enhet.
+            </p>
+            <button
+              type="button"
+              onClick={activateSession}
+              className="mt-5 w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-black hover:bg-cyan-400"
+            >
+              Aktivera här
+            </button>
+            <p className="mt-3 text-xs text-slate-400">
+              När du aktiverar den här fliken blir andra instanser passiva.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-dvh flex flex-col">
       {/*
@@ -1166,8 +1275,10 @@ const PlayRunPage = () => {
                 className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-black"
               >
                 Aktivera här
-              </button>
-            </div>
+              </button>        {restoredQuestionNotice && (
+          <div className="absolute inset-x-4 top-4 z-30">
+            <div className="mx-auto max-w-md rounded-xl border border-cyan-400/40 bg-slate-900/90 px-4 py-2 text-center text-sm text-cyan-100 shadow-lg">
+              {restoredQuestionNotice}            </div>
           </div>
         )}
         <RunMap

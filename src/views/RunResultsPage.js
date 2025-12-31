@@ -261,7 +261,11 @@ const RunResultsPage = () => {
     });
   }, [scoredParticipants]);
 
-  const donationEnabled = Boolean(paymentConfig?.donations?.enabled && paymentConfig?.donations?.placements?.afterRun);
+  const donationEnabled = Boolean(
+    paymentConfig?.paymentsEnabled
+    && paymentConfig?.donations?.enabled
+    && paymentConfig?.donations?.placements?.afterRun
+  );
   const donationCurrency = paymentConfig?.currency || 'sek';
   const donationAmounts = Array.isArray(paymentConfig?.donations?.amounts)
     ? paymentConfig.donations.amounts

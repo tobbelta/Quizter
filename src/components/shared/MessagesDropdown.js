@@ -18,7 +18,7 @@ const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
 
     let isMounted = true;
     const deviceId = analyticsService.getDeviceId();
-    const userId = currentUser?.isAnonymous ? null : currentUser?.uid;
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
 
     const loadMessages = async () => {
       setIsLoading(true);
@@ -48,8 +48,10 @@ const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
   }, [currentUser, isOpen, onUnreadChange]);
 
   const handleMarkAsRead = async (messageId) => {
+    const deviceId = analyticsService.getDeviceId();
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
     try {
-      await messageService.markAsRead(messageId);
+      await messageService.markAsRead(messageId, userId, deviceId);
       setMessages((prev) => {
         const updated = prev.map((message) => (
           message.id === messageId ? { ...message, read: true } : message
@@ -64,8 +66,10 @@ const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
   };
 
   const handleDelete = async (messageId) => {
+    const deviceId = analyticsService.getDeviceId();
+    const userId = currentUser?.isAnonymous ? null : currentUser?.id;
     try {
-      await messageService.deleteMessage(messageId);
+      await messageService.deleteMessage(messageId, userId, deviceId);
       setMessages((prev) => {
         const updated = prev.filter((message) => message.id !== messageId);
         const unread = updated.filter(m => !m.read && !m.deleted).length;
@@ -78,8 +82,9 @@ const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
   };
 
   const formatTimestamp = (timestamp) => {
-    if (!timestamp?.toDate) return '';
-    const date = timestamp.toDate();
+    if (!timestamp) return '';
+    const date = typeof timestamp?.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
@@ -168,7 +173,7 @@ const MessagesDropdown = ({ isOpen, onClose, onUnreadChange = () => {} }) => {
                     </div>
 
                     <p className="text-sm text-gray-300 mb-2 line-clamp-2">
-                      {message.message}
+                      {message.body || message.message}
                     </p>
 
                     <div className="flex items-center justify-between gap-2">

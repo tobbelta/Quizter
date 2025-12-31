@@ -21,7 +21,8 @@ export const useDistanceTracking = ({
   trackingEnabled,
   distanceBetweenQuestions,
   currentQuestionIndex,
-  totalQuestions
+  totalQuestions,
+  storageKeyPrefix = ''
 }) => {
   const [gpsTrail, setGpsTrail] = useState([]); // Array av GPS-punkter [{lat, lng, timestamp}]
   const [totalDistance, setTotalDistance] = useState(0); // Total distans gången (meter)
@@ -30,13 +31,89 @@ export const useDistanceTracking = ({
   
   const lastPositionRef = useRef(null);
   const questionDistanceRef = useRef(0); // Distans sedan senaste fråga
+  const totalDistanceRef = useRef(0);
 
-  // Återställ state när en ny fråga besvaras
+  const buildStorageKey = useCallback(() => {
+    if (!storageKeyPrefix) return '';
+    return `${storageKeyPrefix}:distance`;
+  }, [storageKeyPrefix]);
+
+  const loadStoredState = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    const key = buildStorageKey();
+    if (!key) return null;
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      console.warn('[DistanceTracking] Could not parse stored state', error);
+      return null;
+    }
+  }, [buildStorageKey]);
+
+  const saveStoredState = useCallback((nextState) => {
+    if (typeof window === 'undefined') return;
+    const key = buildStorageKey();
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(nextState));
+    } catch (error) {
+      console.warn('[DistanceTracking] Could not save state', error);
+    }
+  }, [buildStorageKey]);
+
   useEffect(() => {
+    totalDistanceRef.current = totalDistance;
+  }, [totalDistance]);
+
+  // Återställ eller återställ state när en ny fråga besvaras
+  useEffect(() => {
+    const stored = loadStoredState();
+    const storedIndex = Number.isFinite(stored?.questionIndex) ? stored.questionIndex : null;
+    if (stored && storedIndex === currentQuestionIndex) {
+      const storedQuestionDistance = Number(stored.questionDistance || 0);
+      const storedTotalDistance = Number(stored.totalDistance || 0);
+      questionDistanceRef.current = storedQuestionDistance;
+      totalDistanceRef.current = storedTotalDistance;
+      setTotalDistance(storedTotalDistance);
+      if (stored?.lastPosition) {
+        lastPositionRef.current = stored.lastPosition;
+        setGpsTrail([stored.lastPosition]);
+      }
+      setDistanceToNextQuestion(Math.max(0, distanceBetweenQuestions - storedQuestionDistance));
+      setShouldShowQuestion(currentQuestionIndex === 0 ? true : storedQuestionDistance >= distanceBetweenQuestions);
+      return;
+    }
+
     questionDistanceRef.current = 0;
     setDistanceToNextQuestion(distanceBetweenQuestions);
     setShouldShowQuestion(currentQuestionIndex === 0); // Visa första frågan direkt
-  }, [currentQuestionIndex, distanceBetweenQuestions]);
+    saveStoredState({
+      questionIndex: currentQuestionIndex,
+      questionDistance: 0,
+      totalDistance: totalDistanceRef.current,
+      lastPosition: lastPositionRef.current,
+      updatedAt: Date.now()
+    });
+  }, [currentQuestionIndex, distanceBetweenQuestions, loadStoredState, saveStoredState]);
+
+  useEffect(() => {
+    if (!trackingEnabled) return;
+    const stored = loadStoredState();
+    const storedIndex = Number.isFinite(stored?.questionIndex) ? stored.questionIndex : null;
+    if (stored && storedIndex === currentQuestionIndex) {
+      const storedQuestionDistance = Number(stored.questionDistance || 0);
+      const storedTotalDistance = Number(stored.totalDistance || 0);
+      questionDistanceRef.current = storedQuestionDistance;
+      totalDistanceRef.current = storedTotalDistance;
+      setTotalDistance(storedTotalDistance);
+      if (stored?.lastPosition) {
+        lastPositionRef.current = stored.lastPosition;
+        setGpsTrail([stored.lastPosition]);
+      }
+      setDistanceToNextQuestion(Math.max(0, distanceBetweenQuestions - storedQuestionDistance));
+    }
+  }, [trackingEnabled, currentQuestionIndex, distanceBetweenQuestions, loadStoredState]);
 
   // Spåra GPS-position och uppdatera distans
   useEffect(() => {
@@ -77,7 +154,9 @@ export const useDistanceTracking = ({
 
     // Uppdatera state
     setGpsTrail(prev => [...prev, currentPosition]);
-    setTotalDistance(prev => prev + distanceFromLast);
+    const nextTotalDistance = totalDistanceRef.current + distanceFromLast;
+    totalDistanceRef.current = nextTotalDistance;
+    setTotalDistance(nextTotalDistance);
     
     // Uppdatera distans sedan senaste fråga
     questionDistanceRef.current += distanceFromLast;
@@ -103,14 +182,28 @@ export const useDistanceTracking = ({
     }
 
     lastPositionRef.current = currentPosition;
-  }, [coords, trackingEnabled, distanceBetweenQuestions, currentQuestionIndex]);
+    saveStoredState({
+      questionIndex: currentQuestionIndex,
+      questionDistance: questionDistanceRef.current,
+      totalDistance: nextTotalDistance,
+      lastPosition: currentPosition,
+      updatedAt: Date.now()
+    });
+  }, [coords, trackingEnabled, distanceBetweenQuestions, currentQuestionIndex, saveStoredState]);
 
   // Reset när fråga besvaras
   const resetQuestionDistance = useCallback(() => {
     questionDistanceRef.current = 0;
     setDistanceToNextQuestion(distanceBetweenQuestions);
     setShouldShowQuestion(false);
-  }, [distanceBetweenQuestions]);
+    saveStoredState({
+      questionIndex: currentQuestionIndex,
+      questionDistance: 0,
+      totalDistance: totalDistanceRef.current,
+      lastPosition: lastPositionRef.current,
+      updatedAt: Date.now()
+    });
+  }, [currentQuestionIndex, distanceBetweenQuestions, saveStoredState]);
 
   return {
     gpsTrail,

@@ -1,7 +1,7 @@
 /**
  * SuperUser-sida för att skicka och hantera meddelanden
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { messageService } from '../services/messageService';
@@ -25,6 +25,18 @@ const SuperUserMessagesPage = () => {
     targetId: ''
   });
 
+  const loadMessages = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const allMessages = await messageService.getAllMessages(currentUser?.email || '');
+      setMessages(allMessages);
+    } catch (error) {
+      console.error('Kunde inte ladda meddelanden:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser?.email]);
+
   useEffect(() => {
     if (!isSuperUser) {
       navigate('/');
@@ -32,25 +44,16 @@ const SuperUserMessagesPage = () => {
     }
 
     loadMessages();
-  }, [isSuperUser, navigate]);
-
-  const loadMessages = async () => {
-    try {
-      setIsLoading(true);
-      const allMessages = await messageService.getAllMessages();
-      setMessages(allMessages);
-    } catch (error) {
-      console.error('Kunde inte ladda meddelanden:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [isSuperUser, navigate, loadMessages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     try {
-      await messageService.sendMessage(formData, currentUser.id);
+      await messageService.sendMessage({
+        ...formData,
+        adminId: currentUser?.id || null
+      }, currentUser?.email || '');
 
       // Återställ formulär
       setFormData({
@@ -88,7 +91,7 @@ const SuperUserMessagesPage = () => {
     }
 
     try {
-      await messageService.permanentDeleteMessage(messageId);
+      await messageService.permanentDeleteMessage(messageId, currentUser?.email || '');
       await loadMessages();
     } catch (error) {
       console.error('Kunde inte radera meddelande:', error);
@@ -102,8 +105,13 @@ const SuperUserMessagesPage = () => {
   };
 
   const formatTimestamp = (timestamp) => {
-    if (!timestamp?.toDate) return 'N/A';
-    return new Date(timestamp.toDate()).toLocaleString('sv-SE');
+    if (!timestamp) return 'N/A';
+    if (typeof timestamp?.toDate === 'function') {
+      return new Date(timestamp.toDate()).toLocaleString('sv-SE');
+    }
+    const parsed = new Date(timestamp);
+    if (Number.isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleString('sv-SE');
   };
 
   const getTypeColor = (type) => {
@@ -245,7 +253,7 @@ const SuperUserMessagesPage = () => {
                       </span>
                     </div>
 
-                    <p className="text-gray-300 mb-3">{message.body}</p>
+                    <p className="text-gray-300 mb-3">{message.body || message.message}</p>
 
                     <div className="flex items-center gap-4 text-sm text-gray-400">
                       <span>Mottagare: {getTargetLabel(message)}</span>

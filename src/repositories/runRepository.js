@@ -101,6 +101,7 @@ const normalizeParticipantRow = (participant) => {
     ...participant,
     runId: participant.runId ?? participant.run_id,
     userId: participant.userId ?? participant.user_id,
+    deviceId: participant.deviceId ?? participant.device_id ?? null,
     joinedAt: participant.joinedAt ?? normalizeTimestamp(participant.joined_at),
     completedAt: participant.completedAt ?? normalizeTimestamp(participant.completed_at),
     lastSeen: participant.lastSeen ?? normalizeTimestamp(participant.last_seen),
@@ -340,6 +341,9 @@ export const runRepository = {
       }
       if (participantData?.isAnonymous !== undefined && payload.is_anonymous === undefined) {
         payload.is_anonymous = participantData.isAnonymous;
+      }
+      if (participantData?.deviceId && payload.device_id === undefined) {
+        payload.device_id = participantData.deviceId;
       }
       const data = await apiCall('/api/participants', {
         method: 'POST',
