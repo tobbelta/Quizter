@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import MessageDialog from '../components/shared/MessageDialog';
 import { questionService } from '../services/questionService';
+import { userService } from '../services/userService';
 
 const SuperUserUsersPage = () => {
   const navigate = useNavigate();
@@ -22,6 +23,7 @@ const SuperUserUsersPage = () => {
   const [isRunsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('sv');
+  const [resendStatus, setResendStatus] = useState('');
 
   useEffect(() => {
     if (!isSuperUser) {
@@ -162,6 +164,26 @@ const SuperUserUsersPage = () => {
     }
   };
 
+  const handleResendVerification = async (user) => {
+    if (!user?.email) return;
+    setResendStatus('');
+    try {
+      await userService.resendVerification({
+        userId: user.id,
+        email: user.email,
+        userEmail: currentUser?.email || ''
+      });
+      setResendStatus(`Verifieringsmail skickat till ${user.email}.`);
+    } catch (error) {
+      setDialogConfig({
+        isOpen: true,
+        title: 'Kunde inte skicka verifieringsmail',
+        message: error.message || 'Ett fel inträffade.',
+        type: 'error'
+      });
+    }
+  };
+
   const filteredUsers = users.filter(user => {
     const matchesSearch =
       user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -209,6 +231,12 @@ const SuperUserUsersPage = () => {
           </div>
         </div>
 
+        {resendStatus && (
+          <div className="mb-4 rounded-lg border border-emerald-500/50 bg-emerald-900/30 px-4 py-3 text-sm text-emerald-100">
+            {resendStatus}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="text-center py-12 text-gray-400">Laddar användare...</div>
         ) : filteredUsers.length === 0 ? (
@@ -219,6 +247,7 @@ const SuperUserUsersPage = () => {
               const isCurrentUser = user.id === currentUser?.id;
               const isSuperUserAccount = user.superUser === true;
               const isAnonymousUser = user.isAnonymous === true;
+              const isVerified = user.emailVerified === true;
 
               return (
                 <div
@@ -253,16 +282,26 @@ const SuperUserUsersPage = () => {
                             SuperUser
                           </span>
                         )}
-                        {isAnonymousUser && (
-                          <span className="px-2 py-0.5 bg-slate-600/40 border border-slate-500/60 rounded text-xs text-slate-200">
-                            Anonym
-                          </span>
-                        )}
-                      </div>
+                      {isAnonymousUser && (
+                        <span className="px-2 py-0.5 bg-slate-600/40 border border-slate-500/60 rounded text-xs text-slate-200">
+                          Anonym
+                        </span>
+                      )}
+                      {!isAnonymousUser && (
+                        <span className="px-2 py-0.5 bg-slate-700/40 border border-slate-500/60 rounded text-xs text-slate-200">
+                          Registrerad
+                        </span>
+                      )}
+                      {!isAnonymousUser && (
+                        <span className={`px-2 py-0.5 rounded text-xs ${isVerified ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-200' : 'bg-amber-500/20 border border-amber-500/50 text-amber-200'}`}>
+                          {isVerified ? 'Verifierad' : 'Ej verifierad'}
+                        </span>
+                      )}
+                    </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-400">
-                        <div>
-                          <span className="font-semibold">Kontakt:</span> {user.profile?.contact || user.email || user.contact || 'Ej angiven'}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-400">
+                      <div>
+                        <span className="font-semibold">Kontakt:</span> {user.profile?.contact || user.email || user.contact || 'Ej angiven'}
                         </div>
                         <div>
                           <span className="font-semibold">Namn:</span> {user.profile?.displayName || user.name || 'Ej angiven'}
@@ -292,6 +331,15 @@ const SuperUserUsersPage = () => {
                       >
                         {selectedUser?.id === user.id ? 'Dölj rundor' : 'Visa rundor'}
                       </button>
+                      {!isAnonymousUser && !isVerified && (
+                        <button
+                          type="button"
+                          onClick={() => handleResendVerification(user)}
+                          className="rounded bg-slate-700 px-3 py-2 text-sm font-semibold text-gray-200 hover:bg-slate-600"
+                        >
+                          Skicka verifiering
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

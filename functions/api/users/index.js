@@ -30,6 +30,7 @@ export async function onRequest(context) {
       email: user.email,
       contact: user.email,
       createdAt: normalizeTimestamp(user.created_at),
+      emailVerified: user.email_verified === 1 || user.email_verified === true,
       superUser: user.is_super_user === 1 || user.is_super_user === true,
       isAnonymous: false
     }));
