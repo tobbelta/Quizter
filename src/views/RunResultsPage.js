@@ -27,6 +27,7 @@ const RunResultsPage = () => {
   const [answersOverride, setAnswersOverride] = useState(null);
   const [answersByParticipant, setAnswersByParticipant] = useState({});
   const [participantDetailsById, setParticipantDetailsById] = useState({});
+  const [shareStatus, setShareStatus] = useState('');
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
@@ -178,6 +179,21 @@ const RunResultsPage = () => {
 
   const handleDonationCancel = () => {
     setShowDonationModal(false);
+  };
+
+  const handleCopyLink = async () => {
+    if (typeof window === 'undefined') return;
+    const url = window.location.href;
+    try {
+      if (!navigator?.clipboard) {
+        throw new Error('Clipboard saknas');
+      }
+      await navigator.clipboard.writeText(url);
+      setShareStatus('Länken är kopierad.');
+    } catch (error) {
+      setShareStatus('Kunde inte kopiera länken.');
+    }
+    setTimeout(() => setShareStatus(''), 2500);
   };
 
   const normalizedAnswers = useMemo(() => {
@@ -371,8 +387,21 @@ const RunResultsPage = () => {
                 {showDetailedResults ? 'Dölj' : 'Visa'} mina svar
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-semibold text-gray-200 hover:border-slate-500"
+            >
+              Kopiera länk
+            </button>
           </div>
         </div>
+
+        {shareStatus && (
+          <div className="rounded-2xl border border-cyan-500/40 bg-cyan-900/20 px-4 py-3 text-cyan-100">
+            {shareStatus}
+          </div>
+        )}
 
         {donationFeedback && (
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-900/30 px-4 py-3 text-emerald-100">
