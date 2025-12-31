@@ -740,10 +740,6 @@ export const RunProvider = ({ children }) => {
     resumeSession,
     setSessionInstanceId,
     refreshParticipants
-    pauseSession,
-    resumeSession,
-    setSessionInstanceId,
-    refreshParticipants
   ]);
 
   return (

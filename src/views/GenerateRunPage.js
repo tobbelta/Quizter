@@ -572,12 +572,6 @@ const GenerateRunPage = () => {
     setError('');
     setPaymentError('');
 
-    // Om användaren är anonym och inte har angett alias, visa dialog
-    if (currentUser?.isAnonymous && !alias.trim()) {
-      setShowAliasDialog(true);
-      return;
-    }
-
     const isAnonymousUser = !currentUser || currentUser.isAnonymous;
     if (isAnonymousUser) {
       const canProceed = await confirmReplaceAnonymousRun();

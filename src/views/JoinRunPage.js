@@ -183,7 +183,7 @@ const JoinRunPage = () => {
     } catch (joinError) {
       setPaymentError(joinError.message || 'Kunde inte ansluta efter betalning.');
     }
-  }, [pendingJoin, joinRunByCode, navigate]);
+  }, [pendingJoin, joinRunByCode, navigate, currentUser]);
 
   const handlePaymentCancel = () => {
     setShowPaymentModal(false);

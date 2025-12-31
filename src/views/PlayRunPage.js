@@ -84,7 +84,6 @@ const PlayRunPage = () => {
     refreshParticipants,
     pauseSession,
     resumeSession,
-    resumeSession,
     setSessionInstanceId
   } = useRun();
   const {
@@ -1265,7 +1264,7 @@ const PlayRunPage = () => {
 
       {/* Huvudinnehåll - karta */}
       <main className="flex-1 relative overflow-hidden">
-        {isPassiveSession && (
+                {isPassiveSession && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80">
             <div className="rounded-xl border border-amber-400/60 bg-slate-900/90 px-6 py-5 text-center text-slate-100">
               <p className="text-sm mb-3">Den här spelvyn är passiv eftersom rundan är aktiv på en annan enhet.</p>
@@ -1275,12 +1274,18 @@ const PlayRunPage = () => {
                 className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-black"
               >
                 Aktivera här
-              </button>        {restoredQuestionNotice && (
-          <div className="absolute inset-x-4 top-4 z-30">
-            <div className="mx-auto max-w-md rounded-xl border border-cyan-400/40 bg-slate-900/90 px-4 py-2 text-center text-sm text-cyan-100 shadow-lg">
-              {restoredQuestionNotice}            </div>
+              </button>
+            </div>
           </div>
         )}
+        {restoredQuestionNotice && (
+          <div className="absolute inset-x-4 top-4 z-30">
+            <div className="mx-auto max-w-md rounded-xl border border-cyan-400/40 bg-slate-900/90 px-4 py-2 text-center text-sm text-cyan-100 shadow-lg">
+              {restoredQuestionNotice}
+            </div>
+          </div>
+        )}
+
         <RunMap
           checkpoints={currentRun.checkpoints || []}
           userPosition={coords}
