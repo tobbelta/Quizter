@@ -557,6 +557,15 @@ const Header = ({ title = 'Quizter', children }) => {
                     INSTÄLLNINGAR
                   </div>
 
+                  {isAuthenticated && !currentUser?.isAnonymous && (
+                    <button
+                      onClick={() => { setIsMenuOpen(false); navigate('/account'); }}
+                      className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-gray-200"
+                    >
+                      Konto & profil
+                    </button>
+                  )}
+
                   {/* GPS-status och toggle */}
                   <div className="px-4 py-2">
                     <div className="flex items-center justify-between mb-2">

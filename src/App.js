@@ -15,6 +15,7 @@ import LandingPage from './views/LandingPage';
 import LoginPage from './views/LoginPage';
 import RegisterPage from './views/RegisterPage';
 import VerifyEmailPage from './views/VerifyEmailPage';
+import AccountSettingsPage from './views/AccountSettingsPage';
 import GenerateRunPage from './views/GenerateRunPage';
 import JoinRunPage from './views/JoinRunPage';
 import PlayRunPage from './views/PlayRunPage';
@@ -72,6 +73,7 @@ const AppRoutes = () => (
     <Route path="/login" element={<LoginPage />} />
     <Route path="/register" element={<RegisterPage />} />
     <Route path="/verify-email" element={<VerifyEmailPage />} />
+    <Route path="/account" element={<AccountSettingsPage />} />
     <Route path="/my-runs" element={<MyRunsPage />} />
 
     {/* Alla användare kan skapa och ansluta */}
