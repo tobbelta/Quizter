@@ -1,7 +1,7 @@
 /**
  * Resultatvy efter avslutad runda.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRun } from '../context/RunContext';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +28,7 @@ const RunResultsPage = () => {
   const [answersByParticipant, setAnswersByParticipant] = useState({});
   const [participantDetailsById, setParticipantDetailsById] = useState({});
   const [shareStatus, setShareStatus] = useState('');
+  const autoExpandedRef = useRef(false);
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
     if (typeof window !== 'undefined') {
@@ -210,6 +211,14 @@ const RunResultsPage = () => {
       correct: answer.correct ?? answer.is_correct ?? false
     }));
   }, [answersByParticipant, answersOverride, currentParticipant]);
+
+  useEffect(() => {
+    if (autoExpandedRef.current) return;
+    if (normalizedAnswers.length > 0) {
+      setShowDetailedResults(true);
+      autoExpandedRef.current = true;
+    }
+  }, [normalizedAnswers.length]);
 
   const scoredParticipants = useMemo(() => {
     const activeThresholdMs = 45000;
