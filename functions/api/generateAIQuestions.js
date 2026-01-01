@@ -228,6 +228,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const providersUsed = new Set();
     const modelsUsed = new Set();
     let lastError;
+    const GENERATION_TIMEOUT_MS = 60000;
 
     const switchProvider = async () => {
       while (providerQueue.length > 0) {
@@ -261,7 +262,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
             targetAudienceDetails,
             freshnessPrompt,
             answerInQuestionPrompt,
-            language: 'sv'
+            language: 'sv',
+            timeoutMs: GENERATION_TIMEOUT_MS
           });
           providersUsed.add(effectiveProvider);
           if (selectedProvider?.model) {

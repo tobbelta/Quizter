@@ -120,7 +120,8 @@ export class MistralProvider {
       targetAudienceDetails,
       freshnessPrompt,
       answerInQuestionPrompt,
-      language = 'sv'
+      language = 'sv',
+      timeoutMs = null
     } = params;
     
     const prompt = this.buildPrompt(
@@ -138,6 +139,9 @@ export class MistralProvider {
       answerInQuestionPrompt
     );
     
+    const controller = timeoutMs ? new AbortController() : null;
+    const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
@@ -156,7 +160,8 @@ export class MistralProvider {
           ],
           temperature: 0.7,
           response_format: { type: 'json_object' }
-        })
+        }),
+        signal: controller?.signal
       });
       
       if (!response.ok) {
@@ -170,8 +175,15 @@ export class MistralProvider {
       return this.validateAndFormatQuestions(content.questions || []);
       
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Mistral API timeout efter ${timeoutMs} ms`);
+      }
       console.error('[Mistral] Generation error:', error);
       throw new Error(`Mistral generation failed: ${error.message}`);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
