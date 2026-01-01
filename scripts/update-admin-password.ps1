@@ -1,8 +1,7 @@
 param(
   [string]$Email = 'admin@admin.se',
   [string]$Password = 'admin',
-  [ValidateSet('prod', 'preview')]
-  [string]$Environment = 'prod',
+  [string]$Database = 'quizter-db',
   [switch]$Remote
 )
 
@@ -35,13 +34,12 @@ if ($parts.Count -lt 2) {
 
 $hash = $parts[0]
 $salt = $parts[1]
-$database = if ($Environment -eq 'preview') { 'quizter-db-preview' } else { 'quizter-db' }
 $sql = "UPDATE users SET password_hash='$hash', password_salt='$salt', email_verified=1, is_super_user=1, updated_at=strftime('%s','now')*1000 WHERE email='$Email';"
 
 if ($Remote) {
-  npx wrangler d1 execute $database --remote --command $sql
+  npx wrangler d1 execute $Database --remote --command $sql
 } else {
-  npx wrangler d1 execute $database --command $sql
+  npx wrangler d1 execute $Database --command $sql
 }
 
-Write-Host "✅ Uppdaterade $Email i $database ($Environment)."
+Write-Host "✅ Uppdaterade $Email i $Database."
