@@ -1,6 +1,10 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+// Cloudflare Workers begränsar PBKDF2-iterationer till 100000.
+const DEFAULT_ITERATIONS = 100000;
+const LEGACY_ITERATIONS = 120000;
+
 const encodeBase64 = (bytes) => {
   if (typeof btoa === 'function') {
     let binary = '';
@@ -34,7 +38,7 @@ const importKey = async (password) => {
   );
 };
 
-export const hashPassword = async (password, salt = null) => {
+export const hashPassword = async (password, salt = null, iterations = DEFAULT_ITERATIONS) => {
   if (!password) {
     throw new Error('Lösenord saknas');
   }
@@ -45,7 +49,7 @@ export const hashPassword = async (password, salt = null) => {
     {
       name: 'PBKDF2',
       salt: saltBytes,
-      iterations: 120000,
+      iterations,
       hash: 'SHA-256'
     },
     key,
@@ -60,13 +64,26 @@ export const hashPassword = async (password, salt = null) => {
 
 export const verifyPassword = async (password, storedHash, storedSalt) => {
   if (!storedHash || !storedSalt) return false;
-  const { hash } = await hashPassword(password, storedSalt);
-  const hashBytes = decodeBase64(hash);
-  const storedBytes = decodeBase64(storedHash);
-  if (hashBytes.length !== storedBytes.length) return false;
-  let diff = 0;
-  for (let i = 0; i < hashBytes.length; i += 1) {
-    diff |= hashBytes[i] ^ storedBytes[i];
+  const compareHashes = async (iterations) => {
+    const { hash } = await hashPassword(password, storedSalt, iterations);
+    const hashBytes = decodeBase64(hash);
+    const storedBytes = decodeBase64(storedHash);
+    if (hashBytes.length !== storedBytes.length) return false;
+    let diff = 0;
+    for (let i = 0; i < hashBytes.length; i += 1) {
+      diff |= hashBytes[i] ^ storedBytes[i];
+    }
+    return diff === 0;
+  };
+
+  try {
+    return await compareHashes(DEFAULT_ITERATIONS);
+  } catch (error) {
+    if (DEFAULT_ITERATIONS === LEGACY_ITERATIONS) return false;
+    try {
+      return await compareHashes(LEGACY_ITERATIONS);
+    } catch (legacyError) {
+      return false;
+    }
   }
-  return diff === 0;
 };
