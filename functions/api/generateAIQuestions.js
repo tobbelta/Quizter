@@ -124,6 +124,80 @@ export async function onRequestPost(context) {
         }
       });
     }
+
+    if (mode === 'validate') {
+      if (env.INTERNAL_TASK_SECRET) {
+        const incomingSecret = request.headers.get('x-task-secret');
+        if (incomingSecret !== env.INTERNAL_TASK_SECRET) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Not authorized'
+          }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      if (!continueTaskId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Missing taskId'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const existingTask = await env.DB.prepare(`
+        SELECT payload, status, user_id
+        FROM background_tasks
+        WHERE id = ?
+      `).bind(continueTaskId).first();
+
+      if (!existingTask) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Task not found'
+        }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (existingTask.status && ['completed', 'failed', 'cancelled'].includes(existingTask.status)) {
+        return new Response(JSON.stringify({
+          success: true,
+          taskId: continueTaskId,
+          message: 'Task already finished'
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const payload = existingTask.payload ? JSON.parse(existingTask.payload) : {};
+      context.waitUntil(
+        continueValidationInBackground(env, continueTaskId, {
+          ...payload,
+          userEmail: existingTask.user_id || userEmail,
+          origin: payload.origin || requestUrl.origin,
+          endpointPath: payload.endpointPath || requestUrl.pathname
+        })
+      );
+
+      return new Response(JSON.stringify({
+        success: true,
+        taskId: continueTaskId,
+        message: 'AI validation continues in background'
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
     
     console.log('[generateAIQuestions] Request:', { 
       amount, category, ageGroup, difficulty, provider, generateIllustrations, userEmail 
@@ -940,7 +1014,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
           category,
           ageGroup,
           difficulty,
-          targetAudience
+          targetAudience,
+          origin: resolvedParams.origin,
+          endpointPath: resolvedParams.endpointPath
         }),
         JSON.stringify({
           completed: 0,
@@ -960,17 +1036,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
       ).run();
 
       try {
-        await validateQuestionsInBackground(env, validationTaskId, savedQuestions, generatorProviders, {
-          taskId: validationTaskId,
-          category,
-          ageGroup,
-          difficulty,
-          validationProvider,
-          targetAudience,
-          taskUserId
-        }, rulesConfig);
+        await scheduleValidationContinuation(env, validationTaskId, resolvedParams.origin, resolvedParams.endpointPath);
       } catch (validationError) {
-        console.error(`[Task ${taskId}] Validation failed:`, validationError);
+        console.error(`[Task ${taskId}] Validation scheduling failed:`, validationError);
       }
     }
   } catch (error) {
@@ -985,6 +1053,238 @@ async function generateQuestionsInBackground(env, taskId, params) {
   } finally {
     stopWatchdog();
   }
+}
+
+async function scheduleValidationContinuation(env, taskId, origin, endpointPath) {
+  if (!origin) {
+    throw new Error('Kan inte fortsätta: saknar origin för validering');
+  }
+  const url = new URL(endpointPath || '/api/generateAIQuestions', origin);
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.INTERNAL_TASK_SECRET) {
+    headers['x-task-secret'] = env.INTERNAL_TASK_SECRET;
+  }
+  await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      mode: 'validate',
+      taskId
+    })
+  });
+}
+
+async function continueValidationInBackground(env, taskId, params = {}) {
+  const safeParseJson = (value, fallback) => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
+    }
+  };
+  const taskRow = await env.DB.prepare(`
+    SELECT payload, progress, status, user_id
+    FROM background_tasks
+    WHERE id = ?
+  `).bind(taskId).first();
+
+  if (!taskRow) {
+    console.error(`[Validation ${taskId}] Task not found`);
+    return;
+  }
+
+  if (taskRow.status && ['completed', 'failed', 'cancelled'].includes(taskRow.status)) {
+    console.warn(`[Validation ${taskId}] Task already finished (${taskRow.status})`);
+    return;
+  }
+
+  const payload = safeParseJson(taskRow.payload, {});
+  const progressData = safeParseJson(taskRow.progress, {});
+  const details = progressData.details || {};
+  const questionIds = Array.isArray(payload.questionIds) ? payload.questionIds : [];
+  const totalCount = questionIds.length;
+  const validatedCount = Number.isFinite(details.validatedCount) ? details.validatedCount : 0;
+  const invalidCount = Number.isFinite(details.invalidCount) ? details.invalidCount : 0;
+  const skippedCount = Number.isFinite(details.skippedCount) ? details.skippedCount : 0;
+  const correctedCount = Number.isFinite(details.correctedCount) ? details.correctedCount : 0;
+  const processedCount = validatedCount + invalidCount + skippedCount;
+  const nextIndex = Number.isFinite(details.nextIndex)
+    ? details.nextIndex
+    : Math.min(processedCount, totalCount);
+  const taskUserId = taskRow.user_id || params.userEmail || 'system';
+  const origin = payload.origin || params.origin;
+  const endpointPath = payload.endpointPath || params.endpointPath;
+  const validationDebug = {
+    startedAt: Number.isFinite(details.startedAt) ? details.startedAt : Date.now(),
+    watchdogIdleMs: 5 * 60 * 1000,
+    watchdogTotalMs: 30 * 60 * 1000
+  };
+
+  const updateValidationProgress = async (phase, extraDetails = {}) => {
+    const now = Date.now();
+    const mergedDetails = {
+      ...details,
+      ...extraDetails,
+      totalCount,
+      validatedCount: extraDetails.validatedCount ?? validatedCount,
+      invalidCount: extraDetails.invalidCount ?? invalidCount,
+      skippedCount: extraDetails.skippedCount ?? skippedCount,
+      correctedCount: extraDetails.correctedCount ?? correctedCount,
+      nextIndex: extraDetails.nextIndex ?? nextIndex,
+      startedAt: validationDebug.startedAt
+    };
+    const completed = Math.min(
+      (mergedDetails.validatedCount || 0) +
+      (mergedDetails.invalidCount || 0) +
+      (mergedDetails.skippedCount || 0),
+      totalCount
+    );
+    await updateTaskProgress(env.DB, taskId, {
+      completed,
+      total: totalCount,
+      phase
+    }, phase, {
+      ...mergedDetails,
+      heartbeatAt: now,
+      debug: validationDebug,
+      lastMessage: phase
+    });
+  };
+
+  if (totalCount === 0) {
+    await failTask(env.DB, taskId, 'Inga frågor att validera', {
+      debug: validationDebug
+    });
+    return;
+  }
+
+  if (nextIndex >= totalCount) {
+    await completeTask(env.DB, taskId, {
+      success: true,
+      totalCount,
+      validatedCount,
+      invalidCount,
+      skippedCount,
+      correctedCount,
+      validationProvider: payload.validationProvider || null,
+      validationProvidersUsed: Array.isArray(details.validationProvidersUsed) ? details.validationProvidersUsed : [],
+      generatorProviders: payload.generatorProviders || []
+    });
+    return;
+  }
+
+  const throttleMs = 20000;
+  const lastValidationAt = Number.isFinite(details.lastValidationAt) ? details.lastValidationAt : 0;
+  const now = Date.now();
+  const waitMs = Math.max(0, lastValidationAt + throttleMs - now);
+  if (waitMs > 0) {
+    await updateValidationProgress(`Väntar ${Math.round(waitMs / 1000)}s`, {
+      lastValidationAt,
+      nextValidationAt: lastValidationAt + throttleMs
+    });
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  await ensureDatabase(env.DB);
+  await ensureAudienceTables(env.DB);
+  const rulesConfig = await getAiRulesConfig(env.DB);
+  const targetAudience = payload.targetAudience || null;
+  const freshnessConfig = resolveFreshnessConfig(rulesConfig, targetAudience);
+  const freshnessPrompt = buildFreshnessPrompt(freshnessConfig, { ageGroup: payload.ageGroup });
+  const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
+
+  const currentQuestionId = questionIds[nextIndex];
+  const currentQuestion = currentQuestionId
+    ? (await loadQuestionsByIds(env.DB, [currentQuestionId]))[0]
+    : null;
+
+  if (!currentQuestion) {
+    const updatedSkipped = skippedCount + 1;
+    const updatedNextIndex = Math.min(nextIndex + 1, totalCount);
+    await updateValidationProgress(`Validerar ${updatedNextIndex}/${totalCount}`, {
+      skippedCount: updatedSkipped,
+      nextIndex: updatedNextIndex,
+      lastValidationAt: Date.now(),
+      nextValidationAt: Date.now() + throttleMs
+    });
+    await scheduleValidationContinuation(env, taskId, origin, endpointPath);
+    return;
+  }
+
+  const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
+  const factory = new AIProviderFactory(env, providerMap);
+  const validationContext = {
+    taskId,
+    category: payload.category,
+    ageGroup: payload.ageGroup,
+    difficulty: payload.difficulty,
+    validationProvider: payload.validationProvider || null,
+    targetAudience: payload.targetAudience || null,
+    taskUserId,
+    rulesConfig,
+    freshnessConfig,
+    freshnessPrompt,
+    answerInQuestionPrompt,
+    validationThrottleMs: 0,
+    lastValidationAt: 0,
+    onProgress: async ({ validatedCount: stepValidated, invalidCount: stepInvalid, skippedCount: stepSkipped, correctedCount: stepCorrected, provider, questionId, questionPreview, step, phase }) => {
+      await updateValidationProgress(phase || `Validerar ${nextIndex + 1}/${totalCount}`, {
+        validatedCount: validatedCount + (stepValidated || 0),
+        invalidCount: invalidCount + (stepInvalid || 0),
+        skippedCount: skippedCount + (stepSkipped || 0),
+        correctedCount: correctedCount + (stepCorrected || 0),
+        provider: provider || payload.validationProvider || null,
+        currentQuestionId: questionId || currentQuestionId,
+        currentQuestion: questionPreview || currentQuestion.question_sv,
+        step: step || null
+      });
+    }
+  };
+
+  const validationResult = await validateUniqueQuestions(
+    env.DB,
+    factory,
+    [currentQuestion],
+    payload.generatorProviders || [],
+    validationContext
+  );
+
+  const updatedValidated = validatedCount + validationResult.validatedCount;
+  const updatedInvalid = invalidCount + validationResult.invalidCount;
+  const updatedSkipped = skippedCount + validationResult.skippedCount;
+  const updatedCorrected = correctedCount + validationResult.correctedCount;
+  const updatedNextIndex = Math.min(nextIndex + 1, totalCount);
+  const updatedLastValidationAt = Date.now();
+
+  await updateValidationProgress(`Validerar ${updatedNextIndex}/${totalCount}`, {
+    validatedCount: updatedValidated,
+    invalidCount: updatedInvalid,
+    skippedCount: updatedSkipped,
+    correctedCount: updatedCorrected,
+    nextIndex: updatedNextIndex,
+    lastValidationAt: updatedLastValidationAt,
+    nextValidationAt: updatedLastValidationAt + throttleMs,
+    provider: validationResult.validationProvider || payload.validationProvider || null,
+    validationProvidersUsed: validationResult.validationProvidersUsed || []
+  });
+
+  if (updatedNextIndex >= totalCount) {
+    await completeTask(env.DB, taskId, {
+      success: true,
+      totalCount,
+      validatedCount: updatedValidated,
+      invalidCount: updatedInvalid,
+      skippedCount: updatedSkipped,
+      correctedCount: updatedCorrected,
+      validationProvider: validationResult.validationProvider || payload.validationProvider || null,
+      validationProvidersUsed: validationResult.validationProvidersUsed || [],
+      generatorProviders: payload.generatorProviders || []
+    });
+    return;
+  }
+
+  await scheduleValidationContinuation(env, taskId, origin, endpointPath);
 }
 
 async function loadQuestionsByIds(db, ids) {
@@ -1477,10 +1777,14 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   let invalidCount = 0;
   let skippedCount = 0;
   let correctedCount = 0;
-  const VALIDATION_MIN_INTERVAL_MS = 20000;
+  const VALIDATION_MIN_INTERVAL_MS = Number.isFinite(context?.validationThrottleMs)
+    ? context.validationThrottleMs
+    : 20000;
   const RATE_LIMIT_MAX_RETRIES = 3;
   const RATE_LIMIT_BASE_MS = 20000;
-  let lastValidationAt = 0;
+  let lastValidationAt = Number.isFinite(context?.lastValidationAt)
+    ? context.lastValidationAt
+    : 0;
   const usedProviders = new Set();
   const reportProgress = typeof context?.onProgress === 'function' ? context.onProgress : null;
   const autoCorrectionEnabled = context?.autoCorrectionEnabled === true;
