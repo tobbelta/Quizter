@@ -42,7 +42,7 @@ jobs:
 
       - name: Start test server in background
         run: |
-          npx wrangler@3 pages dev . --port 8789 --d1 DB &
+          npx wrangler@4 pages dev . --port 8789 --d1 DB &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
         env:
           NODE_ENV: test
@@ -68,7 +68,7 @@ jobs:
       # If foreground works, switch back to background + curl + test:api
       # - name: Start test server in background
       #   run: |
-      #     npx wrangler@3 pages dev . --port 8789 --d1 DB &
+      #     npx wrangler@4 pages dev . --port 8789 --d1 DB &
       #     echo "SERVER_PID=$!" >> $GITHUB_ENV
       #   env:
       #     NODE_ENV: test
