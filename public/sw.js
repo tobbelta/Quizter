@@ -87,7 +87,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip SSE streams to avoid caching and SW errors
   const accepts = request.headers.get('accept') || '';
-  if (url.pathname.startsWith('/api/sse') || accepts.includes('text/event-stream')) {
+  if (
+    url.pathname.startsWith('/api/sse') ||
+    url.pathname.startsWith('/api/subscribeToTask') ||
+    url.pathname.startsWith('/api/subscribeToTasks') ||
+    accepts.includes('text/event-stream')
+  ) {
     return;
   }
 
