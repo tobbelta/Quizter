@@ -44,7 +44,7 @@ export async function onRequestPost(context) {
       provider,
       generateIllustrations,
       mode,
-      taskId
+      taskId: continueTaskId
     } = requestBody || {};
     const userEmail = request.headers.get('x-user-email') || 'anonymous';
     const requestUrl = new URL(request.url);
@@ -63,7 +63,7 @@ export async function onRequestPost(context) {
         }
       }
 
-      if (!taskId) {
+      if (!continueTaskId) {
         return new Response(JSON.stringify({
           success: false,
           error: 'Missing taskId'
@@ -77,7 +77,7 @@ export async function onRequestPost(context) {
         SELECT payload, status, user_id
         FROM background_tasks
         WHERE id = ?
-      `).bind(taskId).first();
+      `).bind(continueTaskId).first();
 
       if (!existingTask) {
         return new Response(JSON.stringify({
@@ -92,7 +92,7 @@ export async function onRequestPost(context) {
       if (existingTask.status && ['completed', 'failed', 'cancelled'].includes(existingTask.status)) {
         return new Response(JSON.stringify({
           success: true,
-          taskId,
+          taskId: continueTaskId,
           message: 'Task already finished'
         }), {
           status: 200,
@@ -103,7 +103,7 @@ export async function onRequestPost(context) {
       const payload = existingTask.payload ? JSON.parse(existingTask.payload) : {};
 
       context.waitUntil(
-        generateQuestionsInBackground(env, taskId, {
+        generateQuestionsInBackground(env, continueTaskId, {
           ...payload,
           userEmail: existingTask.user_id || userEmail,
           mode: 'continue',
@@ -114,7 +114,7 @@ export async function onRequestPost(context) {
 
       return new Response(JSON.stringify({
         success: true,
-        taskId,
+        taskId: continueTaskId,
         message: 'AI question generation continues in background'
       }), {
         status: 200,
