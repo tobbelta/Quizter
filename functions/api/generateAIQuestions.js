@@ -33,10 +33,97 @@ const summarizeProgressText = (value, limit = 120) => {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  
+
   try {
-    const { amount, category, ageGroup, difficulty, provider, generateIllustrations } = await request.json();
+    const requestBody = await request.json();
+    const {
+      amount,
+      category,
+      ageGroup,
+      difficulty,
+      provider,
+      generateIllustrations,
+      mode,
+      taskId
+    } = requestBody || {};
     const userEmail = request.headers.get('x-user-email') || 'anonymous';
+    const requestUrl = new URL(request.url);
+
+    if (mode === 'continue') {
+      if (env.INTERNAL_TASK_SECRET) {
+        const incomingSecret = request.headers.get('x-task-secret');
+        if (incomingSecret !== env.INTERNAL_TASK_SECRET) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Not authorized'
+          }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+      if (!taskId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Missing taskId'
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const existingTask = await env.DB.prepare(`
+        SELECT payload, status, user_id
+        FROM background_tasks
+        WHERE id = ?
+      `).bind(taskId).first();
+
+      if (!existingTask) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Task not found'
+        }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      if (existingTask.status && ['completed', 'failed', 'cancelled'].includes(existingTask.status)) {
+        return new Response(JSON.stringify({
+          success: true,
+          taskId,
+          message: 'Task already finished'
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const payload = existingTask.payload ? JSON.parse(existingTask.payload) : {};
+
+      context.waitUntil(
+        generateQuestionsInBackground(env, taskId, {
+          ...payload,
+          userEmail: existingTask.user_id || userEmail,
+          mode: 'continue',
+          origin: payload.origin || requestUrl.origin,
+          endpointPath: payload.endpointPath || requestUrl.pathname
+        })
+      );
+
+      return new Response(JSON.stringify({
+        success: true,
+        taskId,
+        message: 'AI question generation continues in background'
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
     
     console.log('[generateAIQuestions] Request:', { 
       amount, category, ageGroup, difficulty, provider, generateIllustrations, userEmail 
@@ -83,6 +170,8 @@ export async function onRequestPost(context) {
       ageGroup,
       difficulty: difficulty || 'medium',
       provider,
+      origin: requestUrl.origin,
+      endpointPath: requestUrl.pathname
     };
     
     await env.DB.prepare(`
@@ -112,7 +201,9 @@ export async function onRequestPost(context) {
         ageGroup,
         difficulty: difficulty || 'medium',
         provider,
-        userEmail
+        userEmail,
+        origin: requestUrl.origin,
+        endpointPath: requestUrl.pathname
       })
     );
     
@@ -143,33 +234,103 @@ export async function onRequestPost(context) {
 
 // Background generation function
 async function generateQuestionsInBackground(env, taskId, params) {
-  const { amount, category, ageGroup, difficulty, provider, userEmail } = params;
-  const taskUserId = userEmail || 'system';
-  const progressEvents = [];
+  const safeParseJson = (value, fallback) => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return fallback;
+    }
+  };
+
+  const taskRow = await env.DB.prepare(`
+    SELECT payload, progress, status, user_id
+    FROM background_tasks
+    WHERE id = ?
+  `).bind(taskId).first();
+
+  if (!taskRow) {
+    console.error(`[Task ${taskId}] Task not found`);
+    return;
+  }
+
+  if (taskRow.status && ['completed', 'failed', 'cancelled'].includes(taskRow.status)) {
+    console.warn(`[Task ${taskId}] Task already finished (${taskRow.status})`);
+    return;
+  }
+
+  const payload = safeParseJson(taskRow.payload, {});
+  const progressData = safeParseJson(taskRow.progress, {});
+  const existingDetails = progressData.details || {};
+  let currentDetails = { ...existingDetails };
+  const resolvedParams = {
+    amount: payload.amount,
+    category: payload.category,
+    ageGroup: payload.ageGroup,
+    difficulty: payload.difficulty,
+    provider: payload.provider,
+    origin: payload.origin,
+    endpointPath: payload.endpointPath,
+    ...params
+  };
+
+  const amount = Number(resolvedParams.amount);
+  const category = resolvedParams.category;
+  const ageGroup = resolvedParams.ageGroup;
+  const difficulty = resolvedParams.difficulty || 'medium';
+  const provider = resolvedParams.provider;
+  const taskUserId = taskRow.user_id || resolvedParams.userEmail || 'system';
+  const origin = resolvedParams.origin;
+  const endpointPath = resolvedParams.endpointPath;
+  const progressEvents = Array.isArray(existingDetails.events)
+    ? existingDetails.events.slice(-20)
+    : [];
   const EVENT_LIMIT = 20;
-  const startedAt = Date.now();
-  let lastProgressAt = startedAt;
+  const startedAt = Number.isFinite(existingDetails.startedAt) ? existingDetails.startedAt : Date.now();
+  let lastProgressAt = Number.isFinite(existingDetails.heartbeatAt) ? existingDetails.heartbeatAt : startedAt;
   let watchdogInterval = null;
   let watchdogTriggered = false;
   let abortGeneration = false;
+  let questionIds = Array.isArray(existingDetails.questionIds)
+    ? existingDetails.questionIds.slice()
+    : [];
+  let savedCount = Number.isFinite(existingDetails.savedCount)
+    ? existingDetails.savedCount
+    : questionIds.length;
+  if (questionIds.length > savedCount) {
+    savedCount = questionIds.length;
+  }
+  let generatedCount = Number.isFinite(existingDetails.generatedCount) ? existingDetails.generatedCount : 0;
+  let duplicateCount = Number.isFinite(existingDetails.duplicatesBlocked) ? existingDetails.duplicatesBlocked : 0;
+  let ruleFilteredCount = Number.isFinite(existingDetails.ruleFiltered) ? existingDetails.ruleFiltered : 0;
+  let generationRounds = Number.isFinite(existingDetails.round) ? existingDetails.round : 0;
+  let stalledRounds = Number.isFinite(existingDetails.stalledRounds) ? existingDetails.stalledRounds : 0;
+  let providerPickIndex = Number.isFinite(existingDetails.providerPickIndex) ? existingDetails.providerPickIndex : 0;
+  const providersUsed = new Set(Array.isArray(existingDetails.providersUsed) ? existingDetails.providersUsed : []);
+  const modelsUsed = new Set(Array.isArray(existingDetails.modelsUsed) ? existingDetails.modelsUsed : []);
+  const defaultBatchSize = 3;
+  const maxRounds = Number.isFinite(existingDetails.maxRounds)
+    ? existingDetails.maxRounds
+    : Math.max(3, Math.ceil(amount / defaultBatchSize) + 2);
   let lastProgressSnapshot = {
-    completed: 0,
+    completed: savedCount,
     total: amount,
-    phase: 'Köad',
-    details: {}
+    phase: progressData.phase || 'Köad',
+    details: existingDetails
   };
+
   const WATCHDOG_IDLE_MS = 120000;
   const WATCHDOG_TOTAL_MS = Math.max(5 * 60 * 1000, amount * 45000);
   const WATCHDOG_CHECK_INTERVAL_MS = 15000;
   const debugState = {
     startedAt,
-    lastProvider: null,
+    lastProvider: existingDetails.provider || null,
     lastProviderStartedAt: null,
     lastProviderDurationMs: null,
     lastProviderError: null,
-    lastBatchSize: null,
-    lastBatchRemaining: null,
-    lastRound: 0
+    lastBatchSize: existingDetails.lastBatchSize || null,
+    lastBatchRemaining: existingDetails.lastBatchRemaining || null,
+    lastRound: generationRounds
   };
 
   const pushEvent = (message) => {
@@ -204,18 +365,34 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const resolvedCompleted = Number.isFinite(completedValue) ? completedValue : 0;
     const resolvedTotal = Number.isFinite(totalValue) && totalValue > 0 ? totalValue : amount;
     const resolvedPhase = phase || (isObject && progressValue.phase ? progressValue.phase : '');
+    const mergedDetails = {
+      ...currentDetails,
+      ...details,
+      targetCount: amount,
+      startedAt,
+      heartbeatAt: now,
+      providerPickIndex,
+      round: generationRounds,
+      stalledRounds,
+      maxRounds,
+      generatedCount,
+      duplicatesBlocked: duplicateCount,
+      ruleFiltered: ruleFilteredCount,
+      acceptedCount: savedCount,
+      savedCount,
+      questionIds: [...questionIds],
+      providersUsed: Array.from(providersUsed),
+      modelsUsed: Array.from(modelsUsed)
+    };
+    currentDetails = mergedDetails;
     lastProgressSnapshot = {
       completed: resolvedCompleted,
       total: resolvedTotal,
       phase: resolvedPhase,
-      details: {
-        ...(isObject && progressValue.details ? progressValue.details : {}),
-        ...details
-      }
+      details: mergedDetails
     };
-    await updateTaskProgress(env.DB, taskId, progressValue, phase, {
-      ...details,
-      heartbeatAt: now,
+    await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, resolvedPhase, {
+      ...mergedDetails,
       debug: getDebugSnapshot(),
       events: [...progressEvents],
       lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
@@ -285,27 +462,56 @@ async function generateQuestionsInBackground(env, taskId, params) {
         reject(error);
       });
   });
-  
-  console.log(`[Task ${taskId}] Params received:`, params);
+
+  const scheduleNextBatch = async () => {
+    if (!origin) {
+      throw new Error('Kan inte fortsatta: saknar origin för batch');
+    }
+    const url = new URL(endpointPath || '/api/generateAIQuestions', origin);
+    const headers = { 'Content-Type': 'application/json' };
+    if (env.INTERNAL_TASK_SECRET) {
+      headers['x-task-secret'] = env.INTERNAL_TASK_SECRET;
+    }
+    await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        mode: 'continue',
+        taskId
+      })
+    });
+  };
+
+  console.log(`[Task ${taskId}] Params received:`, resolvedParams);
   console.log(`[Task ${taskId}] Destructured values:`, { amount, category, ageGroup, difficulty, provider });
-  
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await failTask(env.DB, taskId, 'Ogiltigt antal frågor');
+    return;
+  }
+
+  if (!provider) {
+    await failTask(env.DB, taskId, 'Ingen provider angiven');
+    return;
+  }
+
+  let effectiveProvider = provider.toLowerCase();
+  let selectedProvider = null;
+  let lastError = null;
+
   try {
     startWatchdog();
-    console.log(`[Task ${taskId}] Starting generation...`);
-    pushEvent('Startar generering');
-    
-    // Ensure database is initialized (important for background context)
-    console.log(`[Task ${taskId}] Calling ensureDatabase...`);
+    pushEvent(generationRounds === 0 ? 'Startar generering' : 'Fortsätter generering');
+    await updateProgress({ completed: savedCount, total: amount }, `Genererar ${savedCount}/${amount}`, {
+      targetCount: amount,
+      provider: effectiveProvider,
+      model: selectedProvider?.model || null
+    });
+
     await ensureDatabase(env.DB);
     await ensureCategoriesTable(env.DB);
-    console.log(`[Task ${taskId}] Database ensured.`);
-    
-    pushEvent('Förbereder AI-förfrågan');
-    await updateProgress({ completed: 0, total: amount }, 'Förbereder AI-förfrågan', {
-      targetCount: amount
-    });
-    
     await ensureAudienceTables(env.DB);
+
     const rulesConfig = await getAiRulesConfig(env.DB);
     const ageGroupDetails = ageGroup ? await getAgeGroupById(env.DB, ageGroup) : null;
     const targetAudienceDetails = ageGroup
@@ -327,14 +533,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
     if (category && !categoryDetails) {
       console.warn(`[Task ${taskId}] Category '${category}' not found in settings, using default prompt.`);
     }
-    
-    // Initialize provider factory
+
     const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
     const factory = new AIProviderFactory(env, providerMap);
-
     const availableProviders = factory.getAvailableProviders('generation');
     const preferredProvider = provider.toLowerCase();
-    let providerPickIndex = 0;
     const providerCycle = (() => {
       if (availableProviders.length === 0) {
         return [];
@@ -347,14 +550,6 @@ async function generateQuestionsInBackground(env, taskId, params) {
       }
       return [...availableProviders];
     })();
-    let effectiveProvider = preferredProvider;
-    let selectedProvider;
-    const attemptedProviders = [];
-    const providersUsed = new Set();
-    const modelsUsed = new Set();
-    let lastError;
-    const GENERATION_TIMEOUT_MS = 60000;
-    const PROVIDER_CALL_TIMEOUT_MS = Math.max(GENERATION_TIMEOUT_MS + 5000, 65000);
 
     const pickProviderName = () => {
       if (providerCycle.length === 0) {
@@ -371,14 +566,10 @@ async function generateQuestionsInBackground(env, taskId, params) {
       if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
         return configuredLimit;
       }
-      const providerLimit = Number(providerInstance?.maxQuestionsPerRequest);
-      if (Number.isFinite(providerLimit) && providerLimit > 0) {
-        return providerLimit;
-      }
-      return Number.POSITIVE_INFINITY;
+      return defaultBatchSize;
     };
 
-    const generateBatch = async (batchAmount, primaryProvider, primaryInstance) => {
+    const generateBatch = async (batchAmount, primaryProvider, primaryInstance, currentRound) => {
       const providerQueue = [
         primaryProvider,
         ...availableProviders.filter((name) => name !== primaryProvider)
@@ -403,9 +594,6 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
         effectiveProvider = nextProvider;
         selectedProvider = providerInstance;
-        if (!attemptedProviders.includes(nextProvider)) {
-          attemptedProviders.push(nextProvider);
-        }
 
         const batchLimit = resolveBatchLimit(nextProvider, providerInstance);
         const requestAmount = Math.min(batchAmount, batchLimit);
@@ -447,9 +635,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
             freshnessPrompt,
             answerInQuestionPrompt,
             language: 'sv',
-            timeoutMs: GENERATION_TIMEOUT_MS,
+            timeoutMs: 60000,
             onDebug
-          }), PROVIDER_CALL_TIMEOUT_MS, `${nextProvider} generering`);
+          }), 65000, `${nextProvider} generering`);
           debugState.lastProviderDurationMs = Date.now() - startedAtProvider;
           pushEvent(`Provider ${nextProvider} klar (${debugState.lastProviderDurationMs} ms)`);
           await recordProviderCall({
@@ -465,7 +653,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
             metadata: {
               batchAmount: requestAmount,
               remaining: batchAmount,
-              round: generationRounds + 1,
+              round: currentRound,
               category,
               ageGroup,
               difficulty
@@ -500,7 +688,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
             metadata: {
               batchAmount: requestAmount,
               remaining: batchAmount,
-              round: generationRounds + 1,
+              round: currentRound,
               category,
               ageGroup,
               difficulty
@@ -508,237 +696,231 @@ async function generateQuestionsInBackground(env, taskId, params) {
           });
         }
       }
-      throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
+      throw new Error(`All providers failed. Last error: ${lastError ? lastError.message : 'Unknown'}`);
     };
 
-    pushEvent(`Genererar 0/${amount}`);
-    await updateProgress({ completed: 0, total: amount }, `Genererar 0/${amount}`, {
-      targetCount: amount,
-      provider: effectiveProvider,
-      model: selectedProvider?.model || null
-    });
+    if (savedCount >= amount) {
+      pushEvent('Klar med generering');
+    }
 
-    let generationRounds = 0;
-    let totalGenerated = 0;
-    let duplicateCount = 0;
-    let ruleFilteredCount = 0;
-    let stalledRounds = 0;
-    let acceptedCount = 0;
-    const defaultBatchSize = Math.min(amount, 3);
-    const maxRounds = Math.max(3, Math.ceil(amount / defaultBatchSize) + 2);
-    const acceptedQuestions = [];
-
-    const existingRows = await env.DB.prepare(`
-      SELECT id, question_sv FROM questions
-    `).all();
-    let existingQuestions = existingRows.results || [];
-
-    while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
-      if (abortGeneration) {
-        throw new Error('Generation avbruten av watchdog');
-      }
-      const remaining = amount - acceptedQuestions.length;
+    const remaining = Math.max(0, amount - savedCount);
+    if (remaining === 0) {
+      await updateProgress({ completed: savedCount, total: amount }, 'Klar med generering', {
+        provider: effectiveProvider,
+        model: selectedProvider?.model || null,
+        generatedCount,
+        duplicatesBlocked: duplicateCount,
+        ruleFiltered: ruleFilteredCount,
+        remaining
+      });
+    } else {
+      const currentRound = generationRounds + 1;
       const primaryProvider = pickProviderName();
       selectedProvider = factory.getProvider(primaryProvider);
       effectiveProvider = primaryProvider;
       const batchLimit = resolveBatchLimit(primaryProvider, selectedProvider);
-      const batchAmount = Math.min(
-        remaining,
-        Number.isFinite(batchLimit) && batchLimit > 0 ? batchLimit : remaining
-      );
-      debugState.lastRound = generationRounds + 1;
+      const batchAmount = Math.min(remaining, batchLimit);
+      debugState.lastRound = currentRound;
       pushEvent(`Provider vald: ${effectiveProvider}`);
-      pushEvent(`Genererar batch ${generationRounds + 1}/${maxRounds} (${remaining} kvar)`);
+      pushEvent(`Genererar batch ${currentRound}/${maxRounds} (${remaining} kvar)`);
       await updateProgress({
-        completed: Math.min(acceptedQuestions.length, amount),
+        completed: Math.min(savedCount, amount),
         total: amount
-      }, `Genererar ${Math.min(acceptedQuestions.length, amount)}/${amount}`, {
-        targetCount: amount,
+      }, `Genererar ${Math.min(savedCount, amount)}/${amount}`, {
         provider: effectiveProvider,
         model: selectedProvider?.model || null,
-        round: generationRounds + 1,
+        round: currentRound,
         remaining,
-        generatedCount: totalGenerated,
-        acceptedCount: acceptedQuestions.length
+        generatedCount,
+        acceptedCount: savedCount
       });
-      const batchQuestions = await generateBatch(batchAmount, primaryProvider, selectedProvider);
-      generationRounds += 1;
-      totalGenerated += batchQuestions.length;
+
+      const batchQuestions = await generateBatch(batchAmount, primaryProvider, selectedProvider, currentRound);
+      generationRounds = currentRound;
+      generatedCount += batchQuestions.length;
 
       if (batchQuestions.length === 0) {
         stalledRounds += 1;
-        if (stalledRounds >= 2) {
-          break;
-        }
-        continue;
-      }
-
-      const duplicateResult = await filterDuplicatesBeforeSaving(
-        env.DB,
-        batchQuestions,
-        existingQuestions
-      );
-      existingQuestions = duplicateResult.existingQuestions;
-      duplicateCount += duplicateResult.duplicateCount;
-
-      const { acceptedQuestions: batchAccepted, rejectedQuestions } = filterQuestionsByRules(
-        duplicateResult.uniqueQuestions,
-        {
-          ageGroup,
-          difficulty,
-          category,
-          targetAudience
-        },
-        rulesConfig
-      );
-
-      if (rejectedQuestions.length > 0) {
-        console.warn(`[Task ${taskId}] Rule-filtered ${rejectedQuestions.length} questions for age group ${ageGroup || 'unknown'}`);
-      }
-
-      ruleFilteredCount += rejectedQuestions.length;
-      acceptedQuestions.push(...batchAccepted);
-      acceptedCount = acceptedQuestions.length;
-
-      if (batchAccepted.length === 0) {
-        stalledRounds += 1;
       } else {
-        stalledRounds = 0;
+        const duplicateResult = await filterDuplicatesBeforeSaving(env.DB, batchQuestions);
+        duplicateCount += duplicateResult.duplicateCount;
+
+        const { acceptedQuestions: batchAccepted, rejectedQuestions } = filterQuestionsByRules(
+          duplicateResult.uniqueQuestions,
+          {
+            ageGroup,
+            difficulty,
+            category,
+            targetAudience
+          },
+          rulesConfig
+        );
+
+        if (rejectedQuestions.length > 0) {
+          console.warn(`[Task ${taskId}] Rule-filtered ${rejectedQuestions.length} questions for age group ${ageGroup || 'unknown'}`);
+        }
+
+        ruleFilteredCount += rejectedQuestions.length;
+
+        if (batchAccepted.length === 0) {
+          stalledRounds += 1;
+        } else {
+          stalledRounds = 0;
+          pushEvent(`Sparar ${savedCount}/${amount}`);
+          await updateProgress({ completed: savedCount, total: amount }, `Sparar ${savedCount}/${amount}`, {
+            provider: effectiveProvider,
+            model: selectedProvider?.model || null,
+            generatedCount,
+            duplicatesBlocked: duplicateCount,
+            ruleFiltered: ruleFilteredCount,
+            acceptedCount: savedCount
+          });
+
+          const saveResult = await saveQuestionsToDatabase(env.DB, batchAccepted, {
+            category,
+            difficulty,
+            provider: effectiveProvider,
+            model: selectedProvider?.model || null,
+            ageGroup,
+            targetAudience,
+            freshnessConfig
+          }, {
+            onProgress: async ({ savedCount: savedBatchCount, errorCount, lastQuestionId, lastQuestionText }) => {
+              pushEvent(`Sparade ${savedCount + savedBatchCount}/${amount}`);
+              await updateProgress({
+                completed: savedCount + savedBatchCount,
+                total: amount
+              }, `Sparar ${savedCount + savedBatchCount}/${amount}`, {
+                provider: effectiveProvider,
+                model: selectedProvider?.model || null,
+                generatedCount,
+                duplicatesBlocked: duplicateCount,
+                ruleFiltered: ruleFilteredCount,
+                acceptedCount: savedCount + savedBatchCount,
+                savedCount: savedCount + savedBatchCount,
+                errorCount,
+                lastSavedQuestionId: lastQuestionId || null,
+                lastSavedQuestion: summarizeProgressText(lastQuestionText)
+              });
+            }
+          });
+
+          const { savedQuestions } = saveResult;
+          savedCount += savedQuestions.length;
+          questionIds = [...questionIds, ...savedQuestions.map((question) => question.id)];
+        }
       }
-
-      await updateProgress({
-        completed: Math.min(acceptedQuestions.length, amount),
-        total: amount
-      }, `Genererar ${Math.min(acceptedQuestions.length, amount)}/${amount}`, {
-        targetCount: amount,
-        provider: effectiveProvider,
-        model: selectedProvider?.model || null,
-        round: generationRounds,
-        remaining: amount - acceptedQuestions.length,
-        generatedCount: totalGenerated,
-        duplicatesBlocked: duplicateCount,
-        ruleFiltered: ruleFilteredCount,
-        acceptedCount
-      });
     }
-
-    const finalQuestions = acceptedQuestions.slice(0, amount);
-    const shortfall = amount - finalQuestions.length;
 
     if (abortGeneration) {
       return;
     }
-    
-    pushEvent(`Sparar 0/${amount}`);
-    await updateProgress({ completed: 0, total: amount }, `Sparar 0/${amount}`, {
-      targetCount: amount,
+
+    const remainingAfterSave = Math.max(0, amount - savedCount);
+    const shouldContinue = remainingAfterSave > 0
+      && generationRounds < maxRounds
+      && stalledRounds < 2;
+
+    await updateProgress({
+      completed: Math.min(savedCount, amount),
+      total: amount
+    }, `Genererar ${Math.min(savedCount, amount)}/${amount}`, {
       provider: effectiveProvider,
       model: selectedProvider?.model || null,
-      generatedCount: totalGenerated,
+      round: generationRounds,
+      remaining: remainingAfterSave,
+      generatedCount,
       duplicatesBlocked: duplicateCount,
       ruleFiltered: ruleFilteredCount,
-      acceptedCount: finalQuestions.length
+      acceptedCount: savedCount,
+      savedCount
     });
 
-    // Step 2: Save ONLY unique questions to database (unvalidated)
-    const saveResult = await saveQuestionsToDatabase(env.DB, finalQuestions, {
-      category,
-      difficulty,
-      provider: effectiveProvider,
-      model: selectedProvider?.model || null,
-      ageGroup,
-      targetAudience,
-      freshnessConfig
-    }, {
-      onProgress: async ({ savedCount, errorCount, lastQuestionId, lastQuestionText }) => {
-        pushEvent(`Sparade ${savedCount}/${amount}`);
-        await updateProgress({
-          completed: savedCount,
-          total: amount
-        }, `Sparar ${savedCount}/${amount}`, {
-          targetCount: amount,
-          provider: effectiveProvider,
-          model: selectedProvider?.model || null,
-          generatedCount: totalGenerated,
-          duplicatesBlocked: duplicateCount,
-          ruleFiltered: ruleFilteredCount,
-          acceptedCount: finalQuestions.length,
-          savedCount,
-          errorCount,
-          lastSavedQuestionId: lastQuestionId || null,
-          lastSavedQuestion: summarizeProgressText(lastQuestionText)
-        });
-      }
-    });
-    
-    const { savedQuestions, errors } = saveResult;
-    console.log(`[Task ${taskId}] Saved ${savedQuestions.length} unique questions to database`);
-    
+    if (shouldContinue) {
+      pushEvent('Schemalägger nästa batch');
+      await updateProgress({
+        completed: Math.min(savedCount, amount),
+        total: amount
+      }, `Genererar ${Math.min(savedCount, amount)}/${amount}`, {
+        provider: effectiveProvider,
+        model: selectedProvider?.model || null,
+        round: generationRounds,
+        remaining: remainingAfterSave,
+        generatedCount,
+        duplicatesBlocked: duplicateCount,
+        ruleFiltered: ruleFilteredCount,
+        acceptedCount: savedCount,
+        savedCount
+      });
+
+      await scheduleNextBatch();
+      return;
+    }
+
+    const savedQuestions = await loadQuestionsByIds(env.DB, questionIds);
+    const resolvedQuestionIds = questionIds.length > 0
+      ? questionIds
+      : savedQuestions.map((question) => question.id);
+    const resolvedSavedCount = Math.max(savedQuestions.length, savedCount);
+    const shortfall = Math.max(0, amount - resolvedSavedCount);
     const generatorProviders = Array.from(providersUsed);
     const primaryProvider = generatorProviders[0] || effectiveProvider;
     const validationCandidates = factory.getAvailableProviders('validation')
-      .filter(name => !generatorProviders.includes(name));
+      .filter((name) => !generatorProviders.includes(name));
     const validationProvider = validationCandidates[0] || null;
     const shouldRunValidation = savedQuestions.length > 0 && validationCandidates.length > 0;
 
     pushEvent('Klar med generering');
     await updateProgress({
-      completed: savedQuestions.length,
+      completed: resolvedSavedCount,
       total: amount
     }, 'Klar med generering', {
-      targetCount: amount,
       provider: effectiveProvider,
       model: selectedProvider?.model || null,
-      generatedCount: totalGenerated,
+      generatedCount,
       duplicatesBlocked: duplicateCount,
       ruleFiltered: ruleFilteredCount,
-      acceptedCount: finalQuestions.length,
-      savedCount: savedQuestions.length,
+      acceptedCount: resolvedSavedCount,
+      savedCount: resolvedSavedCount,
       shortfall
     });
-    
-    // Complete generation task
+
     await completeTask(env.DB, taskId, {
       success: true,
-      questionsGenerated: savedQuestions.length,
+      questionsGenerated: resolvedSavedCount,
       provider: primaryProvider,
       model: modelsUsed.size === 1 ? Array.from(modelsUsed)[0] : null,
       providersUsed: generatorProviders,
       modelsUsed: Array.from(modelsUsed),
       requestedCount: amount,
-      generatedCount: totalGenerated,
-      savedCount: savedQuestions.length,
+      generatedCount,
+      savedCount: resolvedSavedCount,
       duplicatesBlocked: duplicateCount,
       ruleFiltered: ruleFilteredCount,
       generationRounds,
       shortfall,
-      questionIds: savedQuestions.map((question) => question.id),
+      questionIds: resolvedQuestionIds,
       questions: savedQuestions,
       validationInfo: {
         requestedCount: amount,
-        totalGenerated: totalGenerated,
-        totalSaved: savedQuestions.length,
+        totalGenerated: generatedCount,
+        totalSaved: resolvedSavedCount,
         duplicates: duplicateCount,
         ruleFiltered: ruleFilteredCount,
         validatedCount: 0,
         invalidCount: 0,
-        skippedCount: savedQuestions.length,
+        skippedCount: resolvedSavedCount,
         validationProvider: validationProvider,
         generatorProviders,
         note: shouldRunValidation
           ? 'Validation will run in separate background task'
           : 'Validation skipped (no alternative providers)'
-      },
-      ...(errors.length > 0 && { saveErrors: errors })
+      }
     });
-    
-    console.log(`[Task ${taskId}] Completed successfully: ${savedQuestions.length} questions saved (${duplicateCount} duplicates filtered)`);
-    
-    // Run validation synchronously (covered by context.waitUntil from parent)
+
     if (shouldRunValidation) {
       const validationTaskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_validation`;
-      
-      // Create validation task
+
       await env.DB.prepare(`
         INSERT INTO background_tasks (
           id, user_id, task_type, status, label, description,
@@ -750,9 +932,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
         'validate_questions',
         'running',
         'AI-validering',
-        `Validerar ${savedQuestions.length} genererade frågor med AI`,
+        `Validerar ${resolvedSavedCount} genererade frågor med AI`,
         JSON.stringify({
-          questionIds: savedQuestions.map(q => q.id),
+          questionIds: resolvedQuestionIds,
           generatorProviders,
           validationProvider,
           category,
@@ -762,10 +944,10 @@ async function generateQuestionsInBackground(env, taskId, params) {
         }),
         JSON.stringify({
           completed: 0,
-          total: savedQuestions.length,
+          total: resolvedSavedCount,
           phase: 'Startar validering',
           details: {
-            totalCount: savedQuestions.length,
+            totalCount: resolvedSavedCount,
             validatedCount: 0,
             invalidCount: 0,
             skippedCount: 0,
@@ -776,12 +958,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
         Date.now(),
         Date.now()
       ).run();
-      
-      console.log(`[Task ${taskId}] Started validation task: ${validationTaskId}`);
-      console.log(`[Task ${taskId}] Validation metadata before call: { category: '${category}', ageGroup: '${ageGroup}', difficulty: '${difficulty}' }`);
-      
-      // Run validation synchronously (AWAIT instead of fire-and-forget)
-      // IMPORTANT: Use savedQuestions (with database IDs), not uniqueQuestions!
+
       try {
         await validateQuestionsInBackground(env, validationTaskId, savedQuestions, generatorProviders, {
           category,
@@ -791,29 +968,104 @@ async function generateQuestionsInBackground(env, taskId, params) {
           targetAudience,
           taskUserId
         }, rulesConfig);
-        console.log(`[Task ${taskId}] Validation completed successfully`);
       } catch (validationError) {
         console.error(`[Task ${taskId}] Validation failed:`, validationError);
-        // Don't fail the generation task if validation fails
       }
-    } else if (savedQuestions.length > 0) {
-      console.log(`[Task ${taskId}] Skipping validation (no alternative validation providers available)`);
     }
-    
   } catch (error) {
     if (watchdogTriggered) {
       console.error(`[Task ${taskId}] Aborted by watchdog:`, error?.message || error);
       return;
     }
     console.error(`[Task ${taskId}] Failed:`, error);
-    
-    // Mark task as failed
     await failTask(env.DB, taskId, error.message, {
       debug: getDebugSnapshot()
     });
   } finally {
     stopWatchdog();
   }
+}
+
+async function loadQuestionsByIds(db, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return [];
+  }
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = await db.prepare(`
+    SELECT
+      id,
+      question_sv,
+      question_en,
+      options_sv,
+      options_en,
+      correct_option,
+      explanation_sv,
+      explanation_en,
+      background_sv,
+      background_en,
+      illustration_emoji,
+      categories,
+      difficulty,
+      age_groups,
+      target_audience,
+      time_sensitive,
+      best_before_at,
+      quarantined,
+      quarantined_at,
+      quarantine_reason,
+      created_at,
+      updated_at,
+      created_by,
+      ai_generation_provider,
+      ai_generation_model,
+      validated
+    FROM questions
+    WHERE id IN (${placeholders})
+  `).bind(...ids).all();
+
+  const parseJsonArray = (value) => {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  };
+
+  return (rows.results || []).map((row) => {
+    const categories = parseJsonArray(row.categories);
+    const ageGroups = parseJsonArray(row.age_groups);
+    return {
+      id: row.id,
+      question_sv: row.question_sv,
+      question_en: row.question_en,
+      options_sv: parseJsonArray(row.options_sv),
+      options_en: parseJsonArray(row.options_en),
+      correctOption: row.correct_option,
+      explanation_sv: row.explanation_sv || '',
+      explanation_en: row.explanation_en || '',
+      background_sv: row.background_sv || '',
+      background_en: row.background_en || '',
+      emoji: row.illustration_emoji || '❓',
+      category: categories[0] || null,
+      difficulty: row.difficulty,
+      ageGroup: ageGroups[0] || null,
+      targetAudience: row.target_audience,
+      timeSensitive: row.time_sensitive === 1,
+      bestBeforeAt: row.best_before_at || null,
+      quarantined: row.quarantined === 1,
+      quarantinedAt: row.quarantined_at || null,
+      quarantineReason: row.quarantine_reason || null,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+      updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+      createdBy: row.created_by,
+      aiGenerated: true,
+      validated: row.validated === 1,
+      provider: row.ai_generation_provider,
+      model: row.ai_generation_model
+    };
+  });
 }
 
 /**
