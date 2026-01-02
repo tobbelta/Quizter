@@ -228,6 +228,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const providersUsed = new Set();
     const modelsUsed = new Set();
     let lastError;
+    const GENERATION_TIMEOUT_MS = 60000;
 
     const switchProvider = async () => {
       while (providerQueue.length > 0) {
@@ -246,6 +247,19 @@ async function generateQuestionsInBackground(env, taskId, params) {
       return false;
     };
 
+    const resolveBatchLimit = () => {
+      const providerConfig = providerMap?.[effectiveProvider] || {};
+      const configuredLimit = Number(providerConfig.maxQuestionsPerRequest);
+      if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
+        return configuredLimit;
+      }
+      const providerLimit = Number(selectedProvider?.maxQuestionsPerRequest);
+      if (Number.isFinite(providerLimit) && providerLimit > 0) {
+        return providerLimit;
+      }
+      return Number.POSITIVE_INFINITY;
+    };
+
     const generateBatch = async (batchAmount) => {
       while (selectedProvider) {
         try {
@@ -261,7 +275,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
             targetAudienceDetails,
             freshnessPrompt,
             answerInQuestionPrompt,
-            language: 'sv'
+            language: 'sv',
+            timeoutMs: GENERATION_TIMEOUT_MS
           });
           providersUsed.add(effectiveProvider);
           if (selectedProvider?.model) {
@@ -296,7 +311,12 @@ async function generateQuestionsInBackground(env, taskId, params) {
     let duplicateCount = 0;
     let ruleFilteredCount = 0;
     let stalledRounds = 0;
-    const maxRounds = Math.max(3, Math.ceil(amount / 5));
+    const initialBatchLimit = (() => {
+      const limit = resolveBatchLimit();
+      if (!Number.isFinite(limit) || limit <= 0) return amount;
+      return Math.min(limit, amount);
+    })();
+    const maxRounds = Math.max(3, Math.ceil(amount / initialBatchLimit) + 2);
     const acceptedQuestions = [];
 
     const existingRows = await env.DB.prepare(`
@@ -306,7 +326,11 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
     while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
       const remaining = amount - acceptedQuestions.length;
-      const batchAmount = remaining;
+      const batchLimit = resolveBatchLimit();
+      const batchAmount = Math.min(
+        remaining,
+        Number.isFinite(batchLimit) && batchLimit > 0 ? batchLimit : remaining
+      );
       pushEvent(`Genererar batch ${generationRounds + 1}/${maxRounds} (${remaining} kvar)`);
       await updateProgress({
         completed: Math.min(acceptedQuestions.length, amount),

@@ -120,7 +120,8 @@ export class AnthropicProvider {
       targetAudienceDetails,
       freshnessPrompt,
       answerInQuestionPrompt,
-      language = 'sv'
+      language = 'sv',
+      timeoutMs = null
     } = params;
     
     const prompt = this.buildPrompt(
@@ -138,6 +139,9 @@ export class AnthropicProvider {
       answerInQuestionPrompt
     );
     
+    const controller = timeoutMs ? new AbortController() : null;
+    const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -153,7 +157,8 @@ export class AnthropicProvider {
             role: 'user',
             content: `Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format och ENDAST JSON, ingen annan text.`
           }]
-        })
+        }),
+        signal: controller?.signal
       });
       
       if (!response.ok) {
@@ -172,8 +177,15 @@ export class AnthropicProvider {
       return this.validateAndFormatQuestions(content.questions || []);
       
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Anthropic API timeout efter ${timeoutMs} ms`);
+      }
       console.error('[Anthropic] Generation error:', error);
       throw new Error(`Anthropic generation failed: ${error.message}`);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 

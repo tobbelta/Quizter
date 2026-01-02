@@ -152,22 +152,43 @@ export class OpenAIProvider {
     return body;
   }
 
-  async requestChatCompletion(messages, temperature, extra = {}, allowResponseFormat = this.supportsResponseFormat) {
-    const response = await fetch(this.baseUrl, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(this.buildRequestBody(
-        messages,
-        temperature,
-        extra,
-        { useResponseFormat: allowResponseFormat }
-      ))
-    });
+  async requestChatCompletion(
+    messages,
+    temperature,
+    extra = {},
+    allowResponseFormat = this.supportsResponseFormat,
+    timeoutMs = null
+  ) {
+    const controller = timeoutMs ? new AbortController() : null;
+    const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
+    try {
+      response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(this.buildRequestBody(
+          messages,
+          temperature,
+          extra,
+          { useResponseFormat: allowResponseFormat }
+        )),
+        signal: controller?.signal
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`${this.label} API timeout efter ${timeoutMs} ms`);
+      }
+      throw error;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
       if (allowResponseFormat && errorText.toLowerCase().includes('response_format')) {
-        return this.requestChatCompletion(messages, temperature, extra, false);
+        return this.requestChatCompletion(messages, temperature, extra, false, timeoutMs);
       }
       throw new Error(`${this.label} API error (${response.status}): ${errorText}`);
     }
@@ -218,7 +239,10 @@ export class OpenAIProvider {
           },
           { role: 'user', content: prompt }
         ],
-        0.7
+        0.7,
+        {},
+        this.supportsResponseFormat,
+        params?.timeoutMs || null
       );
       const content = JSON.parse(data.choices[0].message.content);
       

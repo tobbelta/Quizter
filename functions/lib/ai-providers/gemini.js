@@ -120,7 +120,8 @@ export class GeminiProvider {
       targetAudienceDetails,
       freshnessPrompt,
       answerInQuestionPrompt,
-      language = 'sv'
+      language = 'sv',
+      timeoutMs = null
     } = params;
     
     const prompt = this.buildPrompt(
@@ -138,6 +139,9 @@ export class GeminiProvider {
       answerInQuestionPrompt
     );
     
+    const controller = timeoutMs ? new AbortController() : null;
+    const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
@@ -154,7 +158,8 @@ export class GeminiProvider {
               temperature: 0.7,
               responseMimeType: 'application/json'
             }
-          })
+          }),
+          signal: controller?.signal
         }
       );
       
@@ -198,8 +203,15 @@ export class GeminiProvider {
       return [];
       
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Gemini API timeout efter ${timeoutMs} ms`);
+      }
       console.error('[Gemini] Generation error:', error);
       throw new Error(`Gemini generation failed: ${error.message}`);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
