@@ -210,6 +210,18 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const availableProviders = factory.getAvailableProviders('generation');
     const preferredProvider = provider.toLowerCase();
     let providerPickIndex = 0;
+    const providerCycle = (() => {
+      if (availableProviders.length === 0) {
+        return [];
+      }
+      if (preferredProvider !== 'random' && availableProviders.includes(preferredProvider)) {
+        return [
+          preferredProvider,
+          ...availableProviders.filter((name) => name !== preferredProvider)
+        ];
+      }
+      return [...availableProviders];
+    })();
     let effectiveProvider = preferredProvider;
     let selectedProvider;
     const attemptedProviders = [];
@@ -219,13 +231,10 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const GENERATION_TIMEOUT_MS = 60000;
 
     const pickProviderName = () => {
-      if (availableProviders.length === 0) {
+      if (providerCycle.length === 0) {
         throw new Error('No AI providers are configured');
       }
-      if (preferredProvider !== 'random' && availableProviders.includes(preferredProvider)) {
-        return preferredProvider;
-      }
-      const chosen = availableProviders[providerPickIndex % availableProviders.length];
+      const chosen = providerCycle[providerPickIndex % providerCycle.length];
       providerPickIndex += 1;
       return chosen;
     };
