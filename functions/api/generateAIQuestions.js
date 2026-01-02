@@ -961,6 +961,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
       try {
         await validateQuestionsInBackground(env, validationTaskId, savedQuestions, generatorProviders, {
+          taskId: validationTaskId,
           category,
           ageGroup,
           difficulty,
@@ -1073,6 +1074,12 @@ async function loadQuestionsByIds(db, ids) {
  */
 async function validateQuestionsInBackground(env, taskId, questions, generatorProvider, metadata = {}, rulesConfig = null) {
   const progressEvents = [];
+  if (!metadata || typeof metadata !== 'object') {
+    metadata = {};
+  }
+  if (!metadata.taskId) {
+    metadata.taskId = taskId;
+  }
 
   const pushEvent = (message) => {
     if (!message) return;
