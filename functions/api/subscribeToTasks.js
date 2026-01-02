@@ -4,6 +4,7 @@
  */
 
 import { ensureDatabase } from '../lib/ensureDatabase.js';
+import { markStaleBackgroundTasks } from '../lib/backgroundTaskWatchdog.js';
 
 const buildQuery = (env, { userId, taskType, limit }) => {
   let query = '';
@@ -81,6 +82,7 @@ export async function onRequestGet(context) {
   };
 
   const fetchTasks = async () => {
+    await markStaleBackgroundTasks(env.DB, { userId });
     const query = buildQuery(env, { userId, taskType, limit });
     const { results } = await query.all();
     return (results || []).map(transformTask);

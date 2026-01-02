@@ -32,6 +32,12 @@ export async function onRequestGet(context) {
       // Poll database for updates (we'll optimize this with Durable Objects later if needed)
       const checkTask = async () => {
         try {
+          try {
+            const { markStaleBackgroundTasks } = await import('../lib/backgroundTaskWatchdog.js');
+            await markStaleBackgroundTasks(env.DB, { taskId });
+          } catch (watchdogError) {
+            console.warn('[subscribeToTask] Watchdog check failed:', watchdogError.message);
+          }
           const result = await env.DB.prepare(
             'SELECT * FROM background_tasks WHERE id = ?'
           ).bind(taskId).first();

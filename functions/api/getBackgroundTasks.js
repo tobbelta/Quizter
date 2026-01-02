@@ -3,6 +3,8 @@
  * Retrieves background tasks for a user
  */
 
+import { markStaleBackgroundTasks } from '../lib/backgroundTaskWatchdog.js';
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -12,6 +14,7 @@ export async function onRequestGet(context) {
 
   try {
     console.log('[getBackgroundTasks] Fetching tasks:', { userId, taskId });
+    await markStaleBackgroundTasks(env.DB, { userId, taskId });
 
     let query;
     if (taskId) {
