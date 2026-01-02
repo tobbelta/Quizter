@@ -145,27 +145,143 @@ async function generateQuestionsInBackground(env, taskId, params) {
   const { amount, category, ageGroup, difficulty, provider, userEmail } = params;
   const taskUserId = userEmail || 'system';
   const progressEvents = [];
+  const EVENT_LIMIT = 20;
+  const startedAt = Date.now();
+  let lastProgressAt = startedAt;
+  let watchdogInterval = null;
+  let watchdogTriggered = false;
+  let abortGeneration = false;
+  let lastProgressSnapshot = {
+    completed: 0,
+    total: amount,
+    phase: 'Köad',
+    details: {}
+  };
+  const WATCHDOG_IDLE_MS = 120000;
+  const WATCHDOG_TOTAL_MS = Math.max(5 * 60 * 1000, amount * 45000);
+  const WATCHDOG_CHECK_INTERVAL_MS = 15000;
+  const debugState = {
+    startedAt,
+    lastProvider: null,
+    lastProviderStartedAt: null,
+    lastProviderDurationMs: null,
+    lastProviderError: null,
+    lastBatchSize: null,
+    lastBatchRemaining: null,
+    lastRound: 0
+  };
 
   const pushEvent = (message) => {
     if (!message) return;
     progressEvents.push({ at: Date.now(), message });
-    if (progressEvents.length > 6) {
+    if (progressEvents.length > EVENT_LIMIT) {
       progressEvents.shift();
     }
   };
 
+  const getDebugSnapshot = () => ({
+    startedAt,
+    lastProgressAt,
+    lastProvider: debugState.lastProvider,
+    lastProviderStartedAt: debugState.lastProviderStartedAt,
+    lastProviderDurationMs: debugState.lastProviderDurationMs,
+    lastProviderError: debugState.lastProviderError,
+    lastBatchSize: debugState.lastBatchSize,
+    lastBatchRemaining: debugState.lastBatchRemaining,
+    lastRound: debugState.lastRound,
+    watchdogIdleMs: WATCHDOG_IDLE_MS,
+    watchdogTotalMs: WATCHDOG_TOTAL_MS
+  });
+
   const updateProgress = async (progressValue, phase, details = {}) => {
+    if (abortGeneration) return;
+    const now = Date.now();
+    lastProgressAt = now;
+    const isObject = progressValue && typeof progressValue === 'object';
+    const completedValue = isObject ? Number(progressValue.completed) : Number(progressValue);
+    const totalValue = isObject ? Number(progressValue.total) : Number(amount);
+    const resolvedCompleted = Number.isFinite(completedValue) ? completedValue : 0;
+    const resolvedTotal = Number.isFinite(totalValue) && totalValue > 0 ? totalValue : amount;
+    const resolvedPhase = phase || (isObject && progressValue.phase ? progressValue.phase : '');
+    lastProgressSnapshot = {
+      completed: resolvedCompleted,
+      total: resolvedTotal,
+      phase: resolvedPhase,
+      details: {
+        ...(isObject && progressValue.details ? progressValue.details : {}),
+        ...details
+      }
+    };
     await updateTaskProgress(env.DB, taskId, progressValue, phase, {
       ...details,
+      heartbeatAt: now,
+      debug: getDebugSnapshot(),
       events: [...progressEvents],
       lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
     });
   };
+
+  const startWatchdog = () => {
+    watchdogInterval = setInterval(async () => {
+      if (watchdogTriggered || abortGeneration) return;
+      const now = Date.now();
+      const idleMs = now - lastProgressAt;
+      const totalMs = now - startedAt;
+      if (idleMs <= WATCHDOG_IDLE_MS && totalMs <= WATCHDOG_TOTAL_MS) {
+        return;
+      }
+      watchdogTriggered = true;
+      abortGeneration = true;
+      const reason =
+        idleMs > WATCHDOG_IDLE_MS
+          ? `Watchdog timeout: ingen aktivitet på ${Math.round(idleMs / 1000)}s`
+          : `Watchdog timeout: total tid ${Math.round(totalMs / 1000)}s`;
+      console.error(`[Task ${taskId}] ${reason}`);
+      pushEvent(reason);
+      await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, reason, {
+        heartbeatAt: now,
+        debug: getDebugSnapshot(),
+        watchdog: { idleMs, totalMs }
+      });
+      await failTask(env.DB, taskId, reason, {
+        watchdog: { idleMs, totalMs },
+        debug: getDebugSnapshot()
+      });
+    }, WATCHDOG_CHECK_INTERVAL_MS);
+  };
+
+  const stopWatchdog = () => {
+    if (watchdogInterval) {
+      clearInterval(watchdogInterval);
+      watchdogInterval = null;
+    }
+  };
+
+  const withTimeout = (promise, timeoutMs, label) => new Promise((resolve, reject) => {
+    let didTimeout = false;
+    const timer = setTimeout(() => {
+      didTimeout = true;
+      reject(new Error(`${label} timeout efter ${timeoutMs} ms`));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
   
   console.log(`[Task ${taskId}] Params received:`, params);
   console.log(`[Task ${taskId}] Destructured values:`, { amount, category, ageGroup, difficulty, provider });
   
   try {
+    startWatchdog();
     console.log(`[Task ${taskId}] Starting generation...`);
     pushEvent('Startar generering');
     
@@ -229,6 +345,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const modelsUsed = new Set();
     let lastError;
     const GENERATION_TIMEOUT_MS = 60000;
+    const PROVIDER_CALL_TIMEOUT_MS = Math.max(GENERATION_TIMEOUT_MS + 5000, 65000);
 
     const pickProviderName = () => {
       if (providerCycle.length === 0) {
@@ -259,6 +376,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
       ];
 
       while (providerQueue.length > 0) {
+        if (abortGeneration) {
+          throw new Error('Generation avbruten av watchdog');
+        }
         const nextProvider = providerQueue.shift();
         let providerInstance = primaryInstance;
 
@@ -280,12 +400,21 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
         const batchLimit = resolveBatchLimit(nextProvider, providerInstance);
         const requestAmount = Math.min(batchAmount, batchLimit);
+        debugState.lastProvider = nextProvider;
+        debugState.lastBatchSize = requestAmount;
+        debugState.lastBatchRemaining = batchAmount;
+        debugState.lastProviderStartedAt = Date.now();
+        debugState.lastProviderDurationMs = null;
+        debugState.lastProviderError = null;
 
         try {
           if (nextProvider !== primaryProvider) {
             pushEvent(`Byter provider till ${nextProvider}`);
           }
-          const batchQuestions = await providerInstance.generateQuestions({
+          pushEvent(`Startar provider ${nextProvider} (${requestAmount})`);
+          console.log(`[Task ${taskId}] Provider ${nextProvider} generating ${requestAmount} questions`);
+          const startedAtProvider = Date.now();
+          const batchQuestions = await withTimeout(providerInstance.generateQuestions({
             amount: requestAmount,
             category,
             categoryDetails,
@@ -299,7 +428,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
             answerInQuestionPrompt,
             language: 'sv',
             timeoutMs: GENERATION_TIMEOUT_MS
-          });
+          }), PROVIDER_CALL_TIMEOUT_MS, `${nextProvider} generering`);
+          debugState.lastProviderDurationMs = Date.now() - startedAtProvider;
+          pushEvent(`Provider ${nextProvider} klar (${debugState.lastProviderDurationMs} ms)`);
           providersUsed.add(effectiveProvider);
           if (providerInstance?.model) {
             modelsUsed.add(providerInstance.model);
@@ -311,7 +442,10 @@ async function generateQuestionsInBackground(env, taskId, params) {
           }));
         } catch (providerError) {
           lastError = providerError;
+          debugState.lastProviderDurationMs = Date.now() - debugState.lastProviderStartedAt;
+          debugState.lastProviderError = providerError.message;
           console.warn(`[Task ${taskId}] ${effectiveProvider} failed:`, providerError.message);
+          pushEvent(`Provider ${effectiveProvider} fel: ${summarizeProgressText(providerError.message, 80)}`);
         }
       }
       throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
@@ -329,6 +463,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     let duplicateCount = 0;
     let ruleFilteredCount = 0;
     let stalledRounds = 0;
+    let acceptedCount = 0;
     const defaultBatchSize = Math.min(amount, 3);
     const maxRounds = Math.max(3, Math.ceil(amount / defaultBatchSize) + 2);
     const acceptedQuestions = [];
@@ -339,6 +474,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
     let existingQuestions = existingRows.results || [];
 
     while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
+      if (abortGeneration) {
+        throw new Error('Generation avbruten av watchdog');
+      }
       const remaining = amount - acceptedQuestions.length;
       const primaryProvider = pickProviderName();
       selectedProvider = factory.getProvider(primaryProvider);
@@ -348,6 +486,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
         remaining,
         Number.isFinite(batchLimit) && batchLimit > 0 ? batchLimit : remaining
       );
+      debugState.lastRound = generationRounds + 1;
       pushEvent(`Provider vald: ${effectiveProvider}`);
       pushEvent(`Genererar batch ${generationRounds + 1}/${maxRounds} (${remaining} kvar)`);
       await updateProgress({
@@ -399,6 +538,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
       ruleFilteredCount += rejectedQuestions.length;
       acceptedQuestions.push(...batchAccepted);
+      acceptedCount = acceptedQuestions.length;
 
       if (batchAccepted.length === 0) {
         stalledRounds += 1;
@@ -418,12 +558,16 @@ async function generateQuestionsInBackground(env, taskId, params) {
         generatedCount: totalGenerated,
         duplicatesBlocked: duplicateCount,
         ruleFiltered: ruleFilteredCount,
-        acceptedCount: acceptedQuestions.length
+        acceptedCount
       });
     }
 
     const finalQuestions = acceptedQuestions.slice(0, amount);
     const shortfall = amount - finalQuestions.length;
+
+    if (abortGeneration) {
+      return;
+    }
     
     pushEvent(`Sparar 0/${amount}`);
     await updateProgress({ completed: 0, total: amount }, `Sparar 0/${amount}`, {
@@ -596,10 +740,18 @@ async function generateQuestionsInBackground(env, taskId, params) {
     }
     
   } catch (error) {
+    if (watchdogTriggered) {
+      console.error(`[Task ${taskId}] Aborted by watchdog:`, error?.message || error);
+      return;
+    }
     console.error(`[Task ${taskId}] Failed:`, error);
     
     // Mark task as failed
-    await failTask(env.DB, taskId, error.message);
+    await failTask(env.DB, taskId, error.message, {
+      debug: getDebugSnapshot()
+    });
+  } finally {
+    stopWatchdog();
   }
 }
 
@@ -1462,8 +1614,12 @@ async function completeTask(db, taskId, result) {
 }
 
 // Helper function to fail task
-async function failTask(db, taskId, errorMessage) {
+async function failTask(db, taskId, errorMessage, resultDetails = null) {
   try {
+    const resultPayload = {
+      error: errorMessage,
+      ...(resultDetails || {})
+    };
     await db.prepare(`
       UPDATE background_tasks 
       SET status = ?, 
@@ -1475,7 +1631,7 @@ async function failTask(db, taskId, errorMessage) {
     `).bind(
       'failed', 
       errorMessage,
-      JSON.stringify({ error: errorMessage }), 
+      JSON.stringify(resultPayload), 
       Date.now(), 
       Date.now(), 
       taskId
