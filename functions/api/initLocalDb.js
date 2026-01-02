@@ -30,6 +30,7 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS message_states;
       DROP TABLE IF EXISTS analytics_events;
       DROP TABLE IF EXISTS audit_logs;
+      DROP TABLE IF EXISTS ai_provider_logs;
       DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
       
@@ -363,6 +364,25 @@ export async function onRequestGet({ env }) {
         started_at INTEGER,
         finished_at INTEGER
       );
+
+      CREATE TABLE ai_provider_logs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        user_id TEXT,
+        phase TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        status TEXT NOT NULL,
+        request_payload TEXT,
+        response_payload TEXT,
+        error TEXT,
+        duration_ms INTEGER,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_ai_provider_logs_task_id ON ai_provider_logs(task_id);
+      CREATE INDEX idx_ai_provider_logs_provider ON ai_provider_logs(provider);
+      CREATE INDEX idx_ai_provider_logs_created_at ON ai_provider_logs(created_at);
     `;
     
     // Split by semicolon and execute each statement
@@ -385,7 +405,7 @@ export async function onRequestGet({ env }) {
     return new Response(JSON.stringify({
       success: true,
       message: 'Local database initialized successfully',
-      tablesCreated: 12
+      tablesCreated: 13
     }), {
       headers: { 'Content-Type': 'application/json' }
     });

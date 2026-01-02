@@ -7,6 +7,7 @@ import { ensureCategoriesTable } from './categories.js';
 import { ensureAudienceTables } from './audiences.js';
 import { ensureAuditLogsSchema } from './auditLogs.js';
 import { ensureAiRulesTable } from './aiRules.js';
+import { ensureProviderCallLogsSchema } from './providerCallLogs.js';
 
 let dbInitialized = false;
 
@@ -794,6 +795,21 @@ export async function ensureDatabase(db) {
         updated_at INTEGER,
         started_at INTEGER,
         finished_at INTEGER
+      )`,
+      `CREATE TABLE ai_provider_logs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        user_id TEXT,
+        phase TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        status TEXT NOT NULL,
+        request_payload TEXT,
+        response_payload TEXT,
+        error TEXT,
+        duration_ms INTEGER,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
       )`
     ];
     
@@ -811,6 +827,7 @@ export async function ensureDatabase(db) {
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
     await ensureAuditLogsSchema(db);
+    await ensureProviderCallLogsSchema(db);
     dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed

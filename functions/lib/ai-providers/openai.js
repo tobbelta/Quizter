@@ -214,6 +214,7 @@ export class OpenAIProvider {
       language = 'sv'
     } = params;
     
+    const onDebug = typeof params?.onDebug === 'function' ? params.onDebug : null;
     const prompt = this.buildPrompt(
       category,
       categoryDetails,
@@ -229,20 +230,32 @@ export class OpenAIProvider {
       answerInQuestionPrompt
     );
     
+    const requestMessages = [
+      {
+        role: 'system',
+        content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.'
+      },
+      { role: 'user', content: prompt }
+    ];
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        temperature: 0.7,
+        responseFormat: this.supportsResponseFormat,
+        messages: requestMessages
+      }
+    });
+
     try {
       const data = await this.requestChatCompletion(
-        [
-          { 
-            role: 'system', 
-            content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.' 
-          },
-          { role: 'user', content: prompt }
-        ],
+        requestMessages,
         0.7,
         {},
         this.supportsResponseFormat,
         params?.timeoutMs || null
       );
+      onDebug?.({ stage: 'response', payload: data });
       const content = JSON.parse(data.choices[0].message.content);
       
       console.log(`${this.logPrefix} Successfully parsed response`);
@@ -262,6 +275,7 @@ export class OpenAIProvider {
       
     } catch (error) {
       console.error(`${this.logPrefix} Generation error:`, error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`${this.label} generation failed: ${error.message}`);
     }
   }
@@ -270,19 +284,30 @@ export class OpenAIProvider {
    * Validate a question using provider
    */
   async validateQuestion(question, validationCriteria) {
+    const onDebug = typeof validationCriteria?.onDebug === 'function' ? validationCriteria.onDebug : null;
     const prompt = this.buildValidationPrompt(question, validationCriteria);
+    const requestMessages = [
+      {
+        role: 'system',
+        content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.'
+      },
+      { role: 'user', content: prompt }
+    ];
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        temperature: 0.3,
+        messages: requestMessages
+      }
+    });
     
     try {
       const data = await this.requestChatCompletion(
-        [
-          { 
-            role: 'system', 
-            content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.' 
-          },
-          { role: 'user', content: prompt }
-        ],
+        requestMessages,
         0.3
       );
+      onDebug?.({ stage: 'response', payload: data });
       const validation = JSON.parse(data.choices[0].message.content);
       
       return {
@@ -310,24 +335,36 @@ export class OpenAIProvider {
       
     } catch (error) {
       console.error(`${this.logPrefix} Validation error:`, error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`${this.label} validation failed: ${error.message}`);
     }
   }
 
   async checkAnswerAmbiguity(question, _validationCriteria) {
+    const onDebug = typeof _validationCriteria?.onDebug === 'function' ? _validationCriteria.onDebug : null;
     const prompt = this.buildAmbiguityPrompt(question);
+    const requestMessages = [
+      {
+        role: 'system',
+        content: 'Du är en expert på att upptäcka tvetydiga quizfrågor.'
+      },
+      { role: 'user', content: prompt }
+    ];
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        temperature: 0,
+        messages: requestMessages
+      }
+    });
 
     try {
       const data = await this.requestChatCompletion(
-        [
-          {
-            role: 'system',
-            content: 'Du är en expert på att upptäcka tvetydiga quizfrågor.'
-          },
-          { role: 'user', content: prompt }
-        ],
+        requestMessages,
         0
       );
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.choices[0].message.content);
       const alternatives = Array.isArray(result.alternativeCorrectOptions)
         ? result.alternativeCorrectOptions.filter(Boolean)
@@ -350,24 +387,36 @@ export class OpenAIProvider {
       };
     } catch (error) {
       console.error(`${this.logPrefix} Ambiguity check error:`, error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`${this.label} ambiguity check failed: ${error.message}`);
     }
   }
 
   async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
+    const onDebug = typeof criteria?.onDebug === 'function' ? criteria.onDebug : null;
     const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
+    const requestMessages = [
+      {
+        role: 'system',
+        content: 'Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta.'
+      },
+      { role: 'user', content: prompt }
+    ];
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        temperature: 0.2,
+        messages: requestMessages
+      }
+    });
 
     try {
       const data = await this.requestChatCompletion(
-        [
-          {
-            role: 'system',
-            content: 'Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta.'
-          },
-          { role: 'user', content: prompt }
-        ],
+        requestMessages,
         0.2
       );
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.choices[0].message.content);
       const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
         ? result.proposedEdits
@@ -385,6 +434,7 @@ export class OpenAIProvider {
       };
     } catch (error) {
       console.error(`${this.logPrefix} Proposed edits error:`, error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`${this.label} proposed edits failed: ${error.message}`);
     }
   }

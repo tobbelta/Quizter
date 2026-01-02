@@ -22,6 +22,7 @@ import {
 } from '../lib/questionRules.js';
 import { getAiRulesConfig } from '../lib/aiRules.js';
 import { resolveFreshnessFields, isExpiredByBestBefore } from '../lib/freshness.js';
+import { logProviderCall } from '../lib/providerCallLogs.js';
 
 const summarizeProgressText = (value, limit = 120) => {
   if (!value) return '';
@@ -221,6 +222,14 @@ async function generateQuestionsInBackground(env, taskId, params) {
     });
   };
 
+  const recordProviderCall = async (payload) => {
+    try {
+      await logProviderCall(env.DB, payload);
+    } catch (error) {
+      console.warn(`[Task ${taskId}] Failed to log provider call:`, error.message);
+    }
+  };
+
   const startWatchdog = () => {
     watchdogInterval = setInterval(async () => {
       if (watchdogTriggered || abortGeneration) return;
@@ -406,6 +415,17 @@ async function generateQuestionsInBackground(env, taskId, params) {
         debugState.lastProviderStartedAt = Date.now();
         debugState.lastProviderDurationMs = null;
         debugState.lastProviderError = null;
+        const debugCapture = { request: null, response: null, error: null };
+        const onDebug = (entry) => {
+          if (!entry) return;
+          if (entry.stage === 'request') {
+            debugCapture.request = entry.payload;
+          } else if (entry.stage === 'response') {
+            debugCapture.response = entry.payload;
+          } else if (entry.stage === 'error') {
+            debugCapture.error = entry.error;
+          }
+        };
 
         try {
           if (nextProvider !== primaryProvider) {
@@ -427,10 +447,30 @@ async function generateQuestionsInBackground(env, taskId, params) {
             freshnessPrompt,
             answerInQuestionPrompt,
             language: 'sv',
-            timeoutMs: GENERATION_TIMEOUT_MS
+            timeoutMs: GENERATION_TIMEOUT_MS,
+            onDebug
           }), PROVIDER_CALL_TIMEOUT_MS, `${nextProvider} generering`);
           debugState.lastProviderDurationMs = Date.now() - startedAtProvider;
           pushEvent(`Provider ${nextProvider} klar (${debugState.lastProviderDurationMs} ms)`);
+          await recordProviderCall({
+            taskId,
+            userId: taskUserId,
+            phase: 'generation',
+            provider: nextProvider,
+            model: providerInstance?.model || null,
+            status: 'success',
+            requestPayload: debugCapture.request,
+            responsePayload: debugCapture.response,
+            durationMs: debugState.lastProviderDurationMs,
+            metadata: {
+              batchAmount: requestAmount,
+              remaining: batchAmount,
+              round: generationRounds + 1,
+              category,
+              ageGroup,
+              difficulty
+            }
+          });
           providersUsed.add(effectiveProvider);
           if (providerInstance?.model) {
             modelsUsed.add(providerInstance.model);
@@ -446,6 +486,26 @@ async function generateQuestionsInBackground(env, taskId, params) {
           debugState.lastProviderError = providerError.message;
           console.warn(`[Task ${taskId}] ${effectiveProvider} failed:`, providerError.message);
           pushEvent(`Provider ${effectiveProvider} fel: ${summarizeProgressText(providerError.message, 80)}`);
+          await recordProviderCall({
+            taskId,
+            userId: taskUserId,
+            phase: 'generation',
+            provider: nextProvider,
+            model: providerInstance?.model || null,
+            status: 'error',
+            requestPayload: debugCapture.request,
+            responsePayload: debugCapture.response,
+            error: providerError.message || debugCapture.error,
+            durationMs: debugState.lastProviderDurationMs,
+            metadata: {
+              batchAmount: requestAmount,
+              remaining: batchAmount,
+              round: generationRounds + 1,
+              category,
+              ageGroup,
+              difficulty
+            }
+          });
         }
       }
       throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
@@ -728,7 +788,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
           ageGroup,
           difficulty,
           validationProvider,
-          targetAudience
+          targetAudience,
+          taskUserId
         }, rulesConfig);
         console.log(`[Task ${taskId}] Validation completed successfully`);
       } catch (validationError) {
@@ -801,7 +862,7 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     // Fetch task payload to get metadata if not provided
     if (!metadata.category || !metadata.ageGroup || !metadata.difficulty || !metadata.validationProvider) {
       console.log(`[Validation ${taskId}] Metadata incomplete, fetching from task payload...`);
-      const task = await env.DB.prepare(`SELECT payload FROM background_tasks WHERE id = ?`).bind(taskId).first();
+      const task = await env.DB.prepare(`SELECT payload, user_id FROM background_tasks WHERE id = ?`).bind(taskId).first();
       if (task && task.payload) {
         const payload = JSON.parse(task.payload);
         metadata = {
@@ -809,7 +870,8 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
           ageGroup: payload.ageGroup || metadata.ageGroup,
           difficulty: payload.difficulty || metadata.difficulty,
           validationProvider: payload.validationProvider || metadata.validationProvider,
-          targetAudience: payload.targetAudience || metadata.targetAudience
+          targetAudience: payload.targetAudience || metadata.targetAudience,
+          taskUserId: metadata.taskUserId || task.user_id || null
         };
         console.log(`[Validation ${taskId}] Metadata from payload:`, metadata);
       }
@@ -857,6 +919,7 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
           difficulty: metadata.difficulty,
           validationProvider: metadata.validationProvider,
           targetAudience: metadata.targetAudience,
+          taskUserId: metadata.taskUserId || null,
           rulesConfig,
           freshnessConfig,
           freshnessPrompt,
@@ -1097,6 +1160,18 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   const usedProviders = new Set();
   const reportProgress = typeof context?.onProgress === 'function' ? context.onProgress : null;
   const autoCorrectionEnabled = context?.autoCorrectionEnabled === true;
+  const recordProviderCall = async (payload) => {
+    try {
+      await logProviderCall(db, payload);
+    } catch (error) {
+      console.warn('[validateUniqueQuestions] Failed to log provider call:', error.message);
+    }
+  };
+  const baseMetadata = {
+    category: context.category || null,
+    ageGroup: context.ageGroup || null,
+    difficulty: context.difficulty || null
+  };
 
   const summarizeResult = () => ({
     validatedCount,
@@ -1204,13 +1279,56 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     let ambiguityCheck = null;
     if (normalizedValid && typeof provider?.checkAnswerAmbiguity === 'function') {
       try {
+        const ambiguityDebug = { request: null, response: null, error: null };
+        const onAmbiguityDebug = (entry) => {
+          if (!entry) return;
+          if (entry.stage === 'request') {
+            ambiguityDebug.request = entry.payload;
+          } else if (entry.stage === 'response') {
+            ambiguityDebug.response = entry.payload;
+          } else if (entry.stage === 'error') {
+            ambiguityDebug.error = entry.error;
+          }
+        };
+        const ambiguityStartedAt = Date.now();
         ambiguityCheck = await provider.checkAnswerAmbiguity(question, {
           category: context.category,
           ageGroup: context.ageGroup,
-          difficulty: context.difficulty
+          difficulty: context.difficulty,
+          onDebug: onAmbiguityDebug
+        });
+        await recordProviderCall({
+          taskId: context?.taskId || null,
+          userId: context?.taskUserId || null,
+          phase: 'ambiguity',
+          provider: providerName,
+          model: provider?.model || null,
+          status: 'success',
+          requestPayload: ambiguityDebug.request,
+          responsePayload: ambiguityDebug.response,
+          durationMs: Date.now() - ambiguityStartedAt,
+          metadata: {
+            ...baseMetadata,
+            questionId: question.id,
+            step: 'ambiguity'
+          }
         });
       } catch (error) {
         console.warn('[validateUniqueQuestions] Ambiguity check failed:', error.message);
+        await recordProviderCall({
+          taskId: context?.taskId || null,
+          userId: context?.taskUserId || null,
+          phase: 'ambiguity',
+          provider: providerName,
+          model: provider?.model || null,
+          status: 'error',
+          error: error.message,
+          metadata: {
+            ...baseMetadata,
+            questionId: question.id,
+            step: 'ambiguity'
+          }
+        });
       }
     }
     const ambiguityAlternatives = Array.isArray(ambiguityCheck?.alternativeCorrectOptions)
@@ -1384,6 +1502,8 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
 
         const currentProviderName = activeProvider.name;
         const currentProvider = activeProvider.provider;
+        let validationDebug = null;
+        let validationStartedAt = null;
 
         try {
           if (reportProgress) {
@@ -1400,12 +1520,42 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               phase: `Validerar ${i + 1}/${questions.length}`
             });
           }
-          const validationResult = await currentProvider.validateQuestion(question, {
+          validationDebug = { request: null, response: null, error: null };
+          const onValidationDebug = (entry) => {
+            if (!entry) return;
+            if (entry.stage === 'request') {
+              validationDebug.request = entry.payload;
+            } else if (entry.stage === 'response') {
+              validationDebug.response = entry.payload;
+            } else if (entry.stage === 'error') {
+              validationDebug.error = entry.error;
+            }
+          };
+          const validationCriteria = {
             category: context.category,
             ageGroup: context.ageGroup,
             difficulty: context.difficulty,
             freshnessPrompt: context.freshnessPrompt,
-            answerInQuestionPrompt: context.answerInQuestionPrompt
+            answerInQuestionPrompt: context.answerInQuestionPrompt,
+            onDebug: onValidationDebug
+          };
+          validationStartedAt = Date.now();
+          const validationResult = await currentProvider.validateQuestion(question, validationCriteria);
+          await recordProviderCall({
+            taskId: context?.taskId || null,
+            userId: context?.taskUserId || null,
+            phase: 'validation',
+            provider: currentProviderName,
+            model: currentProvider?.model || null,
+            status: 'success',
+            requestPayload: validationDebug.request,
+            responsePayload: validationDebug.response,
+            durationMs: Date.now() - validationStartedAt,
+            metadata: {
+              ...baseMetadata,
+              questionId: question.id,
+              step: 'validate'
+            }
           });
 
           usedProviders.add(currentProviderName);
@@ -1417,13 +1567,26 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
           if (autoCorrectionEnabled && !evaluation.finalValid && !correctionAppliedForQuestion) {
             if (!hasProposedEdits(proposedEdits) && typeof currentProvider.proposeQuestionEdits === 'function') {
               try {
+                const proposalDebug = { request: null, response: null, error: null };
+                const onProposalDebug = (entry) => {
+                  if (!entry) return;
+                  if (entry.stage === 'request') {
+                    proposalDebug.request = entry.payload;
+                  } else if (entry.stage === 'response') {
+                    proposalDebug.response = entry.payload;
+                  } else if (entry.stage === 'error') {
+                    proposalDebug.error = entry.error;
+                  }
+                };
+                const proposalStartedAt = Date.now();
                 const proposal = await currentProvider.proposeQuestionEdits(
                   question,
                   {
                     category: context.category,
                     ageGroup: context.ageGroup,
                     difficulty: context.difficulty,
-                    answerInQuestionPrompt: context.answerInQuestionPrompt
+                    answerInQuestionPrompt: context.answerInQuestionPrompt,
+                    onDebug: onProposalDebug
                   },
                   {
                     issues: evaluation.combinedIssues,
@@ -1431,9 +1594,39 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
                     blockingRules: evaluation.blockingRules
                   }
                 );
+                await recordProviderCall({
+                  taskId: context?.taskId || null,
+                  userId: context?.taskUserId || null,
+                  phase: 'propose_edits',
+                  provider: currentProviderName,
+                  model: currentProvider?.model || null,
+                  status: 'success',
+                  requestPayload: proposalDebug.request,
+                  responsePayload: proposalDebug.response,
+                  durationMs: Date.now() - proposalStartedAt,
+                  metadata: {
+                    ...baseMetadata,
+                    questionId: question.id,
+                    step: 'proposal'
+                  }
+                });
                 proposedEdits = proposal?.proposedEdits;
               } catch (error) {
                 console.warn('[validateUniqueQuestions] Failed to fetch proposed edits:', error.message);
+                await recordProviderCall({
+                  taskId: context?.taskId || null,
+                  userId: context?.taskUserId || null,
+                  phase: 'propose_edits',
+                  provider: currentProviderName,
+                  model: currentProvider?.model || null,
+                  status: 'error',
+                  error: error.message,
+                  metadata: {
+                    ...baseMetadata,
+                    questionId: question.id,
+                    step: 'proposal'
+                  }
+                });
               }
             }
 
@@ -1448,12 +1641,41 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               autoCorrectionApplied = true;
               correctionAppliedForQuestion = true;
 
+              const correctedDebug = { request: null, response: null, error: null };
+              const onCorrectedDebug = (entry) => {
+                if (!entry) return;
+                if (entry.stage === 'request') {
+                  correctedDebug.request = entry.payload;
+                } else if (entry.stage === 'response') {
+                  correctedDebug.response = entry.payload;
+                } else if (entry.stage === 'error') {
+                  correctedDebug.error = entry.error;
+                }
+              };
+              const correctedStartedAt = Date.now();
               const correctedValidation = await currentProvider.validateQuestion(question, {
                 category: context.category,
                 ageGroup: context.ageGroup,
                 difficulty: context.difficulty,
                 freshnessPrompt: context.freshnessPrompt,
-                answerInQuestionPrompt: context.answerInQuestionPrompt
+                answerInQuestionPrompt: context.answerInQuestionPrompt,
+                onDebug: onCorrectedDebug
+              });
+              await recordProviderCall({
+                taskId: context?.taskId || null,
+                userId: context?.taskUserId || null,
+                phase: 'validation',
+                provider: currentProviderName,
+                model: currentProvider?.model || null,
+                status: 'success',
+                requestPayload: correctedDebug.request,
+                responsePayload: correctedDebug.response,
+                durationMs: Date.now() - correctedStartedAt,
+                metadata: {
+                  ...baseMetadata,
+                  questionId: question.id,
+                  step: 'validate_corrected'
+                }
               });
               usedProviders.add(currentProviderName);
               evaluation = await evaluateValidationResult(question, correctedValidation, currentProviderName, currentProvider);
@@ -1521,6 +1743,23 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
           validated = true;
         } catch (validationError) {
           console.error(`[validateUniqueQuestions] Provider ${currentProviderName} failed:`, validationError.message);
+          await recordProviderCall({
+            taskId: context?.taskId || null,
+            userId: context?.taskUserId || null,
+            phase: 'validation',
+            provider: currentProviderName,
+            model: currentProvider?.model || null,
+            status: 'error',
+            requestPayload: validationDebug?.request,
+            responsePayload: validationDebug?.response,
+            error: validationError.message,
+            durationMs: validationStartedAt ? Date.now() - validationStartedAt : null,
+            metadata: {
+              ...baseMetadata,
+              questionId: question.id,
+              step: 'validate'
+            }
+          });
           activeProvider = await selectProvider();
           if (activeProvider) {
             console.log('[validateUniqueQuestions] Switching provider to:', activeProvider.name);

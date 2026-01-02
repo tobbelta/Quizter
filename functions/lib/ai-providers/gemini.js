@@ -123,6 +123,7 @@ export class GeminiProvider {
       language = 'sv',
       timeoutMs = null
     } = params;
+    const onDebug = typeof params?.onDebug === 'function' ? params.onDebug : null;
 
     const prompt = this.buildPrompt(
       category,
@@ -140,6 +141,25 @@ export class GeminiProvider {
     );
     const controller = timeoutMs ? new AbortController() : null;
     const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format.`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        responseMimeType: 'application/json'
+      }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch(
@@ -147,27 +167,19 @@ export class GeminiProvider {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format.`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              responseMimeType: 'application/json'
-            }
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller?.signal
         }
       );
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Gemini API error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       
       if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
         console.error('[Gemini] Invalid response structure:', JSON.stringify(data, null, 2));
@@ -203,9 +215,12 @@ export class GeminiProvider {
       
     } catch (error) {
       if (error?.name === 'AbortError') {
-        throw new Error(`Gemini API timeout efter ${timeoutMs} ms`);
+        const message = `Gemini API timeout efter ${timeoutMs} ms`;
+        onDebug?.({ stage: 'error', error: message });
+        throw new Error(message);
       }
       console.error('[Gemini] Generation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Gemini generation failed: ${error.message}`);
     } finally {
       if (timeoutId) {
@@ -218,7 +233,27 @@ export class GeminiProvider {
    * Validate a question using Gemini
    */
   async validateQuestion(question, validationCriteria) {
+    const onDebug = typeof validationCriteria?.onDebug === 'function' ? validationCriteria.onDebug : null;
     const prompt = this.buildValidationPrompt(question, validationCriteria);
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde. Du svarar ALLTID på SVENSKA.\n\n${prompt}\n\nSvara med JSON-format. VIKTIGT: All text i ditt svar MÅSTE vara på SVENSKA.`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.3,
+        responseMimeType: 'application/json'
+      }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        body: requestBody
+      }
+    });
     
     try {
       const response = await fetch(
@@ -226,26 +261,18 @@ export class GeminiProvider {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde. Du svarar ALLTID på SVENSKA.\n\n${prompt}\n\nSvara med JSON-format. VIKTIGT: All text i ditt svar MÅSTE vara på SVENSKA.`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.3,
-              responseMimeType: 'application/json'
-            }
-          })
+          body: JSON.stringify(requestBody)
         }
       );
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Gemini validation error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const validation = JSON.parse(data.candidates[0].content.parts[0].text);
       
       return {
@@ -273,12 +300,33 @@ export class GeminiProvider {
       
     } catch (error) {
       console.error('[Gemini] Validation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Gemini validation failed: ${error.message}`);
     }
   }
 
   async checkAnswerAmbiguity(question, _validationCriteria) {
+    const onDebug = typeof _validationCriteria?.onDebug === 'function' ? _validationCriteria.onDebug : null;
     const prompt = this.buildAmbiguityPrompt(question);
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Du är en expert på att upptäcka tvetydiga quizfrågor. Svara ENDAST med JSON.\n\n${prompt}`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: 'application/json'
+      }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch(
@@ -286,26 +334,18 @@ export class GeminiProvider {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `Du är en expert på att upptäcka tvetydiga quizfrågor. Svara ENDAST med JSON.\n\n${prompt}`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0,
-              responseMimeType: 'application/json'
-            }
-          })
+          body: JSON.stringify(requestBody)
         }
       );
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Gemini ambiguity error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.candidates[0].content.parts[0].text);
       const alternatives = Array.isArray(result.alternativeCorrectOptions)
         ? result.alternativeCorrectOptions.filter(Boolean)
@@ -328,12 +368,33 @@ export class GeminiProvider {
       };
     } catch (error) {
       console.error('[Gemini] Ambiguity check error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Gemini ambiguity check failed: ${error.message}`);
     }
   }
 
   async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
+    const onDebug = typeof criteria?.onDebug === 'function' ? criteria.onDebug : null;
     const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
+    const requestBody = {
+      contents: [{
+        parts: [{
+          text: `Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta. Svara ENDAST med JSON.\n\n${prompt}`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json'
+      }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`,
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch(
@@ -341,26 +402,18 @@ export class GeminiProvider {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta. Svara ENDAST med JSON.\n\n${prompt}`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json'
-            }
-          })
+          body: JSON.stringify(requestBody)
         }
       );
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Gemini proposed edits error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.candidates[0].content.parts[0].text);
       const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
         ? result.proposedEdits
@@ -378,6 +431,7 @@ export class GeminiProvider {
       };
     } catch (error) {
       console.error('[Gemini] Proposed edits error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Gemini proposed edits failed: ${error.message}`);
     }
   }

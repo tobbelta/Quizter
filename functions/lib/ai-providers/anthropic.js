@@ -123,6 +123,7 @@ export class AnthropicProvider {
       language = 'sv',
       timeoutMs = null
     } = params;
+    const onDebug = typeof params?.onDebug === 'function' ? params.onDebug : null;
 
     const prompt = this.buildPrompt(
       category,
@@ -140,6 +141,22 @@ export class AnthropicProvider {
     );
     const controller = timeoutMs ? new AbortController() : null;
     const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const requestBody = {
+      model: this.model,
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format och ENDAST JSON, ingen annan text.`
+      }]
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.anthropic.com/v1/messages',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -149,23 +166,18 @@ export class AnthropicProvider {
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01'
         },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 4096,
-          messages: [{
-            role: 'user',
-            content: `Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format och ENDAST JSON, ingen annan text.`
-          }]
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller?.signal
       });
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Anthropic API error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       
       if (!data.content || !data.content[0]?.text) {
         throw new Error('Invalid response structure from Anthropic');
@@ -177,9 +189,12 @@ export class AnthropicProvider {
       
     } catch (error) {
       if (error?.name === 'AbortError') {
-        throw new Error(`Anthropic API timeout efter ${timeoutMs} ms`);
+        const message = `Anthropic API timeout efter ${timeoutMs} ms`;
+        onDebug?.({ stage: 'error', error: message });
+        throw new Error(message);
       }
       console.error('[Anthropic] Generation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Anthropic generation failed: ${error.message}`);
     } finally {
       if (timeoutId) {
@@ -192,7 +207,24 @@ export class AnthropicProvider {
    * Validate a question using Anthropic Claude
    */
   async validateQuestion(question, validationCriteria) {
+    const onDebug = typeof validationCriteria?.onDebug === 'function' ? validationCriteria.onDebug : null;
     const prompt = this.buildValidationPrompt(question, validationCriteria);
+    const requestBody = {
+      model: this.model,
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format och ENDAST JSON, ingen annan text.`
+      }]
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.anthropic.com/v1/messages',
+        body: requestBody
+      }
+    });
     
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -202,22 +234,17 @@ export class AnthropicProvider {
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01'
         },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 2048,
-          messages: [{
-            role: 'user',
-            content: `Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.\n\n${prompt}\n\nSvara med JSON-format och ENDAST JSON, ingen annan text.`
-          }]
-        })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Anthropic validation error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const validation = JSON.parse(data.content[0].text);
       
       return {
@@ -245,12 +272,30 @@ export class AnthropicProvider {
       
     } catch (error) {
       console.error('[Anthropic] Validation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Anthropic validation failed: ${error.message}`);
     }
   }
 
   async checkAnswerAmbiguity(question, _validationCriteria) {
+    const onDebug = typeof _validationCriteria?.onDebug === 'function' ? _validationCriteria.onDebug : null;
     const prompt = this.buildAmbiguityPrompt(question);
+    const requestBody = {
+      model: this.model,
+      max_tokens: 512,
+      messages: [{
+        role: 'user',
+        content: `Du är en expert på att upptäcka tvetydiga quizfrågor. Svara ENDAST med JSON.\n\n${prompt}`
+      }]
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.anthropic.com/v1/messages',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -260,22 +305,17 @@ export class AnthropicProvider {
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01'
         },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 512,
-          messages: [{
-            role: 'user',
-            content: `Du är en expert på att upptäcka tvetydiga quizfrågor. Svara ENDAST med JSON.\n\n${prompt}`
-          }]
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Anthropic ambiguity error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.content[0].text);
       const alternatives = Array.isArray(result.alternativeCorrectOptions)
         ? result.alternativeCorrectOptions.filter(Boolean)
@@ -298,12 +338,30 @@ export class AnthropicProvider {
       };
     } catch (error) {
       console.error('[Anthropic] Ambiguity check error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Anthropic ambiguity check failed: ${error.message}`);
     }
   }
 
   async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
+    const onDebug = typeof criteria?.onDebug === 'function' ? criteria.onDebug : null;
     const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
+    const requestBody = {
+      model: this.model,
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta. Svara ENDAST med JSON.\n\n${prompt}`
+      }]
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.anthropic.com/v1/messages',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -313,22 +371,17 @@ export class AnthropicProvider {
           'x-api-key': this.apiKey,
           'anthropic-version': '2023-06-01'
         },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: 1024,
-          messages: [{
-            role: 'user',
-            content: `Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta. Svara ENDAST med JSON.\n\n${prompt}`
-          }]
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Anthropic proposed edits error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.content[0].text);
       const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
         ? result.proposedEdits
@@ -346,6 +399,7 @@ export class AnthropicProvider {
       };
     } catch (error) {
       console.error('[Anthropic] Proposed edits error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Anthropic proposed edits failed: ${error.message}`);
     }
   }

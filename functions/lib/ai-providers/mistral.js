@@ -123,6 +123,7 @@ export class MistralProvider {
       language = 'sv',
       timeoutMs = null
     } = params;
+    const onDebug = typeof params?.onDebug === 'function' ? params.onDebug : null;
 
     const prompt = this.buildPrompt(
       category,
@@ -140,6 +141,26 @@ export class MistralProvider {
     );
     const controller = timeoutMs ? new AbortController() : null;
     const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const requestBody = {
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+      response_format: { type: 'json_object' }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.mistral.ai/v1/chat/completions',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -148,36 +169,30 @@ export class MistralProvider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { 
-              role: 'system', 
-              content: 'Du är en expert på att skapa pedagogiska quizfrågor. Du skapar frågor på både svenska och engelska med hög kvalitet och pedagogiskt värde.' 
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          response_format: { type: 'json_object' }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller?.signal
       });
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Mistral API error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const content = JSON.parse(data.choices[0].message.content);
       
       return this.validateAndFormatQuestions(content.questions || []);
       
     } catch (error) {
       if (error?.name === 'AbortError') {
-        throw new Error(`Mistral API timeout efter ${timeoutMs} ms`);
+        const message = `Mistral API timeout efter ${timeoutMs} ms`;
+        onDebug?.({ stage: 'error', error: message });
+        throw new Error(message);
       }
       console.error('[Mistral] Generation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Mistral generation failed: ${error.message}`);
     } finally {
       if (timeoutId) {
@@ -190,7 +205,28 @@ export class MistralProvider {
    * Validate a question using Mistral
    */
   async validateQuestion(question, validationCriteria) {
+    const onDebug = typeof validationCriteria?.onDebug === 'function' ? validationCriteria.onDebug : null;
     const prompt = this.buildValidationPrompt(question, validationCriteria);
+    const requestBody = {
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3,
+      response_format: { type: 'json_object' }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.mistral.ai/v1/chat/completions',
+        body: requestBody
+      }
+    });
     
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -199,26 +235,17 @@ export class MistralProvider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { 
-              role: 'system', 
-              content: 'Du är en expert på att validera quizfrågor för kvalitet, korrekthet och pedagogiskt värde.' 
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.3,
-          response_format: { type: 'json_object' }
-        })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Mistral validation error (${response.status}): ${error}`);
       }
       
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const validation = JSON.parse(data.choices[0].message.content);
       
       return {
@@ -246,12 +273,34 @@ export class MistralProvider {
       
     } catch (error) {
       console.error('[Mistral] Validation error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Mistral validation failed: ${error.message}`);
     }
   }
 
   async checkAnswerAmbiguity(question, _validationCriteria) {
+    const onDebug = typeof _validationCriteria?.onDebug === 'function' ? _validationCriteria.onDebug : null;
     const prompt = this.buildAmbiguityPrompt(question);
+    const requestBody = {
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Du är en expert på att upptäcka tvetydiga quizfrågor.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0,
+      response_format: { type: 'json_object' }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.mistral.ai/v1/chat/completions',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -260,26 +309,17 @@ export class MistralProvider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: 'Du är en expert på att upptäcka tvetydiga quizfrågor.'
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0,
-          response_format: { type: 'json_object' }
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Mistral ambiguity error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.choices[0].message.content);
       const alternatives = Array.isArray(result.alternativeCorrectOptions)
         ? result.alternativeCorrectOptions.filter(Boolean)
@@ -302,12 +342,34 @@ export class MistralProvider {
       };
     } catch (error) {
       console.error('[Mistral] Ambiguity check error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Mistral ambiguity check failed: ${error.message}`);
     }
   }
 
   async proposeQuestionEdits(question, criteria = {}, analysis = {}) {
+    const onDebug = typeof criteria?.onDebug === 'function' ? criteria.onDebug : null;
     const prompt = this.buildProposedEditsPrompt(question, criteria, analysis);
+    const requestBody = {
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.2,
+      response_format: { type: 'json_object' }
+    };
+    onDebug?.({
+      stage: 'request',
+      payload: {
+        model: this.model,
+        url: 'https://api.mistral.ai/v1/chat/completions',
+        body: requestBody
+      }
+    });
 
     try {
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
@@ -316,26 +378,17 @@ export class MistralProvider {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: 'Du är en expert på att förbättra quizfrågor så att de blir entydiga och korrekta.'
-            },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.2,
-          response_format: { type: 'json_object' }
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const error = await response.text();
+        onDebug?.({ stage: 'error', error });
         throw new Error(`Mistral proposed edits error (${response.status}): ${error}`);
       }
 
       const data = await response.json();
+      onDebug?.({ stage: 'response', payload: data });
       const result = JSON.parse(data.choices[0].message.content);
       const proposedEdits = result?.proposedEdits && typeof result.proposedEdits === 'object'
         ? result.proposedEdits
@@ -353,6 +406,7 @@ export class MistralProvider {
       };
     } catch (error) {
       console.error('[Mistral] Proposed edits error:', error);
+      onDebug?.({ stage: 'error', error: error.message });
       throw new Error(`Mistral proposed edits failed: ${error.message}`);
     }
   }
