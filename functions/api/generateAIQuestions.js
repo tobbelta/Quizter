@@ -1416,6 +1416,10 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   let invalidCount = 0;
   let skippedCount = 0;
   let correctedCount = 0;
+  const VALIDATION_MIN_INTERVAL_MS = 20000;
+  const RATE_LIMIT_MAX_RETRIES = 3;
+  const RATE_LIMIT_BASE_MS = 20000;
+  let lastValidationAt = 0;
   const usedProviders = new Set();
   const reportProgress = typeof context?.onProgress === 'function' ? context.onProgress : null;
   const autoCorrectionEnabled = context?.autoCorrectionEnabled === true;
@@ -1430,6 +1434,53 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     category: context.category || null,
     ageGroup: context.ageGroup || null,
     difficulty: context.difficulty || null
+  };
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const isRateLimitError = (error) => {
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('rate limit') || message.includes('rate_limit') || message.includes('429');
+  };
+  const extractRetryAfterMs = (error) => {
+    const message = String(error?.message || '');
+    const match = message.match(/try again in (\d+)s/i);
+    if (match) {
+      const seconds = Number(match[1]);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        return seconds * 1000;
+      }
+    }
+    return null;
+  };
+  const getRetryDelayMs = (error, attempt) => {
+    const explicit = extractRetryAfterMs(error);
+    if (explicit != null) return explicit;
+    const backoff = RATE_LIMIT_BASE_MS * Math.max(1, attempt);
+    return Math.min(backoff, 60000);
+  };
+  const enforceThrottle = async (providerName, questionId, questionPreview) => {
+    if (!VALIDATION_MIN_INTERVAL_MS) return;
+    const now = Date.now();
+    const elapsed = now - lastValidationAt;
+    if (elapsed < VALIDATION_MIN_INTERVAL_MS) {
+      const waitMs = VALIDATION_MIN_INTERVAL_MS - elapsed;
+      if (reportProgress && waitMs >= 1000) {
+        await reportProgress({
+          index: Math.min(validatedCount + invalidCount + skippedCount, questions.length),
+          validatedCount,
+          invalidCount,
+          skippedCount,
+          correctedCount,
+          provider: providerName,
+          questionId,
+          questionPreview,
+          step: 'waiting',
+          phase: `Väntar ${Math.round(waitMs / 1000)}s (rate limit)`
+        });
+      }
+      await sleep(waitMs);
+    }
+    lastValidationAt = Date.now();
   };
 
   const summarizeResult = () => ({
@@ -1752,6 +1803,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       
       let validated = false;
       let correctionAppliedForQuestion = false;
+      let rateLimitRetries = 0;
 
       while (!validated) {
         if (!activeProvider) {
@@ -1779,6 +1831,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               phase: `Validerar ${i + 1}/${questions.length}`
             });
           }
+          await enforceThrottle(currentProviderName, question.id, summarizeProgressText(question.question_sv));
           validationDebug = { request: null, response: null, error: null };
           const onValidationDebug = (entry) => {
             if (!entry) return;
@@ -2019,6 +2072,26 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               step: 'validate'
             }
           });
+          if (isRateLimitError(validationError) && rateLimitRetries < RATE_LIMIT_MAX_RETRIES) {
+            rateLimitRetries += 1;
+            const waitMs = getRetryDelayMs(validationError, rateLimitRetries);
+            if (reportProgress) {
+              await reportProgress({
+                index: i,
+                validatedCount,
+                invalidCount,
+                skippedCount,
+                correctedCount,
+                provider: currentProviderName,
+                questionId: question.id,
+                questionPreview: summarizeProgressText(question.question_sv),
+                step: 'waiting',
+                phase: `Rate limit. Väntar ${Math.round(waitMs / 1000)}s...`
+              });
+            }
+            await sleep(waitMs);
+            continue;
+          }
           activeProvider = await selectProvider();
           if (activeProvider) {
             console.log('[validateUniqueQuestions] Switching provider to:', activeProvider.name);
