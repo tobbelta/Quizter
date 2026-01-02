@@ -33,6 +33,8 @@ const AdminProviderLogsPage = () => {
   const { isSuperUser, currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [taskId, setTaskId] = useState(searchParams.get('taskId') || '');
+  const [providerFilter, setProviderFilter] = useState(searchParams.get('provider') || '');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -84,7 +86,11 @@ const AdminProviderLogsPage = () => {
       return;
     }
     const initialTaskId = searchParams.get('taskId') || '';
+    const initialProvider = searchParams.get('provider') || '';
+    const initialStatus = searchParams.get('status') || '';
     setTaskId(initialTaskId);
+    setProviderFilter(initialProvider);
+    setStatusFilter(initialStatus);
     if (initialTaskId) {
       loadLogs(initialTaskId);
     }
@@ -100,16 +106,36 @@ const AdminProviderLogsPage = () => {
       });
       return;
     }
-    setSearchParams({ taskId: taskId.trim() });
+    const params = new URLSearchParams();
+    params.set('taskId', taskId.trim());
+    if (providerFilter) params.set('provider', providerFilter);
+    if (statusFilter) params.set('status', statusFilter);
+    setSearchParams(params);
     loadLogs(taskId.trim());
   };
 
-  const groupedLogs = useMemo(() => {
-    return logs.map((log) => ({
-      ...log,
-      createdLabel: formatLogTime(log.createdAt)
-    }));
+  const providerOptions = useMemo(() => {
+    const options = new Set();
+    logs.forEach((log) => {
+      if (log.provider) {
+        options.add(log.provider);
+      }
+    });
+    return Array.from(options).sort((a, b) => a.localeCompare(b, 'sv'));
   }, [logs]);
+
+  const groupedLogs = useMemo(() => {
+    return logs
+      .filter((log) => {
+        if (providerFilter && log.provider !== providerFilter) return false;
+        if (statusFilter && log.status !== statusFilter) return false;
+        return true;
+      })
+      .map((log) => ({
+        ...log,
+        createdLabel: formatLogTime(log.createdAt)
+      }));
+  }, [logs, providerFilter, statusFilter]);
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -127,6 +153,25 @@ const AdminProviderLogsPage = () => {
               className="flex-1 min-w-[260px] rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
               placeholder="Task-ID"
             />
+            <select
+              value={providerFilter}
+              onChange={(event) => setProviderFilter(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="">Alla providers</option>
+              {providerOptions.map((provider) => (
+                <option key={provider} value={provider}>{provider}</option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="">Alla status</option>
+              <option value="success">OK</option>
+              <option value="error">Fel</option>
+            </select>
             <button
               onClick={handleSearch}
               className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-black hover:bg-cyan-400"
