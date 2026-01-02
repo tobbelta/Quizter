@@ -42,14 +42,14 @@ jobs:
 
       - name: Start test server in background
         run: |
-          npx wrangler@4 pages dev . --port 8789 --d1 DB &
+          npx wrangler@4 pages dev build --port 8789 --d1 DB &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
         env:
           NODE_ENV: test
 
       - name: Wait for server to be ready
         run: |
-          timeout 60 bash -c 'until curl -f http://127.0.0.1:8789/api/runs 2>/dev/null; do sleep 2; done'
+          timeout 90 bash -c 'until curl -f http://127.0.0.1:8789/api/getAIStatus 2>/dev/null; do sleep 2; done'
           echo "✅ Test server is ready!"
 
       - name: Run All API Tests
