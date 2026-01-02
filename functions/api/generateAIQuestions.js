@@ -1080,6 +1080,15 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
   if (!metadata.taskId) {
     metadata.taskId = taskId;
   }
+  let lastProgressSnapshot = {
+    completed: 0,
+    total: questions.length,
+    phase: 'Startar validering',
+    details: {}
+  };
+  let lastProgressAt = Date.now();
+  let heartbeatInterval = null;
+  const HEARTBEAT_INTERVAL_MS = 30000;
 
   const pushEvent = (message) => {
     if (!message) return;
@@ -1090,14 +1099,55 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
   };
 
   const updateProgress = async (progressValue, phase, details = {}) => {
-    await updateTaskProgress(env.DB, taskId, progressValue, phase, {
+    const now = Date.now();
+    const isObject = progressValue && typeof progressValue === 'object';
+    const completedValue = isObject ? Number(progressValue.completed) : Number(progressValue);
+    const totalValue = isObject ? Number(progressValue.total) : Number(questions.length);
+    const resolvedCompleted = Number.isFinite(completedValue) ? completedValue : 0;
+    const resolvedTotal = Number.isFinite(totalValue) && totalValue > 0 ? totalValue : questions.length;
+    const resolvedPhase = phase || (isObject && progressValue.phase ? progressValue.phase : '');
+    lastProgressSnapshot = {
+      completed: resolvedCompleted,
+      total: resolvedTotal,
+      phase: resolvedPhase,
+      details: {
+        ...(isObject && progressValue.details ? progressValue.details : {}),
+        ...details
+      }
+    };
+    lastProgressAt = now;
+    await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, resolvedPhase, {
       ...details,
+      heartbeatAt: now,
       events: [...progressEvents],
       lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
     });
   };
 
+  const startHeartbeat = () => {
+    heartbeatInterval = setInterval(async () => {
+      const now = Date.now();
+      if (now - lastProgressAt < HEARTBEAT_INTERVAL_MS) {
+        return;
+      }
+      await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, lastProgressSnapshot.phase, {
+        ...(lastProgressSnapshot.details || {}),
+        heartbeatAt: now,
+        events: [...progressEvents],
+        lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  };
+
   try {
+    startHeartbeat();
     console.log(`[Validation ${taskId}] Starting validation of ${questions.length} questions`);
     pushEvent(`Startar validering (${questions.length} frågor)`);
     
@@ -1251,6 +1301,8 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     console.error(`[Validation ${taskId}] Failed:`, error);
     console.error(`[Validation ${taskId}] Error stack:`, error.stack);
     await failTask(env.DB, taskId, error.message);
+  } finally {
+    stopHeartbeat();
   }
 }
 
