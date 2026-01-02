@@ -119,6 +119,16 @@ export const AuthProvider = ({ children }) => {
     setAuthInitialized(true);
   }, []);
 
+  const updateCurrentUser = useCallback((updates) => {
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ...updates
+      };
+    });
+  }, []);
+
   const value = useMemo(() => ({
     currentUser,
     isAuthenticated: Boolean(currentUser),
@@ -128,7 +138,8 @@ export const AuthProvider = ({ children }) => {
     register,
     completeRegistration,
     loginAsGuest,
-    logout
+    logout,
+    updateCurrentUser
   }), [
     currentUser,
     isAuthInitialized,
@@ -136,7 +147,8 @@ export const AuthProvider = ({ children }) => {
     register,
     completeRegistration,
     loginAsGuest,
-    logout
+    logout,
+    updateCurrentUser
   ]);
 
   return (

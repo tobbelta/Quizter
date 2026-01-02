@@ -6,6 +6,7 @@ import {
   renameAgeGroupInQuestions,
   renameTargetAudienceInQuestions
 } from '../lib/audiences.js';
+import { logAuditEvent } from '../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -297,6 +298,32 @@ export async function onRequestPost(context) {
       listTargetAudiences(env.DB, { includeInactive: true }),
       listAgeGroupTargets(env.DB, { includeInactive: true })
     ]);
+
+    const actorEmail = request.headers.get('x-user-email');
+    const activeAgeGroups = updatedAgeGroups.filter((group) => group.isActive !== false).length;
+    const activeTargets = updatedTargetAudiences.filter((target) => target.isActive !== false).length;
+    try {
+      await logAuditEvent(env.DB, {
+        actorEmail,
+        action: 'update',
+        targetType: 'audiences',
+        details: {
+          ageGroups: {
+            total: updatedAgeGroups.length,
+            active: activeAgeGroups,
+            sample: updatedAgeGroups.slice(0, 10).map((group) => group.id)
+          },
+          targetAudiences: {
+            total: updatedTargetAudiences.length,
+            active: activeTargets,
+            sample: updatedTargetAudiences.slice(0, 10).map((target) => target.id)
+          },
+          mappings: updatedMappings.length
+        }
+      });
+    } catch (error) {
+      console.warn('[audiences] Audit log failed:', error.message);
+    }
 
     return new Response(JSON.stringify({
       success: true,

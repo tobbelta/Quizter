@@ -1,4 +1,5 @@
 import { ensureCategoriesTable, listCategories, renameCategoryInQuestions } from '../lib/categories.js';
+import { logAuditEvent } from '../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -142,6 +143,23 @@ export async function onRequestPost(context) {
     }
 
     const updated = await listCategories(env.DB, { includeInactive: true });
+    const actorEmail = request.headers.get('x-user-email');
+    const activeCount = updated.filter((category) => category.isActive !== false).length;
+    try {
+      await logAuditEvent(env.DB, {
+        actorEmail,
+        action: 'update',
+        targetType: 'categories',
+        details: {
+          total: updated.length,
+          active: activeCount,
+          inactive: updated.length - activeCount,
+          sample: updated.slice(0, 10).map((category) => category.name)
+        }
+      });
+    } catch (error) {
+      console.warn('[categories] Audit log failed:', error.message);
+    }
     return new Response(JSON.stringify({ success: true, categories: updated }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

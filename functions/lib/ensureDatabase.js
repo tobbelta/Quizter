@@ -5,6 +5,7 @@
 
 import { ensureCategoriesTable } from './categories.js';
 import { ensureAudienceTables } from './audiences.js';
+import { ensureAuditLogsSchema } from './auditLogs.js';
 import { ensureAiRulesTable } from './aiRules.js';
 
 let dbInitialized = false;
@@ -448,6 +449,7 @@ async function addMissingColumns(db) {
     await ensureEmailEventsSchema(db);
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
+    await ensureAuditLogsSchema(db);
     await ensureEmailEventsSchema(db);
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
@@ -760,6 +762,16 @@ export async function ensureDatabase(db) {
         metadata TEXT,
         created_at INTEGER NOT NULL
       )`,
+      `CREATE TABLE audit_logs (
+        id TEXT PRIMARY KEY,
+        actor_id TEXT,
+        actor_email TEXT,
+        action TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT,
+        details TEXT,
+        created_at INTEGER NOT NULL
+      )`,
       `CREATE TABLE ai_rule_sets (
         scope_type TEXT NOT NULL,
         scope_id TEXT NOT NULL,
@@ -798,6 +810,7 @@ export async function ensureDatabase(db) {
     await ensurePaymentsSchema(db);
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
+    await ensureAuditLogsSchema(db);
     dbInitialized = true;
 
     // Ensure schema is fully compatible even if older local schema existed

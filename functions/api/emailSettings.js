@@ -2,6 +2,7 @@
  * Email settings API (superuser)
  */
 import { getEmailSettingsSnapshot, saveEmailSettings, EMAIL_PROVIDER_CATALOG } from '../lib/emailSettings.js';
+import { logAuditEvent } from '../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -63,6 +64,24 @@ export async function onRequestPost(context) {
     const settings = payload?.settings || {};
 
     const adminSettings = await saveEmailSettings(env, settings);
+    const actorEmail = request.headers.get('x-user-email');
+    const providers = Array.isArray(adminSettings.providers) ? adminSettings.providers : [];
+    try {
+      await logAuditEvent(env.DB, {
+        actorEmail,
+        action: 'update',
+        targetType: 'email-settings',
+        details: {
+          activeProviderId: adminSettings.activeProviderId || null,
+          fromEmail: adminSettings.fromEmail || null,
+          fromName: adminSettings.fromName || null,
+          retentionDays: adminSettings.retentionDays || null,
+          enabledProviders: providers.filter((provider) => provider.isEnabled).map((provider) => provider.id)
+        }
+      });
+    } catch (error) {
+      console.warn('[emailSettings] Audit log failed:', error.message);
+    }
 
     return new Response(
       JSON.stringify({

@@ -65,7 +65,7 @@ const VerifyEmailPage = () => {
     setIsSubmitting(true);
     try {
       await completeRegistration({ token, password });
-      navigate('/');
+      navigate('/?welcome=1');
     } catch (submitError) {
       setError(submitError?.message || 'Kunde inte slutföra registreringen.');
     } finally {

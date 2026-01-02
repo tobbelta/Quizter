@@ -2,6 +2,7 @@
  * Payment settings API (superuser)
  */
 import { getPaymentSettingsSnapshot, savePaymentSettings, getPaymentCatalog } from '../lib/paymentSettings.js';
+import { logAuditEvent } from '../lib/auditLogs.js';
 
 const isSuperUserRequest = (request, env) => {
   const userEmail = request.headers.get('x-user-email');
@@ -66,6 +67,29 @@ export async function onRequestPost(context) {
     await savePaymentSettings(env, settings);
     const snapshot = await getPaymentSettingsSnapshot(env, { includeSecrets: false });
     const catalog = getPaymentCatalog();
+    const actorEmail = request.headers.get('x-user-email');
+    const adminSettings = snapshot.adminSettings || {};
+    const providers = Array.isArray(adminSettings.providers) ? adminSettings.providers : [];
+    try {
+      await logAuditEvent(env.DB, {
+        actorEmail,
+        action: 'update',
+        targetType: 'payments',
+        details: {
+          activeProviderId: adminSettings.activeProviderId || null,
+          enabledProviders: providers.filter((provider) => provider.isEnabled).map((provider) => provider.id),
+          payer: adminSettings.payer,
+          currency: adminSettings.currency,
+          perRunEnabled: Boolean(adminSettings?.perRun?.enabled),
+          subscriptionEnabled: Boolean(adminSettings?.subscription?.enabled),
+          donationEnabled: Boolean(adminSettings?.donations?.enabled),
+          anonymousPolicy: adminSettings?.anonymous?.policy || null,
+          maxAnonymous: adminSettings?.anonymous?.maxPerRun ?? null
+        }
+      });
+    } catch (error) {
+      console.warn('[paymentSettings] Audit log failed:', error.message);
+    }
 
     return new Response(
       JSON.stringify({

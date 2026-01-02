@@ -184,7 +184,6 @@ export class OpenAIProvider {
         clearTimeout(timeoutId);
       }
     }
-
     if (!response.ok) {
       const errorText = await response.text();
       if (allowResponseFormat && errorText.toLowerCase().includes('response_format')) {

@@ -46,6 +46,50 @@ const difficultyOptions = [
   { value: 'family', label: 'Familj (1/3 av varje)' },
 ];
 
+const runPresets = [
+  {
+    id: 'quick-route',
+    label: 'Snabb promenad',
+    description: 'Rutt · 3 km · 9 frågor',
+    suggestedName: 'Snabb promenad',
+    requiresGeo: true,
+    values: {
+      runType: 'route-based',
+      lengthMeters: 3000,
+      questionCount: 9,
+      distanceBetweenQuestions: 400,
+      difficulty: 'family'
+    }
+  },
+  {
+    id: 'time-quick',
+    label: 'Snabb quiz',
+    description: 'Tid · 10 frågor · 1 min',
+    suggestedName: 'Snabb quiz',
+    requiresGeo: false,
+    values: {
+      runType: 'time-based',
+      minutesBetweenQuestions: 1,
+      questionCount: 10,
+      difficulty: 'youth'
+    }
+  },
+  {
+    id: 'distance-free',
+    label: 'Fri promenad',
+    description: 'Distans · 4 km · 12 frågor',
+    suggestedName: 'Fri promenad',
+    requiresGeo: true,
+    values: {
+      runType: 'distance-based',
+      lengthMeters: 4000,
+      questionCount: 12,
+      distanceBetweenQuestions: 350,
+      difficulty: 'adults'
+    }
+  }
+];
+
 const GenerateRunPage = () => {
   const navigate = useNavigate();
   const { currentUser, loginAsGuest } = useAuth();
@@ -509,6 +553,22 @@ const GenerateRunPage = () => {
     setIsRunSaved(true);
   };
 
+  const applyPreset = (preset) => {
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        ...preset.values
+      };
+      if (preset.suggestedName && !prev.name.trim()) {
+        next.name = preset.suggestedName;
+      }
+      if (next.difficulty === 'family') {
+        next.questionCount = Math.max(3, Math.round((next.questionCount || 9) / 3) * 3);
+      }
+      return next;
+    });
+  };
+
   const executeRunCreation = async (payload, creatorIdentity, paymentIdOverride) => {
     const run = await generateRun({
       ...payload,
@@ -790,6 +850,37 @@ const GenerateRunPage = () => {
                 placeholder="T.ex. Stadsvandring"
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-purple-200">Snabbval</label>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {runPresets.map((preset) => {
+                  const isDisabled = preset.requiresGeo && !isGeolocationAvailable;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => applyPreset(preset)}
+                      className={`rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
+                        isDisabled
+                          ? 'border-slate-700 bg-slate-800/50 text-slate-400 cursor-not-allowed'
+                          : 'border-slate-600 bg-slate-800 text-slate-100 hover:border-purple-400'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">{preset.label}</span>
+                        {isDisabled && <span className="text-xs">🔒</span>}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">{preset.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-400">
+                Välj ett snabbval för att fylla i inställningarna, justera sedan detaljerna om du vill.
+              </p>
             </div>
 
             <div className="space-y-2">

@@ -123,7 +123,7 @@ export class GeminiProvider {
       language = 'sv',
       timeoutMs = null
     } = params;
-    
+
     const prompt = this.buildPrompt(
       category,
       categoryDetails,
@@ -138,7 +138,6 @@ export class GeminiProvider {
       freshnessPrompt,
       answerInQuestionPrompt
     );
-    
     const controller = timeoutMs ? new AbortController() : null;
     const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
 

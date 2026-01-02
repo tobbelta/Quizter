@@ -1,7 +1,7 @@
 /**
  * Vy där spelare ansluter med en kod eller via QR-länk.
  */
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useRun } from '../context/RunContext';
@@ -28,6 +28,18 @@ const JoinRunPage = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingJoin, setPendingJoin] = useState(null);
   const [paymentError, setPaymentError] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const scanFrameRef = useRef(null);
+  const scanActiveRef = useRef(false);
+  const mediaStreamRef = useRef(null);
+  const detectorRef = useRef(null);
+  const isScannerSupported = typeof window !== 'undefined'
+    && 'BarcodeDetector' in window
+    && typeof navigator !== 'undefined'
+    && navigator.mediaDevices?.getUserMedia;
 
   const confirmReplaceAnonymousRun = useCallback(async (nextRunId) => {
     const existingRuns = localStorageService.getJoinedRuns();
@@ -151,6 +163,142 @@ const JoinRunPage = () => {
       setError(joinError.message);
     }
   }, [currentUser, alias, contact, loginAsGuest, joinRunByCode, navigate, confirmReplaceAnonymousRun, attachToRun]);
+
+  const parseJoinCode = useCallback((rawValue) => {
+    if (!rawValue) return null;
+    const trimmed = String(rawValue).trim();
+    if (!trimmed) return null;
+    try {
+      const url = new URL(trimmed);
+      const code = url.searchParams.get('code');
+      if (code) return code;
+    } catch (error) {
+      // Inte en URL
+    }
+    const codeMatch = trimmed.match(/code=([A-Za-z0-9]+)/i);
+    if (codeMatch) return codeMatch[1];
+    const compact = trimmed.replace(/[^A-Za-z0-9]/g, '');
+    if (/^[A-Za-z0-9]{4,12}$/.test(compact)) return compact;
+    return null;
+  }, []);
+
+  const stopScanner = useCallback(() => {
+    scanActiveRef.current = false;
+    if (scanFrameRef.current) {
+      cancelAnimationFrame(scanFrameRef.current);
+      scanFrameRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const handleScanResult = useCallback((rawValue) => {
+    const parsed = parseJoinCode(rawValue);
+    if (!parsed) {
+      setScannerError('QR-koden innehåller ingen giltig anslutningskod.');
+      return;
+    }
+    const normalized = parsed.toUpperCase();
+    setJoinCode(normalized);
+    setShowScanner(false);
+    stopScanner();
+    handleJoin(normalized);
+  }, [handleJoin, parseJoinCode, stopScanner]);
+
+  useEffect(() => {
+    if (!showScanner) {
+      stopScanner();
+      return undefined;
+    }
+    if (!isScannerSupported) {
+      setScannerError('Din enhet stöder inte QR-skanning i webbläsaren.');
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const startScanner = async () => {
+      try {
+        setScannerError('');
+        const supportedFormats = typeof window.BarcodeDetector.getSupportedFormats === 'function'
+          ? await window.BarcodeDetector.getSupportedFormats()
+          : ['qr_code'];
+        if (!supportedFormats.includes('qr_code')) {
+          setScannerError('QR-skanning stöds inte i den här webbläsaren.');
+          return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        mediaStreamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] });
+        scanActiveRef.current = true;
+
+        const scanLoop = async () => {
+          if (!scanActiveRef.current || cancelled) return;
+          const video = videoRef.current;
+          const detector = detectorRef.current;
+          if (video && detector && video.readyState >= 2) {
+            const width = video.videoWidth;
+            const height = video.videoHeight;
+            if (width && height) {
+              if (!canvasRef.current) {
+                canvasRef.current = document.createElement('canvas');
+              }
+              const canvas = canvasRef.current;
+              if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+              }
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              if (ctx) {
+                ctx.drawImage(video, 0, 0, width, height);
+                try {
+                  const codes = await detector.detect(canvas);
+                  if (codes?.length) {
+                    handleScanResult(codes[0].rawValue);
+                    return;
+                  }
+                } catch (error) {
+                  // Ignore och försök igen
+                }
+              }
+            }
+          }
+          scanFrameRef.current = requestAnimationFrame(scanLoop);
+        };
+
+        scanFrameRef.current = requestAnimationFrame(scanLoop);
+      } catch (error) {
+        setScannerError('Kunde inte starta kameran. Kontrollera behörigheter.');
+        stopScanner();
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [showScanner, isScannerSupported, handleScanResult, stopScanner]);
 
   const handlePaymentSuccess = useCallback(async (paymentResult) => {
     setShowPaymentModal(false);
@@ -287,6 +435,22 @@ const JoinRunPage = () => {
             placeholder="ABC123"
             inputMode="text"
           />
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setScannerError('');
+                setShowScanner(true);
+              }}
+              disabled={!isScannerSupported}
+              className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
+            >
+              Skanna QR
+            </button>
+            {!isScannerSupported && (
+              <span className="text-xs text-slate-500">QR-skanning stöds inte här.</span>
+            )}
+          </div>
         </div>
 
         {(!currentUser || currentUser?.isAnonymous) && !aliasCommitted && (
@@ -358,6 +522,41 @@ const JoinRunPage = () => {
         onSuccess={handlePaymentSuccess}
         onCancel={handlePaymentCancel}
       />
+
+      {showScanner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-slate-100">Skanna QR-kod</h2>
+              <button
+                type="button"
+                onClick={() => setShowScanner(false)}
+                className="rounded-lg border border-slate-600 px-3 py-1 text-sm text-slate-200 hover:border-slate-500"
+              >
+                Stäng
+              </button>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+              <div className="aspect-video w-full">
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover"
+                  playsInline
+                  muted
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
+              Rikta kameran mot QR-koden så ansluter vi automatiskt.
+            </p>
+            {scannerError && (
+              <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-900/30 px-3 py-2 text-xs text-amber-100">
+                {scannerError}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 };
