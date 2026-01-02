@@ -30,6 +30,7 @@ import AdminPaymentsPage from './views/AdminPaymentsPage';
 import AdminEmailSettingsPage from './views/AdminEmailSettingsPage';
 import AdminEmailLogsPage from './views/AdminEmailLogsPage';
 import AdminAuditLogsPage from './views/AdminAuditLogsPage';
+import AdminProviderLogsPage from './views/AdminProviderLogsPage';
 import SuperUserAllRunsPage from './views/SuperUserAllRunsPage';
 import SuperUserUsersPage from './views/SuperUserUsersPage';
 import SuperUserAnalyticsPage from './views/SuperUserAnalyticsPage';
@@ -221,6 +222,14 @@ const AppRoutes = () => (
         </RequireSuperUser>
       )}
     />
+    <Route
+      path="/admin/provider-logs"
+      element={(
+        <RequireSuperUser>
+          <AdminProviderLogsPage />
+        </RequireSuperUser>
+      )}
+    />
 
     <Route path="/superuser/all-runs" element={<Navigate to="/admin/all-runs" replace />} />
     <Route path="/superuser/users" element={<Navigate to="/admin/users" replace />} />
@@ -237,6 +246,7 @@ const AppRoutes = () => (
     <Route path="/superuser/email" element={<Navigate to="/admin/email" replace />} />
     <Route path="/superuser/email-logs" element={<Navigate to="/admin/email-logs" replace />} />
     <Route path="/superuser/audit-logs" element={<Navigate to="/admin/audit-logs" replace />} />
+    <Route path="/superuser/provider-logs" element={<Navigate to="/admin/provider-logs" replace />} />
 
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

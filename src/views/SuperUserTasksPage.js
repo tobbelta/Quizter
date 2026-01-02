@@ -978,12 +978,20 @@ const SuperUserTasksPage = () => {
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                   <div className="text-slate-400">Provider-loggar</div>
-                                  <button
-                                    onClick={() => fetchProviderLogs(task.id)}
-                                    className="rounded bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
-                                  >
-                                    {providerLogsLoadingState ? 'Laddar...' : 'Uppdatera'}
-                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={() => fetchProviderLogs(task.id)}
+                                      className="rounded bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                                    >
+                                      {providerLogsLoadingState ? 'Laddar...' : 'Uppdatera'}
+                                    </button>
+                                    <button
+                                      onClick={() => navigate(`/admin/provider-logs?taskId=${encodeURIComponent(task.id)}`)}
+                                      className="rounded bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                                    >
+                                      Öppna i ny sida
+                                    </button>
+                                  </div>
                                 </div>
                                 {providerLogsErrorState && (
                                   <div className="text-red-300">{providerLogsErrorState}</div>

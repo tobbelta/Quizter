@@ -694,6 +694,12 @@ const Header = ({ title = 'Quizter', children }) => {
                       >
                         Fel-loggar
                       </button>
+                      <button
+                        onClick={() => { setIsMenuOpen(false); navigate('/admin/provider-logs'); }}
+                        className="w-full px-4 py-2 text-left hover:bg-slate-800 transition-colors text-red-300"
+                      >
+                        Provider-loggar
+                      </button>
 
                       <div className="my-2 border-t border-slate-700" />
                       <div className="px-4 py-2 text-xs text-gray-500 font-semibold">
