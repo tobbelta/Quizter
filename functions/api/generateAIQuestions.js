@@ -1080,6 +1080,13 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
   if (!metadata.taskId) {
     metadata.taskId = taskId;
   }
+  const VALIDATION_WATCHDOG_IDLE_MS = 5 * 60 * 1000;
+  const VALIDATION_WATCHDOG_TOTAL_MS = 30 * 60 * 1000;
+  const validationDebug = {
+    startedAt: Date.now(),
+    watchdogIdleMs: VALIDATION_WATCHDOG_IDLE_MS,
+    watchdogTotalMs: VALIDATION_WATCHDOG_TOTAL_MS
+  };
   let lastProgressSnapshot = {
     completed: 0,
     total: questions.length,
@@ -1119,6 +1126,7 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, resolvedPhase, {
       ...details,
       heartbeatAt: now,
+      debug: validationDebug,
       events: [...progressEvents],
       lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
     });
@@ -1133,6 +1141,7 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
       await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, lastProgressSnapshot.phase, {
         ...(lastProgressSnapshot.details || {}),
         heartbeatAt: now,
+        debug: validationDebug,
         events: [...progressEvents],
         lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
       });
@@ -1487,8 +1496,30 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     ageGroup: context.ageGroup || null,
     difficulty: context.difficulty || null
   };
+  const VALIDATION_CALL_TIMEOUT_MS = 60000;
+  const AMBIGUITY_CALL_TIMEOUT_MS = 40000;
+  const PROPOSAL_CALL_TIMEOUT_MS = 60000;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const withTimeout = (promise, timeoutMs, label) => new Promise((resolve, reject) => {
+    let didTimeout = false;
+    const timer = setTimeout(() => {
+      didTimeout = true;
+      reject(new Error(`${label} timeout efter ${timeoutMs} ms`));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (didTimeout) return;
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
   const isRateLimitError = (error) => {
     const message = String(error?.message || '').toLowerCase();
     return message.includes('rate limit') || message.includes('rate_limit') || message.includes('429');
@@ -1653,12 +1684,12 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
           }
         };
         const ambiguityStartedAt = Date.now();
-        ambiguityCheck = await provider.checkAnswerAmbiguity(question, {
+        ambiguityCheck = await withTimeout(provider.checkAnswerAmbiguity(question, {
           category: context.category,
           ageGroup: context.ageGroup,
           difficulty: context.difficulty,
           onDebug: onAmbiguityDebug
-        });
+        }), AMBIGUITY_CALL_TIMEOUT_MS, `${providerName} ambiguity`);
         await recordProviderCall({
           taskId: context?.taskId || null,
           userId: context?.taskUserId || null,
@@ -1904,7 +1935,11 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
             onDebug: onValidationDebug
           };
           validationStartedAt = Date.now();
-          const validationResult = await currentProvider.validateQuestion(question, validationCriteria);
+          const validationResult = await withTimeout(
+            currentProvider.validateQuestion(question, validationCriteria),
+            VALIDATION_CALL_TIMEOUT_MS,
+            `${currentProviderName} validation`
+          );
           await recordProviderCall({
             taskId: context?.taskId || null,
             userId: context?.taskUserId || null,
@@ -1943,20 +1978,24 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
                   }
                 };
                 const proposalStartedAt = Date.now();
-                const proposal = await currentProvider.proposeQuestionEdits(
-                  question,
-                  {
-                    category: context.category,
-                    ageGroup: context.ageGroup,
-                    difficulty: context.difficulty,
-                    answerInQuestionPrompt: context.answerInQuestionPrompt,
-                    onDebug: onProposalDebug
-                  },
-                  {
-                    issues: evaluation.combinedIssues,
-                    suggestions: evaluation.mergedSuggestions,
-                    blockingRules: evaluation.blockingRules
-                  }
+                const proposal = await withTimeout(
+                  currentProvider.proposeQuestionEdits(
+                    question,
+                    {
+                      category: context.category,
+                      ageGroup: context.ageGroup,
+                      difficulty: context.difficulty,
+                      answerInQuestionPrompt: context.answerInQuestionPrompt,
+                      onDebug: onProposalDebug
+                    },
+                    {
+                      issues: evaluation.combinedIssues,
+                      suggestions: evaluation.mergedSuggestions,
+                      blockingRules: evaluation.blockingRules
+                    }
+                  ),
+                  PROPOSAL_CALL_TIMEOUT_MS,
+                  `${currentProviderName} propose`
                 );
                 await recordProviderCall({
                   taskId: context?.taskId || null,
@@ -2017,14 +2056,18 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
                 }
               };
               const correctedStartedAt = Date.now();
-              const correctedValidation = await currentProvider.validateQuestion(question, {
-                category: context.category,
-                ageGroup: context.ageGroup,
-                difficulty: context.difficulty,
-                freshnessPrompt: context.freshnessPrompt,
-                answerInQuestionPrompt: context.answerInQuestionPrompt,
-                onDebug: onCorrectedDebug
-              });
+              const correctedValidation = await withTimeout(
+                currentProvider.validateQuestion(question, {
+                  category: context.category,
+                  ageGroup: context.ageGroup,
+                  difficulty: context.difficulty,
+                  freshnessPrompt: context.freshnessPrompt,
+                  answerInQuestionPrompt: context.answerInQuestionPrompt,
+                  onDebug: onCorrectedDebug
+                }),
+                VALIDATION_CALL_TIMEOUT_MS,
+                `${currentProviderName} validation`
+              );
               await recordProviderCall({
                 taskId: context?.taskId || null,
                 userId: context?.taskUserId || null,
