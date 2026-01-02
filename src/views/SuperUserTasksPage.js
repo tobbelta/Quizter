@@ -56,6 +56,20 @@ const formatEventTime = (value) => {
   });
 };
 
+const formatTimestamp = (value) => {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('sv-SE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+};
+
 const toDuration = (start, end) => {
   if (!start || !end) return '—';
   const milliseconds = end.getTime() - start.getTime();
@@ -590,6 +604,10 @@ const SuperUserTasksPage = () => {
                     const currentQuestion = progressDetails.currentQuestion || null;
                     const lastSavedQuestionId = progressDetails.lastSavedQuestionId || null;
                     const lastSavedQuestion = progressDetails.lastSavedQuestion || null;
+                    const heartbeatAt = progressDetails.heartbeatAt || null;
+                    const lastMessage = progressDetails.lastMessage || null;
+                    const debugInfo = progressDetails.debug || null;
+                    const debugLines = [];
                     const isExpanded = expandedTasks.has(task.id);
                     const payloadDetails = [];
                     const resultQuestionIds = Array.isArray(task.result?.questionIds)
@@ -695,6 +713,26 @@ const SuperUserTasksPage = () => {
                     if (lastSavedQuestionId || lastSavedQuestion) {
                       const savedLabel = lastSavedQuestionId ? `Senast sparad: ${lastSavedQuestionId}` : 'Senast sparad';
                       progressDetailLines.push(lastSavedQuestion ? `${savedLabel} · ${lastSavedQuestion}` : savedLabel);
+                    }
+                    if (heartbeatAt) progressDetailLines.push(`Heartbeat: ${formatTimestamp(heartbeatAt)}`);
+                    if (lastMessage) progressDetailLines.push(`Senast: ${lastMessage}`);
+                    if (debugInfo && typeof debugInfo === 'object') {
+                      if (debugInfo.lastProvider) debugLines.push(`Provider: ${debugInfo.lastProvider}`);
+                      if (debugInfo.lastProviderDurationMs != null) {
+                        debugLines.push(`Provider-tid: ${Math.round(debugInfo.lastProviderDurationMs)} ms`);
+                      }
+                      if (debugInfo.lastProviderError) debugLines.push(`Provider-fel: ${debugInfo.lastProviderError}`);
+                      if (debugInfo.lastBatchSize != null) debugLines.push(`Batchstorlek: ${debugInfo.lastBatchSize}`);
+                      if (debugInfo.lastBatchRemaining != null) debugLines.push(`Batch kvar: ${debugInfo.lastBatchRemaining}`);
+                      if (debugInfo.lastRound != null) debugLines.push(`Senaste runda: ${debugInfo.lastRound}`);
+                      if (debugInfo.startedAt) debugLines.push(`Start: ${formatTimestamp(debugInfo.startedAt)}`);
+                      if (debugInfo.lastProgressAt) debugLines.push(`Senaste progress: ${formatTimestamp(debugInfo.lastProgressAt)}`);
+                      if (debugInfo.watchdogIdleMs != null) {
+                        debugLines.push(`Watchdog idle: ${Math.round(debugInfo.watchdogIdleMs / 1000)}s`);
+                      }
+                      if (debugInfo.watchdogTotalMs != null) {
+                        debugLines.push(`Watchdog total: ${Math.round(debugInfo.watchdogTotalMs / 1000)}s`);
+                      }
                     }
 
                     return (
@@ -843,6 +881,16 @@ const SuperUserTasksPage = () => {
                                 <div className="space-y-1">
                                   {progressDetailLines.map((line, index) => (
                                     <div key={index}>{line}</div>
+                                  ))}
+                                </div>
+                              )}
+                              {debugLines.length > 0 && (
+                                <div className="space-y-1">
+                                  <div className="text-slate-400">Debug</div>
+                                  {debugLines.map((line, index) => (
+                                    <div key={`debug-${index}`} className="text-slate-300">
+                                      {line}
+                                    </div>
                                   ))}
                                 </div>
                               )}
