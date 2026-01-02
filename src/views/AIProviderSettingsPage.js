@@ -20,6 +20,7 @@ const BUILTIN_PROVIDERS = {
 };
 
 const BUILTIN_ORDER = Object.keys(BUILTIN_PROVIDERS);
+const DEFAULT_MAX_QUESTIONS_PER_REQUEST = 3;
 
 const buildDefaultPurposeSettings = () => ({
   generation: BUILTIN_ORDER.reduce((acc, key) => ({ ...acc, [key]: true }), {}),
@@ -40,7 +41,7 @@ const buildDefaultProviderConfigs = () => BUILTIN_ORDER.reduce((acc, key) => {
     baseUrl: '',
     extraHeaders: '',
     supportsResponseFormat: true,
-    maxQuestionsPerRequest: null,
+    maxQuestionsPerRequest: DEFAULT_MAX_QUESTIONS_PER_REQUEST,
     providerType: 'builtin',
     isCustom: false
   };
@@ -74,7 +75,7 @@ const AIProviderSettingsPage = () => {
     model: '',
     extraHeaders: '',
     supportsResponseFormat: true,
-    maxQuestionsPerRequest: ''
+    maxQuestionsPerRequest: String(DEFAULT_MAX_QUESTIONS_PER_REQUEST)
   });
   const [customProviderError, setCustomProviderError] = useState(null);
 
@@ -385,7 +386,7 @@ const AIProviderSettingsPage = () => {
       model: '',
       extraHeaders: '',
       supportsResponseFormat: true,
-      maxQuestionsPerRequest: ''
+      maxQuestionsPerRequest: String(DEFAULT_MAX_QUESTIONS_PER_REQUEST)
     });
   };
 
@@ -397,7 +398,7 @@ const AIProviderSettingsPage = () => {
       model: 'my-model-001',
       extraHeaders: '{"x-app-id":"quizter"}',
       supportsResponseFormat: true,
-      maxQuestionsPerRequest: '20'
+      maxQuestionsPerRequest: String(DEFAULT_MAX_QUESTIONS_PER_REQUEST)
     });
   };
 

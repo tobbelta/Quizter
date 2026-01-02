@@ -23,6 +23,7 @@ const DEFAULT_MODELS = {
   together: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
   fireworks: 'accounts/fireworks/models/llama-v3p1-8b-instruct',
 };
+const DEFAULT_MAX_QUESTIONS_PER_REQUEST = 3;
 
 const PROVIDER_LABELS = {
   openai: 'OpenAI',
@@ -132,9 +133,10 @@ export const ensureProviderSettingsRows = async (db) => {
         model,
         display_name,
         provider_type,
+        max_questions_per_request,
         is_custom,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       provider,
       1,
@@ -143,6 +145,7 @@ export const ensureProviderSettingsRows = async (db) => {
       DEFAULT_MODELS[provider],
       PROVIDER_LABELS[provider] || provider,
       'builtin',
+      DEFAULT_MAX_QUESTIONS_PER_REQUEST,
       0,
       now
     ).run();
@@ -186,7 +189,7 @@ export const getProviderSettingsSnapshot = async (env, { decryptKeys = false } =
     const maxQuestionsPerRequest =
       row?.max_questions_per_request !== undefined && row?.max_questions_per_request !== null
         ? Number(row.max_questions_per_request)
-        : null;
+        : DEFAULT_MAX_QUESTIONS_PER_REQUEST;
     const providerType = row?.provider_type || (isCustom ? 'openai_compat' : 'builtin');
 
     let decryptedKey = null;

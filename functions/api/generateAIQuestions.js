@@ -208,63 +208,76 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const factory = new AIProviderFactory(env, providerMap);
 
     const availableProviders = factory.getAvailableProviders('generation');
-    let effectiveProvider = provider.toLowerCase();
+    const preferredProvider = provider.toLowerCase();
+    let providerPickIndex = 0;
+    let effectiveProvider = preferredProvider;
     let selectedProvider;
-
-    if (effectiveProvider === 'random') {
-      const randomSelection = factory.getRandomProvider('generation');
-      effectiveProvider = randomSelection.name;
-      selectedProvider = randomSelection.provider;
-      console.log(`[Task ${taskId}] Random provider selected: ${effectiveProvider}`);
-    }
-
-    const providerQueue = availableProviders.filter((name) => name !== effectiveProvider);
-    if (!selectedProvider) {
-      selectedProvider = factory.getProvider(effectiveProvider);
-    }
-    pushEvent(`Provider vald: ${effectiveProvider}`);
-
-    const attemptedProviders = [effectiveProvider];
+    const attemptedProviders = [];
     const providersUsed = new Set();
     const modelsUsed = new Set();
     let lastError;
     const GENERATION_TIMEOUT_MS = 60000;
 
-    const switchProvider = async () => {
-      while (providerQueue.length > 0) {
-        const nextProvider = providerQueue.shift();
-        try {
-          selectedProvider = factory.getProvider(nextProvider);
-          effectiveProvider = nextProvider;
-          attemptedProviders.push(nextProvider);
-          console.log(`[Task ${taskId}] Switching provider to ${nextProvider}`);
-          pushEvent(`Byter provider till ${nextProvider}`);
-          return true;
-        } catch (error) {
-          console.warn(`[Task ${taskId}] Failed to load provider ${nextProvider}:`, error.message);
-        }
+    const pickProviderName = () => {
+      if (availableProviders.length === 0) {
+        throw new Error('No AI providers are configured');
       }
-      return false;
+      if (preferredProvider !== 'random' && availableProviders.includes(preferredProvider)) {
+        return preferredProvider;
+      }
+      const chosen = availableProviders[providerPickIndex % availableProviders.length];
+      providerPickIndex += 1;
+      return chosen;
     };
 
-    const resolveBatchLimit = () => {
-      const providerConfig = providerMap?.[effectiveProvider] || {};
+    const resolveBatchLimit = (providerName, providerInstance) => {
+      const providerConfig = providerMap?.[providerName] || {};
       const configuredLimit = Number(providerConfig.maxQuestionsPerRequest);
       if (Number.isFinite(configuredLimit) && configuredLimit > 0) {
         return configuredLimit;
       }
-      const providerLimit = Number(selectedProvider?.maxQuestionsPerRequest);
+      const providerLimit = Number(providerInstance?.maxQuestionsPerRequest);
       if (Number.isFinite(providerLimit) && providerLimit > 0) {
         return providerLimit;
       }
       return Number.POSITIVE_INFINITY;
     };
 
-    const generateBatch = async (batchAmount) => {
-      while (selectedProvider) {
+    const generateBatch = async (batchAmount, primaryProvider, primaryInstance) => {
+      const providerQueue = [
+        primaryProvider,
+        ...availableProviders.filter((name) => name !== primaryProvider)
+      ];
+
+      while (providerQueue.length > 0) {
+        const nextProvider = providerQueue.shift();
+        let providerInstance = primaryInstance;
+
+        if (nextProvider !== primaryProvider || !providerInstance) {
+          try {
+            providerInstance = factory.getProvider(nextProvider);
+          } catch (error) {
+            lastError = error;
+            console.warn(`[Task ${taskId}] Failed to load provider ${nextProvider}:`, error.message);
+            continue;
+          }
+        }
+
+        effectiveProvider = nextProvider;
+        selectedProvider = providerInstance;
+        if (!attemptedProviders.includes(nextProvider)) {
+          attemptedProviders.push(nextProvider);
+        }
+
+        const batchLimit = resolveBatchLimit(nextProvider, providerInstance);
+        const requestAmount = Math.min(batchAmount, batchLimit);
+
         try {
-          const batchQuestions = await selectedProvider.generateQuestions({
-            amount: batchAmount,
+          if (nextProvider !== primaryProvider) {
+            pushEvent(`Byter provider till ${nextProvider}`);
+          }
+          const batchQuestions = await providerInstance.generateQuestions({
+            amount: requestAmount,
             category,
             categoryDetails,
             ageGroupDetails,
@@ -279,21 +292,17 @@ async function generateQuestionsInBackground(env, taskId, params) {
             timeoutMs: GENERATION_TIMEOUT_MS
           });
           providersUsed.add(effectiveProvider);
-          if (selectedProvider?.model) {
-            modelsUsed.add(selectedProvider.model);
+          if (providerInstance?.model) {
+            modelsUsed.add(providerInstance.model);
           }
           return (batchQuestions || []).map((question) => ({
             ...question,
             generationProvider: effectiveProvider,
-            generationModel: selectedProvider?.model || null
+            generationModel: providerInstance?.model || null
           }));
         } catch (providerError) {
           lastError = providerError;
           console.warn(`[Task ${taskId}] ${effectiveProvider} failed:`, providerError.message);
-          const switched = await switchProvider();
-          if (!switched) {
-            break;
-          }
         }
       }
       throw new Error(`All providers failed. Attempted: ${attemptedProviders.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown'}`);
@@ -311,12 +320,8 @@ async function generateQuestionsInBackground(env, taskId, params) {
     let duplicateCount = 0;
     let ruleFilteredCount = 0;
     let stalledRounds = 0;
-    const initialBatchLimit = (() => {
-      const limit = resolveBatchLimit();
-      if (!Number.isFinite(limit) || limit <= 0) return amount;
-      return Math.min(limit, amount);
-    })();
-    const maxRounds = Math.max(3, Math.ceil(amount / initialBatchLimit) + 2);
+    const defaultBatchSize = Math.min(amount, 3);
+    const maxRounds = Math.max(3, Math.ceil(amount / defaultBatchSize) + 2);
     const acceptedQuestions = [];
 
     const existingRows = await env.DB.prepare(`
@@ -326,11 +331,15 @@ async function generateQuestionsInBackground(env, taskId, params) {
 
     while (acceptedQuestions.length < amount && generationRounds < maxRounds) {
       const remaining = amount - acceptedQuestions.length;
-      const batchLimit = resolveBatchLimit();
+      const primaryProvider = pickProviderName();
+      selectedProvider = factory.getProvider(primaryProvider);
+      effectiveProvider = primaryProvider;
+      const batchLimit = resolveBatchLimit(primaryProvider, selectedProvider);
       const batchAmount = Math.min(
         remaining,
         Number.isFinite(batchLimit) && batchLimit > 0 ? batchLimit : remaining
       );
+      pushEvent(`Provider vald: ${effectiveProvider}`);
       pushEvent(`Genererar batch ${generationRounds + 1}/${maxRounds} (${remaining} kvar)`);
       await updateProgress({
         completed: Math.min(acceptedQuestions.length, amount),
@@ -344,7 +353,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
         generatedCount: totalGenerated,
         acceptedCount: acceptedQuestions.length
       });
-      const batchQuestions = await generateBatch(batchAmount);
+      const batchQuestions = await generateBatch(batchAmount, primaryProvider, selectedProvider);
       generationRounds += 1;
       totalGenerated += batchQuestions.length;
 
