@@ -12,7 +12,12 @@ export async function onRequestGet(context) {
   try {
     const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
     const factory = new AIProviderFactory(env, providerMap);
-    const availableProviders = factory.getAvailableProviders();
+    const availableProviders = Object.keys(providerMap || {}).filter((name) => {
+      const config = factory.getProviderConfig(name);
+      if (!config.apiKey) return false;
+      if (!config.isEnabled) return false;
+      return true;
+    });
     
     console.log('[getProviderStatus] Checking providers:', availableProviders);
 
@@ -93,6 +98,19 @@ export async function onRequestGet(context) {
     const inactiveProviders = providerStatus.filter(p => !p.available);
 
     console.log(`[getProviderStatus] Active: ${activeProviders.length}, Inactive: ${inactiveProviders.length}`);
+
+    try {
+      const now = Date.now();
+      await Promise.all(
+        providerStatus.map((provider) =>
+          env.DB.prepare(
+            'UPDATE provider_settings SET is_available = ?, updated_at = ? WHERE provider_id = ?'
+          ).bind(provider.available ? 1 : 0, now, provider.name).run()
+        )
+      );
+    } catch (error) {
+      console.warn('[getProviderStatus] Failed to update availability:', error.message);
+    }
 
     return new Response(
       JSON.stringify({

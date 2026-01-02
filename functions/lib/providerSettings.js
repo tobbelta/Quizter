@@ -177,6 +177,7 @@ export const getProviderSettingsSnapshot = async (env, { decryptKeys = false } =
     const purposes = parsePurposeSettings(row?.purpose_settings, provider, isCustom);
     const model = (row?.model || DEFAULT_MODELS[provider] || '').trim();
     const isEnabled = row?.is_enabled === 0 ? false : true;
+    const isAvailable = row?.is_available === 0 ? false : true;
     const envKey = getEnvKey(env, provider);
     const hasStoredKey = Boolean(row?.encrypted_api_key);
     const displayName = resolveLabel(provider, row);
@@ -211,6 +212,7 @@ export const getProviderSettingsSnapshot = async (env, { decryptKeys = false } =
       apiKey,
       model,
       isEnabled,
+      isAvailable,
       purposes,
       hasKey,
       keySource,
@@ -241,6 +243,7 @@ export const getProviderSettingsSnapshot = async (env, { decryptKeys = false } =
       providerType,
       isCustom,
       isEnabled,
+      isAvailable,
     };
   }
 

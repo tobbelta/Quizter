@@ -35,6 +35,7 @@ export class AIProviderFactory {
       apiKey,
       model: settings.model,
       isEnabled: settings.isEnabled !== false,
+      isAvailable: settings.isAvailable !== false,
       purposes: settings.purposes || {},
       baseUrl: settings.baseUrl || null,
       extraHeaders: settings.extraHeaders || null,
@@ -199,6 +200,7 @@ export class AIProviderFactory {
       const config = this.getProviderConfig(name);
       if (!config.apiKey) return false;
       if (!config.isEnabled) return false;
+      if (!config.isAvailable) return false;
       if (purpose && config.purposes && config.purposes[purpose] === false) {
         return false;
       }
