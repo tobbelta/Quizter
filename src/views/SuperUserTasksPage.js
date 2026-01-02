@@ -5,6 +5,7 @@ import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import MessageDialog from '../components/shared/MessageDialog';
 import TaskTimeline from '../components/admin/TaskTimeline';
 import { getRelativeTime, formatShortDateTime } from '../utils/timeUtils';
+import { useAuth } from '../context/AuthContext';
 // ...existing code...
 
 const FINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
@@ -88,6 +89,7 @@ const toDuration = (start, end) => {
 
 const SuperUserTasksPage = () => {
   const { allTasks, refreshAllTasks } = useBackgroundTasks();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -98,6 +100,69 @@ const SuperUserTasksPage = () => {
   const [providerStatus, setProviderStatus] = useState(null);
   const [loadingProviderStatus, setLoadingProviderStatus] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState(new Set());
+  const [providerLogsByTask, setProviderLogsByTask] = useState({});
+  const [providerLogsLoading, setProviderLogsLoading] = useState({});
+  const [providerLogsError, setProviderLogsError] = useState({});
+  const [expandedLogEntries, setExpandedLogEntries] = useState(new Set());
+
+  const toggleLogEntry = (logId) => {
+    setExpandedLogEntries((prev) => {
+      const next = new Set(prev);
+      if (next.has(logId)) {
+        next.delete(logId);
+      } else {
+        next.add(logId);
+      }
+      return next;
+    });
+  };
+
+  const fetchProviderLogs = async (taskId) => {
+    if (!taskId) return;
+    setProviderLogsLoading((prev) => ({ ...prev, [taskId]: true }));
+    setProviderLogsError((prev) => ({ ...prev, [taskId]: null }));
+    try {
+      const response = await fetch(`/api/getProviderLogs?taskId=${encodeURIComponent(taskId)}&limit=200`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-email': currentUser?.email || ''
+        }
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Kunde inte hämta provider-loggar');
+      }
+      setProviderLogsByTask((prev) => ({ ...prev, [taskId]: data.logs || [] }));
+    } catch (error) {
+      setProviderLogsError((prev) => ({ ...prev, [taskId]: error.message }));
+    } finally {
+      setProviderLogsLoading((prev) => ({ ...prev, [taskId]: false }));
+    }
+  };
+
+  const formatLogTime = (value) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('sv-SE', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const renderLogPayload = (payload) => {
+    if (!payload) return '—';
+    if (typeof payload === 'string') return payload;
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch (error) {
+      return String(payload);
+    }
+  };
 
   const toggleExpandedTask = (taskId) => {
     setExpandedTasks((prev) => {
@@ -609,6 +674,9 @@ const SuperUserTasksPage = () => {
                     const debugInfo = progressDetails.debug || null;
                     const debugLines = [];
                     const isExpanded = expandedTasks.has(task.id);
+                    const providerLogs = providerLogsByTask[task.id] || [];
+                    const providerLogsLoadingState = providerLogsLoading[task.id];
+                    const providerLogsErrorState = providerLogsError[task.id];
                     const payloadDetails = [];
                     const resultQuestionIds = Array.isArray(task.result?.questionIds)
                       ? task.result.questionIds.filter(Boolean)
@@ -907,6 +975,80 @@ const SuperUserTasksPage = () => {
                                   })}
                                 </div>
                               )}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-slate-400">Provider-loggar</div>
+                                  <button
+                                    onClick={() => fetchProviderLogs(task.id)}
+                                    className="rounded bg-slate-800 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                                  >
+                                    {providerLogsLoadingState ? 'Laddar...' : 'Uppdatera'}
+                                  </button>
+                                </div>
+                                {providerLogsErrorState && (
+                                  <div className="text-red-300">{providerLogsErrorState}</div>
+                                )}
+                                {providerLogs.length === 0 && !providerLogsLoadingState ? (
+                                  <div className="text-slate-500">Inga provider-loggar för detta jobb ännu.</div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {providerLogs.map((log) => {
+                                      const isLogExpanded = expandedLogEntries.has(log.id);
+                                      return (
+                                        <div key={log.id} className="rounded border border-slate-800 bg-slate-950/70 p-3">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="font-semibold text-white">
+                                              {log.provider} · {log.phase}
+                                            </div>
+                                            <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                                              log.status === 'success'
+                                                ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
+                                                : 'bg-red-500/20 text-red-200 border border-red-500/30'
+                                            }`}>
+                                              {log.status === 'success' ? 'OK' : 'Fel'}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 text-xs text-slate-400">
+                                            {formatLogTime(log.createdAt)}
+                                            {log.durationMs != null ? ` · ${Math.round(log.durationMs)} ms` : ''}
+                                            {log.model ? ` · ${log.model}` : ''}
+                                          </div>
+                                          {log.error && (
+                                            <div className="mt-2 text-xs text-red-300 break-words">{log.error}</div>
+                                          )}
+                                          {log.metadata && (
+                                            <div className="mt-2 text-[11px] text-slate-500">
+                                              Metadata: {renderLogPayload(log.metadata)}
+                                            </div>
+                                          )}
+                                          <button
+                                            onClick={() => toggleLogEntry(log.id)}
+                                            className="mt-2 text-xs text-cyan-300 hover:text-cyan-200"
+                                          >
+                                            {isLogExpanded ? 'Dölj payload' : 'Visa payload'}
+                                          </button>
+                                          {isLogExpanded && (
+                                            <div className="mt-2 space-y-2">
+                                              <div>
+                                                <div className="text-slate-400">Request</div>
+                                                <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-slate-950/60 p-2 text-[11px] text-slate-200">
+                                                  {renderLogPayload(log.requestPayload)}
+                                                </pre>
+                                              </div>
+                                              <div>
+                                                <div className="text-slate-400">Response</div>
+                                                <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-slate-950/60 p-2 text-[11px] text-slate-200">
+                                                  {renderLogPayload(log.responsePayload)}
+                                                </pre>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                               <div>
                                 <TaskTimeline task={task} compact={true} />
                               </div>
