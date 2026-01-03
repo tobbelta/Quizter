@@ -7,7 +7,7 @@
  * - PATCH: Buggfixar, bakåtkompatibelt
  */
 
-export const VERSION = '0.12.12';
+export const VERSION = '0.12.13';
 export const BUILD_DATE = new Date().toISOString();
 export const FEATURES = {
   localStorage: true,
