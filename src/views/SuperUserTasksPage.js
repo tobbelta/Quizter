@@ -683,7 +683,16 @@ const SuperUserTasksPage = () => {
                       : Array.isArray(task.result?.questions)
                         ? task.result.questions.map((question) => question?.id).filter(Boolean)
                         : [];
-                    const hasQuestionLink = task.taskType === 'generation' && resultQuestionIds.length > 0;
+                    const payloadQuestionIds = Array.isArray(task.payload?.questionIds)
+                      ? task.payload.questionIds.filter(Boolean)
+                      : Array.isArray(task.payload?.questions)
+                        ? task.payload.questions.map((question) => question?.id).filter(Boolean)
+                        : [];
+                    const questionIdsForLink = resultQuestionIds.length > 0 ? resultQuestionIds : payloadQuestionIds;
+                    const hasQuestionLink = (
+                      ['generation', 'generate_questions', 'validate_questions', 'validation', 'batchvalidation'].includes(task.taskType)
+                      && questionIdsForLink.length > 0
+                    );
                     const progressSummaryParts = [];
                     const progressDetailLines = [];
                     if (task.payload?.category) payloadDetails.push(`Kategori: ${task.payload.category}`);
@@ -900,7 +909,7 @@ const SuperUserTasksPage = () => {
                           <div className="flex gap-2">
                             {hasQuestionLink && (
                               <button
-                                onClick={() => navigate(`/admin/questions?ids=${encodeURIComponent(resultQuestionIds.join(','))}&taskId=${task.id}`)}
+                                onClick={() => navigate(`/admin/questions?ids=${encodeURIComponent(questionIdsForLink.join(','))}&taskId=${task.id}`)}
                                 className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white text-xs rounded font-semibold transition-colors"
                                 title="Visa frågor i frågebanken"
                               >

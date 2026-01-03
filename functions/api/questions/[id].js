@@ -3,6 +3,7 @@
  * PUT /api/questions/[id] - Update a question
  * DELETE /api/questions/[id] - Delete a question
  */
+import { recordQuestionFeedback } from '../../lib/questionFeedback.js';
 
 /**
  * PUT: Update a single question
@@ -31,6 +32,19 @@ export async function onRequestPut(context) {
     const updateData = await request.json();
 
     console.log(`[questions/[id] PUT] Updating question ${questionId}`);
+
+    const parseJson = (value, fallback) => {
+      if (!value) return fallback;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    };
+
+    const preQuestion = await env.DB.prepare(
+      'SELECT id, categories, age_groups, difficulty, target_audience, ai_generation_provider, ai_generation_model, ai_validation_result, reports FROM questions WHERE id = ?'
+    ).bind(questionId).first();
 
     const hasField = (key) => Object.prototype.hasOwnProperty.call(updateData || {}, key);
     const readField = (primary, fallback) => {
@@ -304,6 +318,129 @@ export async function onRequestPut(context) {
     const result = await env.DB.prepare(query).bind(...values).run();
 
     console.log(`[questions/[id] PUT] Updated question ${questionId}`);
+
+    const actorEmail = String(request.headers.get('x-user-email') || '').trim();
+    const normalizedActorEmail = actorEmail.toLowerCase();
+    const isSuperUser = Boolean(
+      normalizedActorEmail
+      && env.SUPERUSER_EMAIL
+      && normalizedActorEmail === String(env.SUPERUSER_EMAIL || '').trim().toLowerCase()
+    );
+    const actorUser = actorEmail
+      ? await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(actorEmail).first()
+      : null;
+
+    const baseFeedbackMeta = preQuestion
+      ? (() => {
+          const categories = parseJson(preQuestion.categories, []);
+          const ageGroups = parseJson(preQuestion.age_groups, []);
+          return {
+            category: Array.isArray(categories) ? categories[0] : categories,
+            ageGroup: Array.isArray(ageGroups) ? ageGroups[0] : ageGroups,
+            difficulty: preQuestion.difficulty || null,
+            targetAudience: preQuestion.target_audience || null,
+            generationProvider: preQuestion.ai_generation_provider || null,
+            generationModel: preQuestion.ai_generation_model || null
+          };
+        })()
+      : {};
+
+    const aiValidation = preQuestion?.ai_validation_result
+      ? parseJson(preQuestion.ai_validation_result, null)
+      : null;
+    const aiValidationType = aiValidation?.validationType || null;
+    const aiValidationProvider = aiValidation?.validationContext?.validationProvider || null;
+    const aiValid = typeof aiValidation?.isValid === 'boolean'
+      ? aiValidation.isValid
+      : typeof aiValidation?.valid === 'boolean'
+        ? aiValidation.valid
+        : null;
+
+    const manualApproved = updateData.manuallyApproved === true;
+    const manualRejected = updateData.manuallyRejected === true;
+
+    if (manualApproved || manualRejected) {
+      const verdict = manualApproved ? 'approve' : 'reject';
+      const reasonIssues = (() => {
+        if (manualRejected) {
+          const manualIssues = Array.isArray(updateData?.aiValidationResult?.issues)
+            ? updateData.aiValidationResult.issues
+            : [];
+          if (manualIssues.length > 0) return manualIssues;
+        }
+        return [];
+      })();
+
+      try {
+        await recordQuestionFeedback(env, {
+          questionId,
+          feedbackType: 'question',
+          rating: manualApproved ? 5 : 1,
+          verdict,
+          issues: reasonIssues,
+          comment: manualRejected && reasonIssues.length === 0 ? 'Manuellt underkänd' : null,
+          userId: actorUser?.id || null,
+          userEmail: actorEmail || null,
+          userRole: isSuperUser ? 'superuser' : actorEmail ? 'user' : null,
+          ...baseFeedbackMeta,
+          validationProvider: aiValidationProvider || null
+        });
+      } catch (feedbackError) {
+        console.warn('[questions/[id] PUT] Kunde inte logga manuell feedback:', feedbackError.message);
+      }
+
+      if (aiValidationType && aiValidationType !== 'manual' && aiValid !== null) {
+        const matches = manualApproved ? aiValid === true : aiValid === false;
+        const validationIssues = matches
+          ? []
+          : [manualApproved ? 'falsk_underkänn' : 'falsk_godkänn', manualApproved ? 'för_strikt' : 'för_slapp'];
+        try {
+          await recordQuestionFeedback(env, {
+            questionId,
+            feedbackType: 'validation',
+            rating: matches ? 5 : 1,
+            verdict: matches ? 'approve' : 'reject',
+            issues: validationIssues,
+            comment: matches ? null : 'Manuell override av AI-validering',
+            userId: actorUser?.id || null,
+            userEmail: actorEmail || null,
+            userRole: isSuperUser ? 'superuser' : actorEmail ? 'user' : null,
+            ...baseFeedbackMeta,
+            validationProvider: aiValidationProvider || null
+          });
+        } catch (feedbackError) {
+          console.warn('[questions/[id] PUT] Kunde inte logga valideringsfeedback:', feedbackError.message);
+        }
+      }
+    }
+
+    if (updateData.reports !== undefined && preQuestion) {
+      const previousReports = Array.isArray(parseJson(preQuestion.reports, []))
+        ? parseJson(preQuestion.reports, [])
+        : [];
+      const incomingReports = Array.isArray(updateData.reports)
+        ? updateData.reports
+        : parseJson(updateData.reports, []);
+      if (Array.isArray(incomingReports) && incomingReports.length > previousReports.length) {
+        const latestReport = incomingReports[incomingReports.length - 1] || {};
+        const reportReason = latestReport.reason || latestReport.message || null;
+        try {
+          await recordQuestionFeedback(env, {
+            questionId,
+            feedbackType: 'question',
+            rating: 1,
+            verdict: 'reject',
+            issues: reportReason ? [reportReason] : [],
+            comment: reportReason || 'Rapporterad fråga',
+            userRole: 'player',
+            ...baseFeedbackMeta,
+            validationProvider: aiValidationProvider || null
+          });
+        } catch (feedbackError) {
+          console.warn('[questions/[id] PUT] Kunde inte logga rapport-feedback:', feedbackError.message);
+        }
+      }
+    }
 
     return new Response(
       JSON.stringify({
