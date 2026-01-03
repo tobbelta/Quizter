@@ -15,6 +15,12 @@ import {
 } from '../lib/questionRules.js';
 import { getAiRulesConfig } from '../lib/aiRules.js';
 import { resolveFreshnessFields, isExpiredByBestBefore } from '../lib/freshness.js';
+import {
+  getFeedbackInsights,
+  getProviderFeedbackScores,
+  formatValidationLearningPrompt,
+  recordQuestionFeedback
+} from '../lib/questionFeedback.js';
 
 const summarizeText = (value, limit = 160) => {
   if (!value) return null;
@@ -134,6 +140,30 @@ export async function onRequestPost(context) {
     const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
     validationCriteria.freshnessPrompt = freshnessPrompt;
     validationCriteria.answerInQuestionPrompt = answerInQuestionPrompt;
+    const validationFeedbackInsights = await getFeedbackInsights(env.DB, {
+      feedbackType: 'validation',
+      category: validationCriteria.category,
+      ageGroup: validationCriteria.ageGroup,
+      difficulty: validationCriteria.difficulty,
+      targetAudience: questionForValidation.targetAudience || null
+    });
+    validationCriteria.feedbackPrompt = formatValidationLearningPrompt(validationFeedbackInsights);
+    const validationProviderScores = await getProviderFeedbackScores(env.DB, {
+      feedbackType: 'validation',
+      category: validationCriteria.category,
+      ageGroup: validationCriteria.ageGroup,
+      difficulty: validationCriteria.difficulty,
+      targetAudience: questionForValidation.targetAudience || null
+    });
+    if (validationProviderScores.size > 0) {
+      const requested = requestedProvider && validationProviders.includes(requestedProvider)
+        ? requestedProvider
+        : null;
+      const ordered = validationProviders
+        .filter((name) => name !== requested)
+        .sort((a, b) => (validationProviderScores.get(b)?.avgRating ?? 0) - (validationProviderScores.get(a)?.avgRating ?? 0));
+      validationProviders = requested ? [requested, ...ordered] : ordered;
+    }
 
     const validationLog = {
       questionId,
@@ -291,6 +321,10 @@ export async function onRequestPost(context) {
       ...baseSuggestions,
       ...proposalSuggestions
     ]));
+    const validationFeedbackText = `${validationResult?.feedback || ''} ${(validationResult?.issues || []).join(' ')}`;
+    const skipAutoFeedback = /rate limit|timeout|time out/i.test(validationFeedbackText);
+    const generationRating = skipAutoFeedback ? null : (finalValid ? 5 : 1);
+
     const fullResult = {
       ...validationResult,
       provider: selectedProviderName,
@@ -305,6 +339,7 @@ export async function onRequestPost(context) {
       ...(combinedIssues.length > 0 ? { issues: combinedIssues } : {}),
       ...(mergedSuggestions.length > 0 ? { suggestions: mergedSuggestions } : {}),
       feedback: feedbackWithRules,
+      ...(skipAutoFeedback ? {} : { generationRating, generationRatingSource: 'validation' }),
       timeSensitive: freshness.timeSensitive,
       bestBeforeDate: freshness.bestBeforeDate,
       bestBeforeAt: freshness.bestBeforeAt,
@@ -347,6 +382,30 @@ export async function onRequestPost(context) {
     ).run();
 
     console.log(`[validateQuestionWithAI] Successfully validated question ${questionId}`);
+
+    if (generationProvider && !skipAutoFeedback) {
+      try {
+        await recordQuestionFeedback(env, {
+          questionId,
+          feedbackType: 'question',
+          rating: generationRating,
+          verdict: finalValid ? 'approve' : 'reject',
+          issues: Array.isArray(fullResult.issues) ? fullResult.issues : [],
+          userRole: 'system',
+          category: validationCriteria.category,
+          ageGroup: validationCriteria.ageGroup,
+          difficulty: validationCriteria.difficulty,
+          targetAudience: questionForValidation.targetAudience || null,
+          generationProvider,
+          generationModel: question.ai_generation_model || null,
+          validationProvider: selectedProviderName || null
+        });
+      } catch (feedbackError) {
+        console.warn('[validateQuestionWithAI] Kunde inte logga valideringsbetyg:', feedbackError.message);
+      }
+    } else if (skipAutoFeedback) {
+      console.warn('[validateQuestionWithAI] Skippade valideringsbetyg pga rate limit/timeout.');
+    }
 
     return new Response(JSON.stringify({
       success: true,

@@ -11,7 +11,17 @@ import Header from '../components/layout/Header';
 import PaymentModal from '../components/payment/PaymentModal';
 import { paymentService } from '../services/paymentService';
 import { analyticsService } from '../services/analyticsService';
+import { submitQuestionFeedback } from '../services/questionFeedbackService';
 import { describeParticipantStatus } from '../utils/participantStatus';
+
+const QUESTION_FEEDBACK_REASONS = [
+  { id: 'vag', label: 'Vag fråga' },
+  { id: 'flera_ratt', label: 'Flera rätta svar' },
+  { id: 'fel_fakta', label: 'Felaktigt svar' },
+  { id: 'for_svar', label: 'För svår' },
+  { id: 'for_latt', label: 'För lätt' },
+  { id: 'sprak', label: 'Språk/översättning' }
+];
 
 const RunResultsPage = () => {
   const { runId } = useParams();
@@ -28,6 +38,10 @@ const RunResultsPage = () => {
   const [answersByParticipant, setAnswersByParticipant] = useState({});
   const [participantDetailsById, setParticipantDetailsById] = useState({});
   const [shareStatus, setShareStatus] = useState('');
+  const [feedbackByQuestion, setFeedbackByQuestion] = useState({});
+  const [openNegativeFeedback, setOpenNegativeFeedback] = useState(null);
+  const [negativeFeedbackIssues, setNegativeFeedbackIssues] = useState({});
+  const [feedbackError, setFeedbackError] = useState('');
   const autoExpandedRef = useRef(false);
   const [selectedLanguage] = useState(() => {
     // Läs från localStorage eller använd svenska som default
@@ -197,6 +211,43 @@ const RunResultsPage = () => {
     setTimeout(() => setShareStatus(''), 2500);
   };
 
+  const submitFeedback = async (questionId, rating, issues = []) => {
+    if (!questionId) return;
+    const deviceId = analyticsService.getDeviceId();
+    const verdict = rating >= 4 ? 'approve' : rating <= 2 ? 'reject' : 'neutral';
+    setFeedbackError('');
+    try {
+      await submitQuestionFeedback({
+        questionId,
+        feedbackType: 'question',
+        rating,
+        verdict,
+        issues,
+        deviceId,
+        userId: currentUser?.id || null,
+        userRole: currentUser?.isSuperUser ? 'superuser' : currentUser?.isAnonymous ? 'player' : 'user'
+      }, currentUser?.email || '');
+      setFeedbackByQuestion((prev) => ({
+        ...prev,
+        [questionId]: { rating, submitted: true }
+      }));
+      setOpenNegativeFeedback(null);
+    } catch (error) {
+      console.error('Kunde inte skicka feedback:', error);
+      setFeedbackError(error.message || 'Kunde inte skicka feedback.');
+    }
+  };
+
+  const toggleNegativeIssue = (questionId, issueId) => {
+    setNegativeFeedbackIssues((prev) => {
+      const current = Array.isArray(prev[questionId]) ? prev[questionId] : [];
+      const next = current.includes(issueId)
+        ? current.filter((item) => item !== issueId)
+        : [...current, issueId];
+      return { ...prev, [questionId]: next };
+    });
+  };
+
   const normalizedAnswers = useMemo(() => {
     const participantAnswers = currentParticipant
       ? answersByParticipant[currentParticipant.id]
@@ -330,6 +381,7 @@ const RunResultsPage = () => {
 
       return {
         questionNumber: index + 1,
+        questionId,
         question: question.text,
         options: question.options,
         correctOption: question.correctOption,
@@ -501,56 +553,134 @@ const RunResultsPage = () => {
             Dina detaljerade resultat ({currentParticipantScore}/{detailedResults.length} rätt)
           </h2>
           <div className="space-y-4">
-            {detailedResults.map((result) => (
-              <div key={result.questionNumber} className={`rounded-lg border p-4 ${
-                result.isCorrect
-                  ? 'border-emerald-500/40 bg-emerald-900/20'
-                  : 'border-red-500/40 bg-red-900/20'
-              }`}>
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-white">
-                    Fråga {result.questionNumber}: {result.question}
-                  </h3>
-                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${
-                    result.isCorrect
-                      ? 'bg-emerald-500/20 text-emerald-200'
-                      : 'bg-red-500/20 text-red-200'
-                  }`}>
-                    {result.isCorrect ? '✓ Rätt' : '✗ Fel'}
-                  </span>
-                </div>
+            {detailedResults.map((result) => {
+              const feedbackState = feedbackByQuestion[result.questionId];
+              const feedbackSubmitted = feedbackState?.submitted === true;
+              const isNegativeOpen = openNegativeFeedback === result.questionId;
+              const selectedIssues = Array.isArray(negativeFeedbackIssues[result.questionId])
+                ? negativeFeedbackIssues[result.questionId]
+                : [];
 
-                <div className="space-y-2 mb-3">
-                  {result.options.map((option, index) => {
-                    const isCorrect = index === result.correctOption;
-                    const isUserSelected = index === result.userSelectedOption;
-
-                    return (
-                      <div key={index} className={`rounded px-3 py-2 text-sm ${
-                        isCorrect && isUserSelected
-                          ? 'bg-emerald-500/30 border border-emerald-500/50 text-emerald-100'
-                          : isUserSelected && !isCorrect
-                          ? 'bg-red-500/30 border border-red-500/50 text-red-100'
-                          : isCorrect
-                          ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200'
-                          : 'bg-slate-800/50 border border-slate-600 text-gray-300'
-                      }`}>
-                        {option}
-                        {isUserSelected && <span className="ml-2 text-xs">← Ditt svar</span>}
-                        {isCorrect && <span className="ml-2 text-xs">← Rätt svar</span>}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {result.explanation && (
-                  <div className="bg-slate-800/50 rounded-lg p-3 text-sm text-gray-300">
-                    <span className="font-semibold text-cyan-200">Förklaring: </span>
-                    {result.explanation}
+              return (
+                <div key={result.questionNumber} className={`rounded-lg border p-4 ${
+                  result.isCorrect
+                    ? 'border-emerald-500/40 bg-emerald-900/20'
+                    : 'border-red-500/40 bg-red-900/20'
+                }`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <h3 className="font-semibold text-white">
+                      Fråga {result.questionNumber}: {result.question}
+                    </h3>
+                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${
+                      result.isCorrect
+                        ? 'bg-emerald-500/20 text-emerald-200'
+                        : 'bg-red-500/20 text-red-200'
+                    }`}>
+                      {result.isCorrect ? '✓ Rätt' : '✗ Fel'}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  <div className="space-y-2 mb-3">
+                    {result.options.map((option, index) => {
+                      const isCorrect = index === result.correctOption;
+                      const isUserSelected = index === result.userSelectedOption;
+
+                      return (
+                        <div key={index} className={`rounded px-3 py-2 text-sm ${
+                          isCorrect && isUserSelected
+                            ? 'bg-emerald-500/30 border border-emerald-500/50 text-emerald-100'
+                            : isUserSelected && !isCorrect
+                            ? 'bg-red-500/30 border border-red-500/50 text-red-100'
+                            : isCorrect
+                            ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-200'
+                            : 'bg-slate-800/50 border border-slate-600 text-gray-300'
+                        }`}>
+                          {option}
+                          {isUserSelected && <span className="ml-2 text-xs">← Ditt svar</span>}
+                          {isCorrect && <span className="ml-2 text-xs">← Rätt svar</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {result.explanation && (
+                    <div className="bg-slate-800/50 rounded-lg p-3 text-sm text-gray-300">
+                      <span className="font-semibold text-cyan-200">Förklaring: </span>
+                      {result.explanation}
+                    </div>
+                  )}
+
+                  <div className="mt-3 border-t border-slate-700/60 pt-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+                      <span className="text-gray-400">Betygsätt frågan:</span>
+                      <button
+                        type="button"
+                        className="rounded bg-emerald-700/40 px-2 py-1 text-emerald-100 hover:bg-emerald-600/60 disabled:opacity-50"
+                        onClick={() => submitFeedback(result.questionId, 5)}
+                        disabled={feedbackSubmitted}
+                      >
+                        👍 Bra
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded bg-amber-700/40 px-2 py-1 text-amber-100 hover:bg-amber-600/60 disabled:opacity-50"
+                        onClick={() => setOpenNegativeFeedback(isNegativeOpen ? null : result.questionId)}
+                        disabled={feedbackSubmitted}
+                      >
+                        👎 Dålig
+                      </button>
+                      {feedbackSubmitted && (
+                        <span className="text-emerald-300">Tack för feedback!</span>
+                      )}
+                    </div>
+
+                    {isNegativeOpen && !feedbackSubmitted && (
+                      <div className="mt-2 rounded border border-slate-700 bg-slate-900/60 p-3 text-xs text-gray-300">
+                        <div className="mb-2 font-semibold text-cyan-200">Vad var fel?</div>
+                        <div className="flex flex-wrap gap-2">
+                          {QUESTION_FEEDBACK_REASONS.map((reason) => {
+                            const isSelected = selectedIssues.includes(reason.label);
+                            return (
+                              <button
+                                key={reason.id}
+                                type="button"
+                                className={`rounded border px-2 py-1 ${
+                                  isSelected
+                                    ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
+                                    : 'border-slate-600 text-gray-300 hover:border-amber-400/60'
+                                }`}
+                                onClick={() => toggleNegativeIssue(result.questionId, reason.label)}
+                              >
+                                {reason.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {feedbackError && (
+                          <div className="mt-2 text-red-300">{feedbackError}</div>
+                        )}
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            className="rounded bg-amber-600/60 px-3 py-1 text-amber-100 hover:bg-amber-500"
+                            onClick={() => submitFeedback(result.questionId, 1, selectedIssues)}
+                          >
+                            Skicka feedback
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded bg-slate-700 px-3 py-1 text-gray-200 hover:bg-slate-600"
+                            onClick={() => setOpenNegativeFeedback(null)}
+                          >
+                            Avbryt
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

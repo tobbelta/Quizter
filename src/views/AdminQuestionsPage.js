@@ -1,7 +1,7 @@
 /**
  * Admin-sida för att hantera och visa tillgängliga frågor.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 // ...removed legacy Firestore imports...
 // ...existing code...
@@ -11,6 +11,7 @@ import { aiService } from '../services/aiService';
 import { taskService } from '../services/taskService';
 import { categoryService } from '../services/categoryService';
 import { audienceService } from '../services/audienceService';
+import { submitQuestionFeedback } from '../services/questionFeedbackService';
 import { useBackgroundTasks } from '../context/BackgroundTaskContext';
 import Header from '../components/layout/Header';
 import Pagination from '../components/shared/Pagination';
@@ -18,6 +19,15 @@ import { questionRepository } from '../repositories/questionRepository';
 import MessageDialog from '../components/shared/MessageDialog';
 import { DEFAULT_CATEGORY_OPTIONS } from '../data/categoryOptions';
 import { DEFAULT_AGE_GROUPS, DEFAULT_TARGET_AUDIENCES, formatAgeGroupLabel } from '../data/audienceOptions';
+
+const ADMIN_FEEDBACK_REASONS = [
+  { id: 'vag', label: 'Vag fråga' },
+  { id: 'flera_ratt', label: 'Flera rätta svar' },
+  { id: 'fel_fakta', label: 'Felaktigt svar' },
+  { id: 'for_svar', label: 'För svår' },
+  { id: 'for_latt', label: 'För lätt' },
+  { id: 'sprak', label: 'Språk/översättning' }
+];
 
 const PROVIDER_LABELS = {
   openai: 'OpenAI',
@@ -116,7 +126,8 @@ const QuestionCard = ({
   ageGroupOptions,
   targetAudienceOptions,
   aiRulesConfig,
-  loadingAiRules
+  loadingAiRules,
+  currentUser
 }) => {
   const [currentLang, setCurrentLang] = useState('sv');
   const [isEditing, setIsEditing] = useState(false);
@@ -124,6 +135,11 @@ const QuestionCard = ({
   const [isApplyingEdits, setIsApplyingEdits] = useState(false);
   const [editErrors, setEditErrors] = useState([]);
   const [showPromptInfo, setShowPromptInfo] = useState(false);
+  const [adminRating, setAdminRating] = useState(null);
+  const [adminRatingIssues, setAdminRatingIssues] = useState([]);
+  const [adminRatingSubmitted, setAdminRatingSubmitted] = useState(false);
+  const [adminRatingSubmitting, setAdminRatingSubmitting] = useState(false);
+  const [adminRatingError, setAdminRatingError] = useState('');
 
   // Hämta data för valt språk
   const svLang = question.languages?.sv || {
@@ -160,6 +176,43 @@ const QuestionCard = ({
   const createdByDisplay = providerLabel
     ? `${createdByLabel} (${providerLabel})`
     : createdByLabel;
+
+  const toggleAdminIssue = (issueLabel) => {
+    setAdminRatingIssues((prev) => {
+      const current = Array.isArray(prev) ? prev : [];
+      return current.includes(issueLabel)
+        ? current.filter((item) => item !== issueLabel)
+        : [...current, issueLabel];
+    });
+  };
+
+  const submitAdminRating = async (ratingValue, issuesOverride = null) => {
+    if (!ratingValue || adminRatingSubmitting) return;
+    setAdminRatingSubmitting(true);
+    setAdminRatingError('');
+    try {
+      const issues = Array.isArray(issuesOverride)
+        ? issuesOverride
+        : adminRatingIssues;
+      const verdict = ratingValue >= 4 ? 'approve' : ratingValue <= 2 ? 'reject' : 'neutral';
+      await submitQuestionFeedback({
+        questionId: question.id,
+        feedbackType: 'question',
+        rating: ratingValue,
+        verdict,
+        issues,
+        userId: currentUser?.id || null,
+        userRole: currentUser?.isSuperUser ? 'superuser' : 'user'
+      }, currentUser?.email || '');
+      setAdminRatingSubmitted(true);
+      setAdminRating(ratingValue);
+    } catch (error) {
+      console.error('Kunde inte skicka adminbetyg:', error);
+      setAdminRatingError(error.message || 'Kunde inte skicka betyg.');
+    } finally {
+      setAdminRatingSubmitting(false);
+    }
+  };
   const bestBeforeAt = question.bestBeforeAt || question.best_before_at || null;
   const bestBeforeLabel = bestBeforeAt ? new Date(bestBeforeAt).toLocaleDateString('sv-SE') : null;
   const isExpired = question.isExpired === true || (bestBeforeAt ? bestBeforeAt <= Date.now() : false);
@@ -1021,6 +1074,84 @@ const QuestionCard = ({
                     }) : 'Okänt'}
                   </span>
                 </div>
+                <div className="border-t border-slate-700/60 pt-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-gray-300">
+                    <span className="text-xs text-gray-400">Betygsätt:</span>
+                    {[1, 2, 3, 4, 5].map((ratingValue) => (
+                      <button
+                        key={ratingValue}
+                        type="button"
+                        className={`rounded px-2 py-0.5 text-xs ${
+                          adminRating === ratingValue
+                            ? 'bg-cyan-500/20 text-cyan-200'
+                            : 'bg-slate-800 text-gray-300 hover:bg-slate-700'
+                        }`}
+                        onClick={() => {
+                          setAdminRating(ratingValue);
+                          if (ratingValue >= 4) {
+                            submitAdminRating(ratingValue, []);
+                          }
+                        }}
+                        disabled={adminRatingSubmitted || adminRatingSubmitting}
+                      >
+                        {ratingValue}
+                      </button>
+                    ))}
+                    {adminRatingSubmitted && (
+                      <span className="text-emerald-300">Sparat</span>
+                    )}
+                  </div>
+
+                  {adminRating && adminRating <= 3 && !adminRatingSubmitted && (
+                    <div className="mt-2 rounded border border-slate-700 bg-slate-900/60 p-2 text-xs text-gray-300">
+                      <div className="mb-2 font-semibold text-cyan-200">Varför?</div>
+                      <div className="flex flex-wrap gap-2">
+                        {ADMIN_FEEDBACK_REASONS.map((reason) => {
+                          const isSelected = adminRatingIssues.includes(reason.label);
+                          return (
+                            <button
+                              key={reason.id}
+                              type="button"
+                              className={`rounded border px-2 py-1 ${
+                                isSelected
+                                  ? 'border-amber-400/70 bg-amber-500/20 text-amber-100'
+                                  : 'border-slate-600 text-gray-300 hover:border-amber-400/60'
+                              }`}
+                              onClick={() => toggleAdminIssue(reason.label)}
+                              disabled={adminRatingSubmitting}
+                            >
+                              {reason.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {adminRatingError && (
+                        <div className="mt-2 text-red-300">{adminRatingError}</div>
+                      )}
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded bg-amber-600/60 px-3 py-1 text-amber-100 hover:bg-amber-500"
+                          onClick={() => submitAdminRating(adminRating)}
+                          disabled={adminRatingSubmitting}
+                        >
+                          {adminRatingSubmitting ? 'Skickar...' : 'Skicka betyg'}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-slate-700 px-3 py-1 text-gray-200 hover:bg-slate-600"
+                          onClick={() => {
+                            setAdminRating(null);
+                            setAdminRatingIssues([]);
+                          }}
+                          disabled={adminRatingSubmitting}
+                        >
+                          Avbryt
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1620,6 +1751,12 @@ const QuestionCard = ({
                   </span>
                 )}
               </div>
+              <div className="mb-2 text-xs text-gray-300">
+                <span className="text-gray-400">AI-betyg (generation):</span>{' '}
+                {Number.isFinite(Number(aiResult.generationRating))
+                  ? `${Number(aiResult.generationRating)}/5`
+                  : 'saknas'}
+              </div>
 
               {aiResult.issues && aiResult.issues.length > 0 && (
                 <div className="mb-3">
@@ -2064,6 +2201,8 @@ const AdminQuestionsPage = () => {
   const validationPollRef = useRef(null);
   const validationSourceRef = useRef(null);
   const [validationSyncing, setValidationSyncing] = useState(false);
+  const [linkedTask, setLinkedTask] = useState(null);
+  const [linkedTaskError, setLinkedTaskError] = useState(null);
   const [dialogConfig, setDialogConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
   const availableProviders = aiStatus
     ? Object.entries(aiStatus).filter(([, info]) => info?.available)
@@ -2072,6 +2211,25 @@ const AdminQuestionsPage = () => {
     if (!value) return '';
     const match = ageGroupOptions.find((group) => group.id === value);
     return match ? formatAgeGroupLabel(match) : value;
+  };
+  const formatTaskStatus = (status) => {
+    switch (status) {
+      case 'queued':
+        return 'Köad';
+      case 'pending':
+        return 'Förbereds';
+      case 'running':
+      case 'processing':
+        return 'Pågår';
+      case 'completed':
+        return 'Klar';
+      case 'failed':
+        return 'Misslyckades';
+      case 'cancelled':
+        return 'Avbruten';
+      default:
+        return status || 'Okänd';
+    }
   };
 
   useEffect(() => {
@@ -2217,6 +2375,33 @@ const AdminQuestionsPage = () => {
   }, []);
 
   useEffect(() => {
+    if (!idFilterTaskId) {
+      setLinkedTask(null);
+      setLinkedTaskError(null);
+      return () => {};
+    }
+
+    let isActive = true;
+    setLinkedTask(null);
+    setLinkedTaskError(null);
+
+    const unsubscribe = taskService.subscribeToTask(idFilterTaskId, (task) => {
+      if (!isActive) return;
+      if (task?.status === 'failed' && task?.error) {
+        setLinkedTaskError(task.error);
+      }
+      setLinkedTask(task || null);
+    });
+
+    return () => {
+      isActive = false;
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [idFilterTaskId]);
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const idsParam = params.get('ids');
     const taskIdParam = params.get('taskId');
@@ -2233,12 +2418,18 @@ const AdminQuestionsPage = () => {
         setIdFilterTaskId(taskIdParam || null);
         setCurrentPage(1);
       }
+      if (ids.length > 0) {
+        questionService.refreshQuestionsByIds(ids);
+        if (taskIdParam) {
+          waitForValidationCompletion(ids, null);
+        }
+      }
     } else if (idFilter) {
       setIdFilter(null);
       setIdFilterTaskId(null);
       setCurrentPage(1);
     }
-  }, [location.search, idFilter]);
+  }, [location.search, idFilter, waitForValidationCompletion]);
 
   // Listen for background task updates to update validation status
   useEffect(() => {
@@ -2338,7 +2529,7 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  async function waitForValidationCompletion(questionIds, generatorProvider) {
+  const waitForValidationCompletion = useCallback(async (questionIds, generatorProvider) => {
     if (!Array.isArray(questionIds) || questionIds.length === 0) return;
 
     const normalizedGenerator = generatorProvider ? generatorProvider.toLowerCase() : null;
@@ -2468,7 +2659,7 @@ const AdminQuestionsPage = () => {
     } else {
       poll();
     }
-  }
+  }, [validationProviders]);
 
   // Samla kategorier, målgrupper m.m. för filter
   const categorySet = new Set();
@@ -2621,6 +2812,31 @@ const AdminQuestionsPage = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const linkedTaskProgress = linkedTask?.progress || null;
+  const linkedTaskDetails = linkedTaskProgress?.details || {};
+  const linkedTotal = Number.isFinite(linkedTaskProgress?.total)
+    ? linkedTaskProgress.total
+    : Number.isFinite(linkedTaskDetails.totalCount)
+      ? linkedTaskDetails.totalCount
+      : null;
+  const linkedCompleted = Number.isFinite(linkedTaskProgress?.completed)
+    ? linkedTaskProgress.completed
+    : null;
+  const linkedPhase = linkedTaskProgress?.phase || linkedTaskDetails.lastMessage || null;
+  const linkedCounters = [];
+  if (linkedTaskDetails.validatedCount != null) {
+    linkedCounters.push(`${linkedTaskDetails.validatedCount || 0} ✓`);
+  }
+  if (linkedTaskDetails.invalidCount != null) {
+    linkedCounters.push(`${linkedTaskDetails.invalidCount || 0} ✗`);
+  }
+  if (linkedTaskDetails.skippedCount != null && linkedTaskDetails.skippedCount > 0) {
+    linkedCounters.push(`${linkedTaskDetails.skippedCount} ⏭️`);
+  }
+  if (linkedTaskDetails.correctedCount != null && linkedTaskDetails.correctedCount > 0) {
+    linkedCounters.push(`${linkedTaskDetails.correctedCount} ♻️`);
+  }
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -3008,6 +3224,43 @@ const AdminQuestionsPage = () => {
           </div>
         )}
 
+        {idFilterTaskId && (
+          <div className="mb-4 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-sm text-indigo-100">
+            <div className="flex items-center gap-3">
+              {!linkedTask ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-300 border-t-transparent" />
+              ) : (
+                <span>🧭</span>
+              )}
+              <div className="font-semibold">Bakgrundsjobb: {idFilterTaskId}</div>
+              {linkedTask && (
+                <div className="text-xs text-indigo-200">
+                  Status: {formatTaskStatus(linkedTask.status)}
+                </div>
+              )}
+            </div>
+            {!linkedTask && (
+              <div className="mt-1 text-xs text-indigo-200">Hämtar status...</div>
+            )}
+            {linkedTaskError && (
+              <div className="mt-1 text-xs text-red-200">Fel: {linkedTaskError}</div>
+            )}
+            {linkedTask && (
+              <div className="mt-1 text-xs text-indigo-200">
+                {linkedTotal != null && linkedCompleted != null && (
+                  <span>{linkedCompleted} / {linkedTotal}</span>
+                )}
+                {linkedCounters.length > 0 && (
+                  <span>{linkedTotal != null && linkedCompleted != null ? ' · ' : ''}{linkedCounters.join(', ')}</span>
+                )}
+                {linkedPhase && (
+                  <span>{(linkedTotal != null && linkedCompleted != null) || linkedCounters.length > 0 ? ' · ' : ''}Steg: {linkedPhase}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Masshantering */}
         <div className="mb-4 flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-lg p-2">
           <div className="flex items-center gap-3">
@@ -3099,6 +3352,7 @@ const AdminQuestionsPage = () => {
                       targetAudienceOptions={targetAudienceOptions}
                       aiRulesConfig={aiRulesConfig}
                       loadingAiRules={loadingAiRules}
+                      currentUser={currentUser}
                     />
                   );
                 })}
