@@ -396,6 +396,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
   const WATCHDOG_IDLE_MS = 120000;
   const WATCHDOG_TOTAL_MS = Math.max(5 * 60 * 1000, amount * 45000);
   const WATCHDOG_CHECK_INTERVAL_MS = 15000;
+  const HEARTBEAT_INTERVAL_MS = 30000;
   const debugState = {
     startedAt,
     lastProvider: existingDetails.provider || null,
@@ -478,6 +479,30 @@ async function generateQuestionsInBackground(env, taskId, params) {
       await logProviderCall(env.DB, payload);
     } catch (error) {
       console.warn(`[Task ${taskId}] Failed to log provider call:`, error.message);
+    }
+  };
+
+  let heartbeatInterval = null;
+  const startHeartbeat = () => {
+    heartbeatInterval = setInterval(async () => {
+      if (abortGeneration || watchdogTriggered) return;
+      const now = Date.now();
+      if (now - lastProgressAt < HEARTBEAT_INTERVAL_MS) return;
+      lastProgressAt = now;
+      await updateTaskProgress(env.DB, taskId, lastProgressSnapshot, lastProgressSnapshot.phase, {
+        ...currentDetails,
+        heartbeatAt: now,
+        debug: getDebugSnapshot(),
+        events: [...progressEvents],
+        lastMessage: progressEvents.length > 0 ? progressEvents[progressEvents.length - 1].message : ''
+      });
+    }, HEARTBEAT_INTERVAL_MS);
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
     }
   };
 
@@ -574,6 +599,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
   let lastError = null;
 
   try {
+    startHeartbeat();
     startWatchdog();
     pushEvent(generationRounds === 0 ? 'Startar generering' : 'Fortsätter generering');
     await updateProgress({ completed: savedCount, total: amount }, `Genererar ${savedCount}/${amount}`, {
@@ -629,7 +655,9 @@ async function generateQuestionsInBackground(env, taskId, params) {
       if (providerCycle.length === 0) {
         throw new Error('No AI providers are configured');
       }
-      const chosen = providerCycle[providerPickIndex % providerCycle.length];
+      const chosen = preferredProvider === 'random'
+        ? providerCycle[Math.floor(Math.random() * providerCycle.length)]
+        : providerCycle[providerPickIndex % providerCycle.length];
       providerPickIndex += 1;
       return chosen;
     };
@@ -1057,6 +1085,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
     });
   } finally {
     stopWatchdog();
+    stopHeartbeat();
   }
 }
 
