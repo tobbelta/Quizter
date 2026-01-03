@@ -92,3 +92,11 @@ $sql = "INSERT INTO users (id,email,display_name,created_at,is_super_user,email_
 Invoke-D1Command $sql
 
 Write-Host "✅ Skapade/uppdaterade $Email i $Database."
+
+$verifyResult = Invoke-D1Command "SELECT email,email_verified, password_hash IS NOT NULL AS has_password, is_super_user FROM users WHERE email='$Email';" -Json
+if ($verifyResult.Count -gt 0 -and $verifyResult[0].results -and $verifyResult[0].results.Count -gt 0) {
+  Write-Host "Verifiering:"
+  $verifyResult[0].results | ConvertTo-Json -Depth 4 | Write-Host
+} else {
+  Write-Host "Kunde inte hitta $Email direkt efter uppdatering."
+}
