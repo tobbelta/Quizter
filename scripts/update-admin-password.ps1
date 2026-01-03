@@ -17,7 +17,10 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-$remoteFlag = $Remote.IsPresent ? '--remote' : ''
+$remoteFlag = ''
+if ($Remote.IsPresent) {
+  $remoteFlag = '--remote'
+}
 
 function Invoke-D1Command {
   param(
