@@ -768,7 +768,7 @@ Returnera ENDAST JSON:
     const rulesBlock = blockingRules.length > 0 ? blockingRules.map((rule) => `- ${rule}`).join('\n') : '- (inga)';
     const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
     const ambiguityBlock = (preferOptionFix || ambiguityAlternatives.length > 0 || ambiguityReason)
-      ? `\nTVETYDIGHET:\n- Flera svar kan vara korrekta.\n- Alternativa svar: ${ambiguityAlternatives.length > 0 ? ambiguityAlternatives.join(', ') : 'okänt'}.\n- Orsak: ${ambiguityReason || 'okänd'}.\n- Prefererad åtgärd: Ändra svarsalternativen (behåll frågan) så att endast ett alternativ är korrekt.\n- Se till att ALLA alternativ är av samma typ som frågan (t.ex. berg/stad/sjö/person). Byt ut feltypade alternativ.\n`
+      ? `\nTVETYDIGHET:\n- Flera svar kan vara korrekta.\n- Alternativa svar: ${ambiguityAlternatives.length > 0 ? ambiguityAlternatives.join(', ') : 'okänt'}.\n- Orsak: ${ambiguityReason || 'okänd'}.\n- Prefererad åtgärd: Ändra svarsalternativen (behåll frågan) så att endast ett alternativ är korrekt.\n- Se till att ALLA alternativ är av samma typ som frågan (t.ex. berg/stad/sjö/person). Byt ut feltypade alternativ.\n- Om alternativa rätta svar listats: byt ut dessa (förutom det korrekta) mot nya alternativ som tydligt INTE uppfyller beskrivningen.\n- Om du ändå ändrar frågan: byt fortfarande ut alla tvetydiga alternativ.\n`
       : '';
 
     return `Du ska föreslå konkreta ändringar så att frågan blir entydig och godkänd.
