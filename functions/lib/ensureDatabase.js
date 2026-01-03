@@ -814,7 +814,8 @@ export async function ensureDatabase(db) {
     ];
     
     for (const sql of schema) {
-      await db.prepare(sql).run();
+      const statement = sql.replace(/^\s*CREATE TABLE\s+/i, 'CREATE TABLE IF NOT EXISTS ');
+      await db.prepare(statement).run();
     }
     
     console.log('[ensureDatabase] Database initialized successfully');

@@ -17,9 +17,9 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-$remoteFlag = ''
+$locationFlag = '--local'
 if ($Remote.IsPresent) {
-  $remoteFlag = '--remote'
+  $locationFlag = '--remote'
 }
 
 function Invoke-D1Command {
@@ -28,9 +28,9 @@ function Invoke-D1Command {
     [switch]$Json
   )
   if ($Json) {
-    $result = & npx wrangler d1 execute $Database $remoteFlag --json --command $Sql
+    $result = & npx wrangler d1 execute $Database $locationFlag --json --command $Sql
   } else {
-    & npx wrangler d1 execute $Database $remoteFlag --command $Sql | Out-Host
+    & npx wrangler d1 execute $Database $locationFlag --command $Sql | Out-Host
     $result = $null
   }
   if ($LASTEXITCODE -ne 0) {
@@ -93,7 +93,8 @@ Invoke-D1Command $sql
 
 Write-Host "✅ Skapade/uppdaterade $Email i $Database."
 
-$verifyResult = Invoke-D1Command "SELECT email,email_verified, password_hash IS NOT NULL AS has_password, is_super_user FROM users WHERE email='$Email';" -Json
+$verifyRaw = Invoke-D1Command "SELECT email,email_verified, password_hash IS NOT NULL AS has_password, is_super_user FROM users WHERE email='$Email';" -Json
+$verifyResult = $verifyRaw | ConvertFrom-Json
 if ($verifyResult.Count -gt 0 -and $verifyResult[0].results -and $verifyResult[0].results.Count -gt 0) {
   Write-Host "Verifiering:"
   $verifyResult[0].results | ConvertTo-Json -Depth 4 | Write-Host

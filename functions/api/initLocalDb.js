@@ -23,8 +23,11 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS target_audiences;
       DROP TABLE IF EXISTS age_groups;
       DROP TABLE IF EXISTS donations;
+      DROP TABLE IF EXISTS payment_settings;
       DROP TABLE IF EXISTS email_settings;
       DROP TABLE IF EXISTS email_events;
+      DROP TABLE IF EXISTS payments;
+      DROP TABLE IF EXISTS subscriptions;
       DROP TABLE IF EXISTS provider_settings;
       DROP TABLE IF EXISTS messages;
       DROP TABLE IF EXISTS message_states;
@@ -405,7 +408,7 @@ export async function onRequestGet({ env }) {
     return new Response(JSON.stringify({
       success: true,
       message: 'Local database initialized successfully',
-      tablesCreated: 13
+      tablesCreated: 24
     }), {
       headers: { 'Content-Type': 'application/json' }
     });

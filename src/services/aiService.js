@@ -28,6 +28,19 @@
  */
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const AUTH_STORAGE_KEY = 'tipspromenad:auth';
+
+const getStoredUserEmail = () => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.email === 'string' ? parsed.email : '';
+  } catch (error) {
+    return '';
+  }
+};
 
 /**
  * Queue a background task via Cloudflare API
@@ -35,18 +48,18 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || '';
  * @param {object} payload - Task parameters
  * @returns {Promise<{taskId: string}>}
  */
-const queueTask = async (functionName, payload) => {
+const queueTask = async (functionName, payload, { userEmail } = {}) => {
   try {
     const url = `${API_BASE_URL}/api/${functionName}`;
     
     console.log(`[aiService] Queuing task: ${functionName}`, payload);
-    
+
+    const resolvedEmail = userEmail || getStoredUserEmail();
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        // TODO: Add user email header when authentication is implemented
-        // 'x-user-email': userEmail
+        ...(resolvedEmail ? { 'x-user-email': resolvedEmail } : {})
       },
       body: JSON.stringify(payload)
     });
@@ -73,8 +86,12 @@ export const aiService = {
    * @param {{ amount: number, category: string, difficulty: string, provider: string }} params
    * @returns {Promise<{success: boolean, taskId: string}>}
    */
-  startAIGeneration: async ({ amount, category, ageGroup, difficulty, provider }) => {
-    return await queueTask('generateAIQuestions', { amount, category, ageGroup, difficulty, provider });
+  startAIGeneration: async ({ amount, category, ageGroup, difficulty, provider, userEmail }) => {
+    return await queueTask(
+      'generateAIQuestions',
+      { amount, category, ageGroup, difficulty, provider },
+      { userEmail }
+    );
   },
 
   /**
@@ -121,12 +138,12 @@ export const aiService = {
    * @param {{ questions: Array<{id: string, question: string, options: string[], correctOption: number, explanation: string}> }} params
    * @returns {Promise<{success: boolean, taskId: string, questionCount: number}>}
    */
-  startBatchAIValidation: async ({ questions }) => {
-    return await queueTask('batchValidateQuestions', { questions });
+  startBatchAIValidation: async ({ questions, userEmail }) => {
+    return await queueTask('batchValidateQuestions', { questions }, { userEmail });
   },
 
-  regenerateAllIllustrations: async () => {
-    return await queueTask('regenerateAllIllustrations', {});
+  regenerateAllIllustrations: async ({ userEmail } = {}) => {
+    return await queueTask('regenerateAllIllustrations', {}, { userEmail });
   },
 
   /**
@@ -164,7 +181,7 @@ export const aiService = {
     }
   },
 
-  startBatchEmojiRegeneration: async ({ questionIds }) => {
-    return await queueTask('batchRegenerateEmojis', { questionIds });
+  startBatchEmojiRegeneration: async ({ questionIds, userEmail }) => {
+    return await queueTask('batchRegenerateEmojis', { questionIds }, { userEmail });
   },
 };

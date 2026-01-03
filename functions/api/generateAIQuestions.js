@@ -939,10 +939,15 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const shortfall = Math.max(0, amount - resolvedSavedCount);
     const generatorProviders = Array.from(providersUsed);
     const primaryProvider = generatorProviders[0] || effectiveProvider;
-    const validationCandidates = factory.getAvailableProviders('validation')
-      .filter((name) => !generatorProviders.includes(name));
+    const validationCandidates = factory.getAvailableProviders('validation');
     const validationProvider = validationCandidates[0] || null;
-    const shouldRunValidation = savedQuestions.length > 0 && validationCandidates.length > 0;
+    const canValidateAny = savedQuestions.some((question) => {
+      const generator = String(question.provider || '').toLowerCase();
+      return validationCandidates.some((name) => name !== generator);
+    });
+    const shouldRunValidation = savedQuestions.length > 0
+      && validationCandidates.length > 0
+      && canValidateAny;
 
     pushEvent('Klar med generering');
     await updateProgress({
@@ -988,7 +993,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
         generatorProviders,
         note: shouldRunValidation
           ? 'Validation will run in separate background task'
-          : 'Validation skipped (no alternative providers)'
+          : 'Validation skipped (no alternative providers per question)'
       }
     });
 
@@ -1174,7 +1179,9 @@ async function continueValidationInBackground(env, taskId, params = {}) {
     return;
   }
 
-  const throttleMs = 20000;
+  const throttleMs = Number.isFinite(payload?.validationThrottleMs)
+    ? Number(payload.validationThrottleMs)
+    : 0;
   const lastValidationAt = Number.isFinite(details.lastValidationAt) ? details.lastValidationAt : 0;
   const now = Date.now();
   const nextValidationAt = lastValidationAt > 0 ? lastValidationAt + throttleMs : now;
@@ -1751,9 +1758,11 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   const now = Date.now();
 
   const buildValidationContext = (question, validationProviderName) => ({
-    generatorProvider: normalizedGenerators.length <= 1
-      ? (normalizedGenerators[0] || null)
-      : normalizedGenerators,
+    generatorProvider: question?.provider
+      ? String(question.provider).toLowerCase()
+      : normalizedGenerators.length <= 1
+        ? (normalizedGenerators[0] || null)
+        : normalizedGenerators,
     validationProvider: validationProviderName || null,
     criteria: {
       category: context.category || null,
@@ -1779,7 +1788,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   let correctedCount = 0;
   const VALIDATION_MIN_INTERVAL_MS = Number.isFinite(context?.validationThrottleMs)
     ? context.validationThrottleMs
-    : 20000;
+    : 0;
   const RATE_LIMIT_MAX_RETRIES = 3;
   const RATE_LIMIT_BASE_MS = 20000;
   let lastValidationAt = Number.isFinite(context?.lastValidationAt)
@@ -1830,11 +1839,23 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
   };
   const extractRetryAfterMs = (error) => {
     const message = String(error?.message || '');
-    const match = message.match(/try again in (\d+)s/i);
-    if (match) {
-      const seconds = Number(match[1]);
+    const simpleMatch = message.match(/try again in (\d+)s/i);
+    if (simpleMatch) {
+      const seconds = Number(simpleMatch[1]);
       if (Number.isFinite(seconds) && seconds > 0) {
         return seconds * 1000;
+      }
+    }
+    const fullMatch = message.match(/try again in\s+((\d+)h)?((\d+)m)?((\d+(\.\d+)?)s)?/i);
+    if (fullMatch) {
+      const hours = Number(fullMatch[2] || 0);
+      const minutes = Number(fullMatch[4] || 0);
+      const seconds = Number(fullMatch[6] || 0);
+      if (Number.isFinite(hours) || Number.isFinite(minutes) || Number.isFinite(seconds)) {
+        const totalMs = (hours * 3600 + minutes * 60 + seconds) * 1000;
+        if (totalMs > 0) {
+          return totalMs;
+        }
       }
     }
     return null;
@@ -1974,6 +1995,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       || validationResult.multipleCorrectOptions === 'true'
       || validationResult.multipleCorrectOptions === 1;
     let ambiguityCheck = null;
+    let ambiguityRateLimited = false;
     if (normalizedValid && typeof provider?.checkAnswerAmbiguity === 'function') {
       try {
         const ambiguityDebug = { request: null, response: null, error: null };
@@ -2012,6 +2034,9 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
         });
       } catch (error) {
         console.warn('[validateUniqueQuestions] Ambiguity check failed:', error.message);
+        if (isRateLimitError(error)) {
+          ambiguityRateLimited = true;
+        }
         await recordProviderCall({
           taskId: context?.taskId || null,
           userId: context?.taskUserId || null,
@@ -2113,7 +2138,8 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       expired,
       combinedIssues,
       mergedSuggestions,
-      blockingRules
+      blockingRules,
+      ambiguityRateLimited
     };
   };
   
@@ -2122,26 +2148,29 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     const allProviders = factory.getAvailableProviders('validation');
     console.log('[validateUniqueQuestions] ALL available validation providers:', allProviders);
     
-    const availableProviderNames = normalizedGenerators.length > 0
-      ? allProviders.filter(name => !normalizedGenerators.includes(name))
-      : allProviders;
+    const availableProviderNames = [...allProviders];
     
-    console.log('[validateUniqueQuestions] Available validation providers (excluding generator):', availableProviderNames);
+    console.log('[validateUniqueQuestions] Available validation providers:', availableProviderNames);
     
     if (availableProviderNames.length === 0) {
-      console.log('[validateUniqueQuestions] No validation providers available (excluding generator)');
+      console.log('[validateUniqueQuestions] No validation providers available');
       skippedCount = questions.length;
       return summarizeResult();
     }
     
     const requestedProvider = context?.validationProvider ? context.validationProvider.toLowerCase() : null;
-    const providerQueue = requestedProvider && availableProviderNames.includes(requestedProvider)
-      ? [requestedProvider, ...availableProviderNames.filter(name => name !== requestedProvider)]
-      : [...availableProviderNames];
 
-    const selectProvider = async () => {
-      while (providerQueue.length > 0) {
-        const providerName = providerQueue.shift();
+    const buildProviderQueue = (excludedProvider) => {
+      const baseQueue = availableProviderNames.filter((name) => name !== excludedProvider);
+      if (requestedProvider && baseQueue.includes(requestedProvider)) {
+        return [requestedProvider, ...baseQueue.filter((name) => name !== requestedProvider)];
+      }
+      return [...baseQueue];
+    };
+
+    const selectProvider = async (queue) => {
+      while (queue.length > 0) {
+        const providerName = queue.shift();
         try {
           const provider = factory.getProvider(providerName);
           if (typeof provider.checkCredits === 'function') {
@@ -2158,17 +2187,43 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       }
       return null;
     };
-
-    let activeProvider = await selectProvider();
-    if (!activeProvider) {
-      skippedCount = questions.length;
-      return summarizeResult();
-    }
-    console.log('[validateUniqueQuestions] Using provider:', activeProvider.name);
+    let activeProvider = null;
     
     // Validate each question
     for (let i = 0; i < questions.length; i++) {
       let question = questions[i];
+      const questionGenerator = String(question.provider || '').toLowerCase();
+      let providerQueue = buildProviderQueue(questionGenerator);
+      if (providerQueue.length === 0) {
+        skippedCount++;
+        if (reportProgress) {
+          await reportProgress({
+            index: i + 1,
+            validatedCount,
+            invalidCount,
+            skippedCount,
+            correctedCount,
+            provider: null,
+            questionId: question.id,
+            questionPreview: summarizeProgressText(question.question_sv),
+            step: 'skipped',
+            phase: 'Skippad (ingen annan provider än generatorn)'
+          });
+        }
+        continue;
+      }
+
+      if (activeProvider && providerQueue.includes(activeProvider.name)) {
+        providerQueue = providerQueue.filter((name) => name !== activeProvider.name);
+      } else {
+        activeProvider = await selectProvider(providerQueue);
+      }
+
+      if (!activeProvider) {
+        skippedCount += questions.length - i;
+        return summarizeResult();
+      }
+      console.log('[validateUniqueQuestions] Using provider:', activeProvider.name);
       console.log(`[validateUniqueQuestions] Validating question ${i + 1}/${questions.length}...`);
       console.log('[validateUniqueQuestions] Question context:', {
         questionId: question.id,
@@ -2451,6 +2506,28 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
             });
           }
 
+          if (evaluation.ambiguityRateLimited && providerQueue.length > 0) {
+            if (reportProgress) {
+              await reportProgress({
+                index: i + 1,
+                validatedCount,
+                invalidCount,
+                skippedCount,
+                correctedCount,
+                provider: currentProviderName,
+                questionId: question.id,
+                questionPreview: summarizeProgressText(question.question_sv),
+                step: 'switch',
+                phase: `Byter provider efter ambiguity rate limit (${currentProviderName})`
+              });
+            }
+            const nextProvider = await selectProvider(providerQueue);
+            if (nextProvider) {
+              activeProvider = nextProvider;
+              console.log('[validateUniqueQuestions] Switching provider to:', activeProvider.name);
+            }
+          }
+
           validated = true;
         } catch (validationError) {
           console.error(`[validateUniqueQuestions] Provider ${currentProviderName} failed:`, validationError.message);
@@ -2471,25 +2548,48 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               step: 'validate'
             }
           });
-          if (isRateLimitError(validationError) && rateLimitRetries < RATE_LIMIT_MAX_RETRIES) {
-            rateLimitRetries += 1;
-            const waitMs = getRetryDelayMs(validationError, rateLimitRetries);
-            if (reportProgress) {
-              await reportProgress({
-                index: i,
-                validatedCount,
-                invalidCount,
-                skippedCount,
-                correctedCount,
-                provider: currentProviderName,
-                questionId: question.id,
-                questionPreview: summarizeProgressText(question.question_sv),
-                step: 'waiting',
-                phase: `Rate limit. Väntar ${Math.round(waitMs / 1000)}s...`
-              });
+          if (isRateLimitError(validationError)) {
+            if (providerQueue.length > 0) {
+              if (reportProgress) {
+                await reportProgress({
+                  index: i,
+                  validatedCount,
+                  invalidCount,
+                  skippedCount,
+                  correctedCount,
+                  provider: currentProviderName,
+                  questionId: question.id,
+                  questionPreview: summarizeProgressText(question.question_sv),
+                  step: 'switch',
+                  phase: `Rate limit. Byter provider från ${currentProviderName}`
+                });
+              }
+              activeProvider = await selectProvider(providerQueue);
+              if (activeProvider) {
+                console.log('[validateUniqueQuestions] Switching provider to:', activeProvider.name);
+                continue;
+              }
             }
-            await sleep(waitMs);
-            continue;
+            if (rateLimitRetries < RATE_LIMIT_MAX_RETRIES) {
+              rateLimitRetries += 1;
+              const waitMs = getRetryDelayMs(validationError, rateLimitRetries);
+              if (reportProgress) {
+                await reportProgress({
+                  index: i,
+                  validatedCount,
+                  invalidCount,
+                  skippedCount,
+                  correctedCount,
+                  provider: currentProviderName,
+                  questionId: question.id,
+                  questionPreview: summarizeProgressText(question.question_sv),
+                  step: 'waiting',
+                  phase: `Rate limit. Väntar ${Math.round(waitMs / 1000)}s...`
+                });
+              }
+              await sleep(waitMs);
+              continue;
+            }
           }
           activeProvider = await selectProvider();
           if (activeProvider) {

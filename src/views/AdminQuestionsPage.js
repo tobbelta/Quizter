@@ -2284,10 +2284,12 @@ const AdminQuestionsPage = () => {
         
         setAiStatus(providersObj);
         
-        // Select first available provider
-        const available = data.providers.find(p => p.available);
-        if (available) {
-          setAiProvider(available.name);
+        // Behåll default "random" om användaren inte har valt något annat
+        if (!aiProvider) {
+          const available = data.providers.find(p => p.available);
+          if (available) {
+            setAiProvider(available.name);
+          }
         }
       }
     } catch (error) {
@@ -2638,6 +2640,7 @@ const AdminQuestionsPage = () => {
         category: aiCategory || undefined,
         ageGroup: aiAgeGroup || undefined,
         provider: aiProvider,
+        userEmail: currentUser?.email || ''
       });
 
       if (taskId) {
