@@ -1177,13 +1177,13 @@ async function continueValidationInBackground(env, taskId, params = {}) {
   const throttleMs = 20000;
   const lastValidationAt = Number.isFinite(details.lastValidationAt) ? details.lastValidationAt : 0;
   const now = Date.now();
-  const waitMs = Math.max(0, lastValidationAt + throttleMs - now);
-  if (waitMs > 0) {
-    await updateValidationProgress(`Väntar ${Math.round(waitMs / 1000)}s`, {
+  const nextValidationAt = lastValidationAt > 0 ? lastValidationAt + throttleMs : now;
+  if (now < nextValidationAt) {
+    await updateValidationProgress(`Väntar ${Math.round((nextValidationAt - now) / 1000)}s`, {
       lastValidationAt,
-      nextValidationAt: lastValidationAt + throttleMs
+      nextValidationAt
     });
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return;
   }
 
   await ensureDatabase(env.DB);

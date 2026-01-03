@@ -5,12 +5,38 @@
 
 import { markStaleBackgroundTasks } from '../lib/backgroundTaskWatchdog.js';
 
+const scheduleValidationContinuation = async (env, origin, endpointPath, taskId) => {
+  if (!origin || !taskId) return false;
+  try {
+    const url = new URL(endpointPath || '/api/generateAIQuestions', origin);
+    const headers = { 'Content-Type': 'application/json' };
+    if (env.INTERNAL_TASK_SECRET) {
+      headers['x-task-secret'] = env.INTERNAL_TASK_SECRET;
+    }
+    await fetch(url.toString(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        mode: 'validate',
+        taskId
+      })
+    });
+    return true;
+  } catch (error) {
+    console.warn('[getBackgroundTasks] Failed to schedule validation continuation:', error.message);
+    return false;
+  }
+};
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   const userId = url.searchParams.get('userId');
   const taskId = url.searchParams.get('taskId');
   const limit = parseInt(url.searchParams.get('limit') || '100');
+  const origin = url.origin;
+  const now = Date.now();
+  const scheduledTasks = [];
 
   try {
     console.log('[getBackgroundTasks] Fetching tasks:', { userId, taskId });
@@ -61,11 +87,50 @@ export async function onRequestGet(context) {
       finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
     }));
 
+    for (const task of tasks) {
+      if (!task.progress || task.taskType !== 'validate_questions') continue;
+      if (!['running', 'processing', 'pending'].includes(task.status)) continue;
+      const details = task.progress.details || {};
+      const totalCount = Number(details.totalCount || task.progress.total || 0);
+      const nextIndex = Number(details.nextIndex ?? 0);
+      const nextValidationAt = Number(details.nextValidationAt || 0);
+      const lastKickAt = Number(details.lastKickAt || 0);
+      if (!totalCount || nextIndex >= totalCount) continue;
+      if (nextValidationAt && nextValidationAt > now) continue;
+      if (now - lastKickAt < 5000) continue;
+      const payload = task.payload || {};
+      const scheduled = await scheduleValidationContinuation(
+        env,
+        payload.origin || origin,
+        payload.endpointPath,
+        task.id
+      );
+      if (scheduled) {
+        scheduledTasks.push(task.id);
+        await env.DB.prepare(`
+          UPDATE background_tasks
+          SET progress = ?, updated_at = ?
+          WHERE id = ?
+        `).bind(
+          JSON.stringify({
+            ...task.progress,
+            details: {
+              ...details,
+              lastKickAt: now
+            }
+          }),
+          now,
+          task.id
+        ).run();
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         tasks,
         count: tasks.length,
+        scheduledTasks
       }),
       {
         status: 200,

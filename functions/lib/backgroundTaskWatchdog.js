@@ -55,11 +55,16 @@ export const markStaleBackgroundTasks = async (db, filters = {}) => {
     const progress = safeParseJSON(row.progress) || {};
     const details = progress.details || {};
     const debug = details.debug || {};
+    const nextValidationAt = resolveTimestamp(details.nextValidationAt, null);
     const heartbeatAt = resolveTimestamp(details.heartbeatAt, row.updated_at || row.created_at);
     const startedAt = resolveTimestamp(debug.startedAt, row.created_at || heartbeatAt);
     const { idleMs: idleLimit, totalMs: totalLimit } = resolveTimeouts(debug);
 
     if (!heartbeatAt || !startedAt) {
+      continue;
+    }
+
+    if (nextValidationAt && nextValidationAt > now) {
       continue;
     }
 
