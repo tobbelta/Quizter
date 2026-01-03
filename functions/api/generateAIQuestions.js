@@ -1786,7 +1786,13 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       : [];
   const now = Date.now();
 
-  const buildValidationContext = (question, validationProviderName) => ({
+  const resolveQuestionCriteria = (question, fallback) => ({
+    category: question?.category || fallback?.category || null,
+    ageGroup: question?.ageGroup || fallback?.ageGroup || null,
+    difficulty: question?.difficulty || fallback?.difficulty || null
+  });
+
+  const buildValidationContext = (question, validationProviderName, criteria) => ({
     generatorProvider: question?.provider
       ? String(question.provider).toLowerCase()
       : normalizedGenerators.length <= 1
@@ -1794,9 +1800,9 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
         : normalizedGenerators,
     validationProvider: validationProviderName || null,
     criteria: {
-      category: context.category || null,
-      ageGroup: context.ageGroup || null,
-      difficulty: context.difficulty || null
+      category: criteria?.category || null,
+      ageGroup: criteria?.ageGroup || null,
+      difficulty: criteria?.difficulty || null
     },
     question: {
       question_sv: summarizeText(question.question_sv),
@@ -2009,7 +2015,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     ).run();
   };
 
-  const evaluateValidationResult = async (question, validationResult, providerName, provider) => {
+  const evaluateValidationResult = async (question, validationResult, providerName, provider, criteria) => {
     const normalizedValid = typeof validationResult.isValid === 'boolean'
       ? validationResult.isValid
       : typeof validationResult.valid === 'boolean'
@@ -2040,9 +2046,9 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
         };
         const ambiguityStartedAt = Date.now();
         ambiguityCheck = await withTimeout(provider.checkAnswerAmbiguity(question, {
-          category: context.category,
-          ageGroup: context.ageGroup,
-          difficulty: context.difficulty,
+          category: criteria?.category ?? context?.category,
+          ageGroup: criteria?.ageGroup ?? context?.ageGroup,
+          difficulty: criteria?.difficulty ?? context?.difficulty,
           onDebug: onAmbiguityDebug
         }), AMBIGUITY_CALL_TIMEOUT_MS, `${providerName} ambiguity`);
         await recordProviderCall({
@@ -2108,10 +2114,18 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       || alternativeCorrectOptions.length > 0
       || ambiguityFlag
       || ambiguityAlternatives.length > 0;
+    const ambiguityContext = hasMultipleCorrectOptions
+      ? {
+          alternativeCorrectOptions: mergedAlternativeCorrectOptions,
+          reason: ambiguityReason,
+          suggestions: ambiguitySuggestions
+        }
+      : null;
+    const preferOptionFix = hasMultipleCorrectOptions === true;
     const ruleCheck = evaluateQuestionRules(question, {
-      category: context.category,
-      ageGroup: context.ageGroup,
-      difficulty: context.difficulty,
+      category: criteria?.category,
+      ageGroup: criteria?.ageGroup,
+      difficulty: criteria?.difficulty,
       targetAudience: question?.targetAudience || context?.targetAudience
     }, context?.rulesConfig || {});
     const blockingRules = ruleCheck?.issues || [];
@@ -2137,8 +2151,8 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     const freshnessInput = {
       ...question,
       ...validationResult,
-      ageGroup: question.ageGroup || context?.ageGroup,
-      ageGroups: question.ageGroups || (question.ageGroup ? [question.ageGroup] : (context?.ageGroup ? [context.ageGroup] : []))
+      ageGroup: question.ageGroup || criteria?.ageGroup,
+      ageGroups: question.ageGroups || (question.ageGroup ? [question.ageGroup] : (criteria?.ageGroup ? [criteria.ageGroup] : []))
     };
     const freshness = resolveFreshnessFields(freshnessInput, context?.freshnessConfig, now);
     const expired = isExpiredByBestBefore(freshness.bestBeforeAt, now);
@@ -2157,7 +2171,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       ...(combinedIssues.length > 0 ? { issues: combinedIssues } : {}),
       ...(mergedSuggestions.length > 0 ? { suggestions: mergedSuggestions } : {}),
       ...(ruleCheck.isValid ? {} : { ruleValidation: ruleCheck, blockingRules }),
-      validationContext: buildValidationContext(question, providerName)
+      validationContext: buildValidationContext(question, providerName, criteria)
     };
 
     return {
@@ -2168,7 +2182,10 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
       combinedIssues,
       mergedSuggestions,
       blockingRules,
-      ambiguityRateLimited
+      ambiguityRateLimited,
+      ambiguityContext,
+      preferOptionFix,
+      hasMultipleCorrectOptions
     };
   };
   
@@ -2222,6 +2239,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     for (let i = 0; i < questions.length; i++) {
       let question = questions[i];
       const questionGenerator = String(question.provider || '').toLowerCase();
+      const questionCriteria = resolveQuestionCriteria(question, context);
       let providerQueue = buildProviderQueue(questionGenerator);
       if (providerQueue.length === 0) {
         skippedCount++;
@@ -2314,10 +2332,10 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               validationDebug.error = entry.error;
             }
           };
-          const validationCriteria = {
-            category: context.category,
-            ageGroup: context.ageGroup,
-            difficulty: context.difficulty,
+        const validationCriteria = {
+            category: questionCriteria.category,
+            ageGroup: questionCriteria.ageGroup,
+            difficulty: questionCriteria.difficulty,
             freshnessPrompt: context.freshnessPrompt,
             answerInQuestionPrompt: context.answerInQuestionPrompt,
             onDebug: onValidationDebug
@@ -2347,13 +2365,26 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
 
           usedProviders.add(currentProviderName);
 
-          let evaluation = await evaluateValidationResult(question, validationResult, currentProviderName, currentProvider);
+          let evaluation = await evaluateValidationResult(
+            question,
+            validationResult,
+            currentProviderName,
+            currentProvider,
+            questionCriteria
+          );
           let proposedEdits = validationResult?.proposedEdits;
           let autoCorrectionApplied = false;
 
           if (autoCorrectionEnabled && !evaluation.finalValid && !correctionAppliedForQuestion) {
             if (!hasProposedEdits(proposedEdits) && typeof currentProvider.proposeQuestionEdits === 'function') {
               try {
+                const analysisContext = {
+                  issues: evaluation.combinedIssues,
+                  suggestions: evaluation.mergedSuggestions,
+                  blockingRules: evaluation.blockingRules,
+                  preferOptionFix: evaluation.preferOptionFix === true,
+                  ambiguity: evaluation.ambiguityContext
+                };
                 const proposalDebug = { request: null, response: null, error: null };
                 const onProposalDebug = (entry) => {
                   if (!entry) return;
@@ -2370,17 +2401,13 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
                   currentProvider.proposeQuestionEdits(
                     question,
                     {
-                      category: context.category,
-                      ageGroup: context.ageGroup,
-                      difficulty: context.difficulty,
+                      category: questionCriteria.category,
+                      ageGroup: questionCriteria.ageGroup,
+                      difficulty: questionCriteria.difficulty,
                       answerInQuestionPrompt: context.answerInQuestionPrompt,
                       onDebug: onProposalDebug
                     },
-                    {
-                      issues: evaluation.combinedIssues,
-                      suggestions: evaluation.mergedSuggestions,
-                      blockingRules: evaluation.blockingRules
-                    }
+                    analysisContext
                   ),
                   PROPOSAL_CALL_TIMEOUT_MS,
                   `${currentProviderName} propose`
@@ -2446,9 +2473,9 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
               const correctedStartedAt = Date.now();
               const correctedValidation = await withTimeout(
                 currentProvider.validateQuestion(question, {
-                  category: context.category,
-                  ageGroup: context.ageGroup,
-                  difficulty: context.difficulty,
+                  category: questionCriteria.category,
+                  ageGroup: questionCriteria.ageGroup,
+                  difficulty: questionCriteria.difficulty,
                   freshnessPrompt: context.freshnessPrompt,
                   answerInQuestionPrompt: context.answerInQuestionPrompt,
                   onDebug: onCorrectedDebug
@@ -2473,7 +2500,13 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
                 }
               });
               usedProviders.add(currentProviderName);
-              evaluation = await evaluateValidationResult(question, correctedValidation, currentProviderName, currentProvider);
+              evaluation = await evaluateValidationResult(
+                question,
+                correctedValidation,
+                currentProviderName,
+                currentProvider,
+                questionCriteria
+              );
               evaluation.normalizedResult.autoCorrectionApplied = true;
               evaluation.normalizedResult.autoCorrectionSucceeded = evaluation.finalValid;
               evaluation.normalizedResult.autoCorrectionEdits = proposedEdits;

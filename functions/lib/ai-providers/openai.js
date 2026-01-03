@@ -757,10 +757,19 @@ Returnera ENDAST JSON:
     const issues = Array.isArray(analysis.issues) ? analysis.issues : [];
     const suggestions = Array.isArray(analysis.suggestions) ? analysis.suggestions : [];
     const blockingRules = Array.isArray(analysis.blockingRules) ? analysis.blockingRules : [];
+    const ambiguity = analysis.ambiguity || null;
+    const ambiguityAlternatives = Array.isArray(ambiguity?.alternativeCorrectOptions)
+      ? ambiguity.alternativeCorrectOptions.filter(Boolean)
+      : [];
+    const ambiguityReason = String(ambiguity?.reason || '').trim();
+    const preferOptionFix = analysis.preferOptionFix === true;
     const issuesBlock = issues.length > 0 ? issues.map((issue) => `- ${issue}`).join('\n') : '- (inga)';
     const suggestionsBlock = suggestions.length > 0 ? suggestions.map((item) => `- ${item}`).join('\n') : '- (inga)';
     const rulesBlock = blockingRules.length > 0 ? blockingRules.map((rule) => `- ${rule}`).join('\n') : '- (inga)';
     const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
+    const ambiguityBlock = (preferOptionFix || ambiguityAlternatives.length > 0 || ambiguityReason)
+      ? `\nTVETYDIGHET:\n- Flera svar kan vara korrekta.\n- Alternativa svar: ${ambiguityAlternatives.length > 0 ? ambiguityAlternatives.join(', ') : 'okänt'}.\n- Orsak: ${ambiguityReason || 'okänd'}.\n- Prefererad åtgärd: Ändra svarsalternativen (behåll frågan) så att endast ett alternativ är korrekt.\n- Se till att ALLA alternativ är av samma typ som frågan (t.ex. berg/stad/sjö/person). Byt ut feltypade alternativ.\n`
+      : '';
 
     return `Du ska föreslå konkreta ändringar så att frågan blir entydig och godkänd.
 
@@ -775,6 +784,7 @@ ${issuesBlock}
 FÖRSLAG:
 ${suggestionsBlock}
 ${answerPrompt}
+${ambiguityBlock}
 
 BLOCKERANDE REGLER:
 ${rulesBlock}
