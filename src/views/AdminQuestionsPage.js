@@ -2338,7 +2338,7 @@ const AdminQuestionsPage = () => {
     }
   };
 
-  const waitForValidationCompletion = async (questionIds, generatorProvider) => {
+  async function waitForValidationCompletion(questionIds, generatorProvider) {
     if (!Array.isArray(questionIds) || questionIds.length === 0) return;
 
     const normalizedGenerator = generatorProvider ? generatorProvider.toLowerCase() : null;
@@ -2468,7 +2468,7 @@ const AdminQuestionsPage = () => {
     } else {
       poll();
     }
-  };
+  }
 
   // Samla kategorier, målgrupper m.m. för filter
   const categorySet = new Set();
