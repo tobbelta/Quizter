@@ -23,6 +23,14 @@ import {
 import { getAiRulesConfig } from '../lib/aiRules.js';
 import { resolveFreshnessFields, isExpiredByBestBefore } from '../lib/freshness.js';
 import { logProviderCall } from '../lib/providerCallLogs.js';
+import {
+  getFeedbackInsights,
+  getProviderFeedbackScores,
+  formatGenerationLearningPrompt,
+  formatValidationLearningPrompt,
+  getFeedbackExamples,
+  recordQuestionFeedback
+} from '../lib/questionFeedback.js';
 
 const summarizeProgressText = (value, limit = 120) => {
   if (!value) return '';
@@ -628,6 +636,30 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const freshnessConfig = resolveFreshnessConfig(rulesConfig, targetAudience);
     const freshnessPrompt = buildFreshnessPrompt(freshnessConfig, { ageGroup });
     const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
+    const feedbackInsights = await getFeedbackInsights(env.DB, {
+      feedbackType: 'question',
+      category,
+      ageGroup,
+      difficulty,
+      targetAudience
+    });
+    const feedbackExamples = {
+      good: await getFeedbackExamples(env.DB, {
+        feedbackType: 'question',
+        category,
+        ageGroup,
+        difficulty,
+        targetAudience
+      }, { minRating: 4, limit: 2 }),
+      bad: await getFeedbackExamples(env.DB, {
+        feedbackType: 'question',
+        category,
+        ageGroup,
+        difficulty,
+        targetAudience
+      }, { maxRating: 2, limit: 1, order: 'asc' })
+    };
+    const feedbackPrompt = formatGenerationLearningPrompt(feedbackInsights, feedbackExamples);
 
     const categoryDetails = category ? await getCategoryByName(env.DB, category) : null;
     if (category && !categoryDetails) {
@@ -637,6 +669,13 @@ async function generateQuestionsInBackground(env, taskId, params) {
     const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
     const factory = new AIProviderFactory(env, providerMap);
     const availableProviders = factory.getAvailableProviders('generation');
+    const providerScores = await getProviderFeedbackScores(env.DB, {
+      feedbackType: 'question',
+      category,
+      ageGroup,
+      difficulty,
+      targetAudience
+    });
     const preferredProvider = provider.toLowerCase();
     const providerCycle = (() => {
       if (availableProviders.length === 0) {
@@ -655,8 +694,23 @@ async function generateQuestionsInBackground(env, taskId, params) {
       if (providerCycle.length === 0) {
         throw new Error('No AI providers are configured');
       }
+      const pickWeighted = () => {
+        const weights = providerCycle.map((name) => {
+          const score = providerScores.get(name)?.avgRating;
+          return Number.isFinite(score) ? Math.max(score, 1) : 3;
+        });
+        const total = weights.reduce((sum, weight) => sum + weight, 0);
+        let roll = Math.random() * total;
+        for (let i = 0; i < providerCycle.length; i += 1) {
+          roll -= weights[i];
+          if (roll <= 0) {
+            return providerCycle[i];
+          }
+        }
+        return providerCycle[0];
+      };
       const chosen = preferredProvider === 'random'
-        ? providerCycle[Math.floor(Math.random() * providerCycle.length)]
+        ? (providerScores.size > 0 ? pickWeighted() : providerCycle[Math.floor(Math.random() * providerCycle.length)])
         : providerCycle[providerPickIndex % providerCycle.length];
       providerPickIndex += 1;
       return chosen;
@@ -736,6 +790,7 @@ async function generateQuestionsInBackground(env, taskId, params) {
             targetAudienceDetails,
             freshnessPrompt,
             answerInQuestionPrompt,
+            feedbackPrompt,
             language: 'sv',
             timeoutMs: 60000,
             onDebug
@@ -1229,6 +1284,21 @@ async function continueValidationInBackground(env, taskId, params = {}) {
   const freshnessConfig = resolveFreshnessConfig(rulesConfig, targetAudience);
   const freshnessPrompt = buildFreshnessPrompt(freshnessConfig, { ageGroup: payload.ageGroup });
   const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
+  const validationFeedbackInsights = await getFeedbackInsights(env.DB, {
+    feedbackType: 'validation',
+    category: payload.category,
+    ageGroup: payload.ageGroup,
+    difficulty: payload.difficulty,
+    targetAudience
+  });
+  const validationFeedbackPrompt = formatValidationLearningPrompt(validationFeedbackInsights);
+  const validationProviderScores = await getProviderFeedbackScores(env.DB, {
+    feedbackType: 'validation',
+    category: payload.category,
+    ageGroup: payload.ageGroup,
+    difficulty: payload.difficulty,
+    targetAudience
+  });
 
   const currentQuestionId = questionIds[nextIndex];
   const currentQuestion = currentQuestionId
@@ -1262,6 +1332,8 @@ async function continueValidationInBackground(env, taskId, params = {}) {
     freshnessConfig,
     freshnessPrompt,
     answerInQuestionPrompt,
+    validationFeedbackPrompt,
+    validationProviderScores,
     validationThrottleMs: 0,
     lastValidationAt: 0,
     onProgress: async ({ validatedCount: stepValidated, invalidCount: stepInvalid, skippedCount: stepSkipped, correctedCount: stepCorrected, provider, questionId, questionPreview, step, phase }) => {
@@ -1507,6 +1579,21 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
     const freshnessConfig = resolveFreshnessConfig(rulesConfig, metadata.targetAudience);
     const freshnessPrompt = buildFreshnessPrompt(freshnessConfig, { ageGroup: metadata.ageGroup });
     const answerInQuestionPrompt = buildAnswerInQuestionPrompt(rulesConfig?.global?.answerInQuestion);
+    const validationFeedbackInsights = await getFeedbackInsights(env.DB, {
+      feedbackType: 'validation',
+      category: metadata.category,
+      ageGroup: metadata.ageGroup,
+      difficulty: metadata.difficulty,
+      targetAudience: metadata.targetAudience
+    });
+    const validationFeedbackPrompt = formatValidationLearningPrompt(validationFeedbackInsights);
+    const validationProviderScores = await getProviderFeedbackScores(env.DB, {
+      feedbackType: 'validation',
+      category: metadata.category,
+      ageGroup: metadata.ageGroup,
+      difficulty: metadata.difficulty,
+      targetAudience: metadata.targetAudience
+    });
 
     // Create factory inside background task (can't pass objects through fire-and-forget)
     const { providerMap } = await getProviderSettingsSnapshot(env, { decryptKeys: true });
@@ -1578,6 +1665,8 @@ async function validateQuestionsInBackground(env, taskId, questions, generatorPr
           freshnessConfig,
           freshnessPrompt,
           answerInQuestionPrompt,
+          validationFeedbackPrompt,
+          validationProviderScores,
           totalCount,
           autoCorrectionEnabled: rulesConfig?.global?.autoCorrection?.enabled === true,
           onProgress: async ({ index, validatedCount, invalidCount, skippedCount, correctedCount, provider, questionId, questionPreview, step, phase }) => {
@@ -2206,12 +2295,26 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
     
     const requestedProvider = context?.validationProvider ? context.validationProvider.toLowerCase() : null;
 
+    const providerScores = context?.validationProviderScores instanceof Map
+      ? context.validationProviderScores
+      : new Map();
+
+    const orderProviders = (names) => {
+      if (providerScores.size === 0) return [...names];
+      return [...names].sort((a, b) => {
+        const scoreA = providerScores.get(a)?.avgRating ?? 0;
+        const scoreB = providerScores.get(b)?.avgRating ?? 0;
+        return scoreB - scoreA;
+      });
+    };
+
     const buildProviderQueue = (excludedProvider) => {
       const baseQueue = availableProviderNames.filter((name) => name !== excludedProvider);
-      if (requestedProvider && baseQueue.includes(requestedProvider)) {
-        return [requestedProvider, ...baseQueue.filter((name) => name !== requestedProvider)];
+      const orderedQueue = orderProviders(baseQueue);
+      if (requestedProvider && orderedQueue.includes(requestedProvider)) {
+        return [requestedProvider, ...orderedQueue.filter((name) => name !== requestedProvider)];
       }
-      return [...baseQueue];
+      return orderedQueue;
     };
 
     const selectProvider = async (queue) => {
@@ -2338,6 +2441,7 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
             difficulty: questionCriteria.difficulty,
             freshnessPrompt: context.freshnessPrompt,
             answerInQuestionPrompt: context.answerInQuestionPrompt,
+            feedbackPrompt: context.validationFeedbackPrompt || null,
             onDebug: onValidationDebug
           };
           validationStartedAt = Date.now();
@@ -2514,6 +2618,13 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
           }
 
           const { finalValid, normalizedResult, freshness, expired } = evaluation;
+          const validationFeedbackText = `${normalizedResult?.feedback || ''} ${(normalizedResult?.issues || []).join(' ')}`;
+          const skipAutoFeedback = /rate limit|timeout|time out/i.test(validationFeedbackText);
+          const generationRating = skipAutoFeedback ? null : (finalValid ? 5 : 1);
+          if (!skipAutoFeedback) {
+            normalizedResult.generationRating = generationRating;
+            normalizedResult.generationRatingSource = 'validation';
+          }
 
           console.log(`[validateUniqueQuestions] Result: isValid=${finalValid}, confidence=${normalizedResult.confidence}`);
 
@@ -2544,6 +2655,31 @@ async function validateUniqueQuestions(db, factory, questions, generatorProvider
             expired ? 'expired' : null,
             question.id
           ).run();
+
+          const generationProvider = question.provider || null;
+          if (generationProvider && !skipAutoFeedback) {
+            try {
+              await recordQuestionFeedback({ DB: db }, {
+                questionId: question.id,
+                feedbackType: 'question',
+                rating: generationRating,
+                verdict: finalValid ? 'approve' : 'reject',
+                issues: Array.isArray(normalizedResult.issues) ? normalizedResult.issues : [],
+                userRole: 'system',
+                category: questionCriteria.category,
+                ageGroup: questionCriteria.ageGroup,
+                difficulty: questionCriteria.difficulty,
+                targetAudience: question.targetAudience || context?.targetAudience || null,
+                generationProvider,
+                generationModel: question.model || null,
+                validationProvider: currentProviderName || null
+              });
+            } catch (feedbackError) {
+              console.warn('[validateUniqueQuestions] Kunde inte logga valideringsbetyg:', feedbackError.message);
+            }
+          } else if (skipAutoFeedback) {
+            console.warn('[validateUniqueQuestions] Skippade valideringsbetyg pga rate limit/timeout.');
+          }
 
           if (finalValid) {
             validatedCount++;

@@ -436,6 +436,42 @@ async function ensureAnalyticsSchema(db) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type)').run();
 }
 
+async function ensureQuestionFeedbackSchema(db) {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS question_feedback (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      feedback_type TEXT NOT NULL,
+      rating INTEGER,
+      verdict TEXT,
+      issues TEXT,
+      comment TEXT,
+      user_id TEXT,
+      user_email TEXT,
+      device_id TEXT,
+      user_role TEXT,
+      category TEXT,
+      age_group TEXT,
+      difficulty TEXT,
+      target_audience TEXT,
+      generation_provider TEXT,
+      generation_model TEXT,
+      validation_provider TEXT,
+      created_at INTEGER NOT NULL
+    )`
+  ).run();
+
+  await db.prepare(
+    'CREATE INDEX IF NOT EXISTS question_feedback_question_idx ON question_feedback(question_id)'
+  ).run();
+  await db.prepare(
+    'CREATE INDEX IF NOT EXISTS question_feedback_context_idx ON question_feedback(feedback_type, category, age_group, difficulty, target_audience, created_at)'
+  ).run();
+  await db.prepare(
+    'CREATE INDEX IF NOT EXISTS question_feedback_provider_idx ON question_feedback(generation_provider, validation_provider, created_at)'
+  ).run();
+}
+
 async function addMissingColumns(db) {
   try {
     await ensureUsersSchema(db);
@@ -450,6 +486,7 @@ async function addMissingColumns(db) {
     await ensureEmailEventsSchema(db);
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
+    await ensureQuestionFeedbackSchema(db);
     await ensureAuditLogsSchema(db);
     await ensureEmailEventsSchema(db);
     await ensureMessagesSchema(db);
@@ -811,6 +848,28 @@ export async function ensureDatabase(db) {
         metadata TEXT,
         created_at INTEGER NOT NULL
       )`
+      ,
+      `CREATE TABLE question_feedback (
+        id TEXT PRIMARY KEY,
+        question_id TEXT NOT NULL,
+        feedback_type TEXT NOT NULL,
+        rating INTEGER,
+        verdict TEXT,
+        issues TEXT,
+        comment TEXT,
+        user_id TEXT,
+        user_email TEXT,
+        device_id TEXT,
+        user_role TEXT,
+        category TEXT,
+        age_group TEXT,
+        difficulty TEXT,
+        target_audience TEXT,
+        generation_provider TEXT,
+        generation_model TEXT,
+        validation_provider TEXT,
+        created_at INTEGER NOT NULL
+      )`
     ];
     
     for (const sql of schema) {
@@ -827,6 +886,7 @@ export async function ensureDatabase(db) {
     await ensurePaymentsSchema(db);
     await ensureMessagesSchema(db);
     await ensureAnalyticsSchema(db);
+    await ensureQuestionFeedbackSchema(db);
     await ensureAuditLogsSchema(db);
     await ensureProviderCallLogsSchema(db);
     dbInitialized = true;

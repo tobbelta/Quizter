@@ -212,6 +212,25 @@ const ensureQuestionsLoaded = async (questionIds = []) => {
   }
 };
 
+const refreshQuestionsByIds = async (questionIds = []) => {
+  const ids = Array.isArray(questionIds) ? questionIds.filter(Boolean) : [questionIds].filter(Boolean);
+  if (ids.length === 0) return;
+  try {
+    const fetched = await questionRepository.getQuestionsByIds(ids);
+    if (fetched.length > 0) {
+      fetched.forEach((question) => {
+        if (question?.id) {
+          cachedQuestionMap.set(question.id, question);
+        }
+      });
+      syncCacheFromMap();
+      notify();
+    }
+  } catch (error) {
+    console.error('[questionService] Kunde inte uppdatera frågor efter id:', error);
+  }
+};
+
 const addQuestions = async (questions) => {
   await ensureCache();
 
@@ -508,6 +527,7 @@ export const questionService = {
       .filter(Boolean);
   },
   ensureQuestionsByIds: (ids) => ensureQuestionsLoaded(ids),
+  refreshQuestionsByIds: (ids) => refreshQuestionsByIds(ids),
   getManyByIdsForLanguage: (ids, language = 'sv') => {
     if (!Array.isArray(ids) || ids.length === 0) return [];
     const missing = ids.filter((id) => id && !cachedQuestionMap.has(id));

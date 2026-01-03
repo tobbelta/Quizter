@@ -120,6 +120,7 @@ export class AnthropicProvider {
       targetAudienceDetails,
       freshnessPrompt,
       answerInQuestionPrompt,
+      feedbackPrompt,
       language = 'sv',
       timeoutMs = null
     } = params;
@@ -137,7 +138,8 @@ export class AnthropicProvider {
       amount,
       language,
       freshnessPrompt,
-      answerInQuestionPrompt
+      answerInQuestionPrompt,
+      feedbackPrompt
     );
     const controller = timeoutMs ? new AbortController() : null;
     const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
@@ -419,7 +421,8 @@ export class AnthropicProvider {
     amount,
     language,
     freshnessPrompt,
-    answerInQuestionPrompt
+    answerInQuestionPrompt,
+    feedbackPrompt
   ) {
     const difficultyMap = {
       'easy': 'lätt',
@@ -454,6 +457,7 @@ ${ageGroupContext}
 ${childGuardrails}
 ${answerPrompt}
 ${freshnessPrompt ? `\n${freshnessPrompt}\n` : ''}
+${feedbackPrompt ? `\n${feedbackPrompt}\n` : ''}
 
 VIKTIGT - Alla frågor MÅSTE ha BÅDE svenska OCH engelska versioner:
 - question_sv: Frågan på svenska
@@ -521,6 +525,7 @@ EXTRA BARNREGLER:
       : '';
     const answerPrompt = criteria?.answerInQuestionPrompt ? `\n${criteria.answerInQuestionPrompt}\n` : '';
     const freshnessPrompt = criteria?.freshnessPrompt ? `\n${criteria.freshnessPrompt}\n` : '';
+    const feedbackPrompt = criteria?.feedbackPrompt ? `\n${criteria.feedbackPrompt}\n` : '';
     
     return `Validera följande quizfråga enligt dessa kriterier:
 
@@ -543,9 +548,18 @@ Kontrollera:
 8. Passar frågan kategorin ${effectiveCategory}?
 9. Är frågan tidskänslig? Sätt timeSensitive och bestBeforeDate.
 10. Finns det fler än ett svarsalternativ som kan vara korrekt? Om ja, underkänn.
+
+TVETYDIGHETSKRITERIER (viktigt):
+- Ett alternativ räknas som korrekt bara om det uppfyller ALLA villkor/ledtrådar i frågan samtidigt.
+- Delvis matchning räknas INTE (t.ex. "känd för blommor" matchar inte "känd för tulpaner").
+- Om frågan har superlativ/unikhet (högst/störst/äldst/enda/först) måste alternativet matcha exakt.
+- Alternativ med fel typ (t.ex. led/sjö/stad när frågan gäller berg/person/land) är INTE korrekta och ska inte trigga tvetydighet.
+- Markera tvetydig endast om två eller fler alternativ är lika korrekta på HELA beskrivningen.
+- Om du är osäker p.g.a. delvis matchning: sätt multipleCorrectOptions=false.
 ${childGuardrails}
 ${answerPrompt}
 ${freshnessPrompt}
+${feedbackPrompt}
 
 Om du underkänner (isValid=false) MÅSTE suggestions innehålla 1-3 konkreta förbättringsförslag.
 Om frågan kan rättas med konkreta ändringar: fyll proposedEdits med korrigerade fält (sv/en). Annars sätt proposedEdits till null.
@@ -597,10 +611,13 @@ Markerat rätt svar (index): ${Number.isFinite(correctIndex) ? correctIndex : 'o
 Markerat rätt svar (text): ${correctText || 'okänt'}
 
 Regler:
-- Om två eller fler alternativ kan vara korrekta, sätt multipleCorrectOptions=true.
-- Lista då ALLA alternativ som kan vara korrekta (exakt som de står i listan).
-- Om frågan är vag ("känd för", "populär", "vackra", "välkänd") och flera alternativ passar, markera true.
-- Om du är osäker, markera true.
+- Markera tvetydig endast om TVÅ eller fler alternativ uppfyller HELA frågebeskrivningen.
+- Ett alternativ är korrekt bara om det matchar ALLA villkor samtidigt (typ, plats, tidsperiod, superlativ, unik egenskap).
+- Delvis matchning räknas INTE som korrekt.
+- Superlativ/unikhet måste matchas exakt (högst/störst/äldst/enda/först).
+- Fel typ (t.ex. led/sjö/stad när frågan gäller berg/person/land) är INTE korrekt och ska inte trigga tvetydighet.
+- Om frågan är vag men bara ett alternativ är den tydliga kanoniska matchen: markera inte tvetydig.
+- Om du är osäker p.g.a. delvis matchning: sätt multipleCorrectOptions=false.
 
 Returnera ENDAST JSON:
 {

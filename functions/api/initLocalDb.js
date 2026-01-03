@@ -34,6 +34,7 @@ export async function onRequestGet({ env }) {
       DROP TABLE IF EXISTS analytics_events;
       DROP TABLE IF EXISTS audit_logs;
       DROP TABLE IF EXISTS ai_provider_logs;
+      DROP TABLE IF EXISTS question_feedback;
       DROP TABLE IF EXISTS ai_rule_sets;
       DROP TABLE IF EXISTS background_tasks;
       
@@ -337,6 +338,28 @@ export async function onRequestGet({ env }) {
         target_type TEXT NOT NULL,
         target_id TEXT,
         details TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE question_feedback (
+        id TEXT PRIMARY KEY,
+        question_id TEXT NOT NULL,
+        feedback_type TEXT NOT NULL,
+        rating INTEGER,
+        verdict TEXT,
+        issues TEXT,
+        comment TEXT,
+        user_id TEXT,
+        user_email TEXT,
+        device_id TEXT,
+        user_role TEXT,
+        category TEXT,
+        age_group TEXT,
+        difficulty TEXT,
+        target_audience TEXT,
+        generation_provider TEXT,
+        generation_model TEXT,
+        validation_provider TEXT,
         created_at INTEGER NOT NULL
       );
       CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);

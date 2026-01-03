@@ -7,13 +7,28 @@
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
+const resolveUserEmail = () => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const raw = window.localStorage.getItem('tipspromenad:auth');
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    return parsed?.email || '';
+  } catch (error) {
+    console.warn('[questionRepository] Kunde inte läsa userEmail:', error);
+    return '';
+  }
+};
+
 // Helper för API-anrop
 const apiCall = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
+  const userEmail = resolveUserEmail();
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(userEmail ? { 'x-user-email': userEmail } : {}),
       ...options.headers,
     },
   });
