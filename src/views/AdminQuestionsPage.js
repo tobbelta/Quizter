@@ -2401,134 +2401,6 @@ const AdminQuestionsPage = () => {
     };
   }, [idFilterTaskId]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const idsParam = params.get('ids');
-    const taskIdParam = params.get('taskId');
-
-    if (idsParam) {
-      const ids = idsParam
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean);
-      const nextKey = ids.join(',');
-      const currentKey = idFilter ? Array.from(idFilter).join(',') : '';
-      if (nextKey !== currentKey) {
-        setIdFilter(ids.length > 0 ? new Set(ids) : null);
-        setIdFilterTaskId(taskIdParam || null);
-        setCurrentPage(1);
-      }
-      if (ids.length > 0) {
-        questionService.refreshQuestionsByIds(ids);
-        if (taskIdParam) {
-          waitForValidationCompletion(ids, null);
-        }
-      }
-    } else if (idFilter) {
-      setIdFilter(null);
-      setIdFilterTaskId(null);
-      setCurrentPage(1);
-    }
-  }, [location.search, idFilter, waitForValidationCompletion]);
-
-  // Listen for background task updates to update validation status
-  useEffect(() => {
-    if (!isSuperUser) return;
-
-  // TODO: Replace legacy backgroundTasks subscription with API polling or local state updates
-    // For now, skip this logic. All background task state should be managed via API or local state.
-  }, [isSuperUser, individualValidationTasks]);
-
-  // Hämta AI-status när AI-dialogen öppnas
-  useEffect(() => {
-    if (showAIDialog && !aiStatus) {
-      fetchAIStatus();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showAIDialog]);
-
-  useEffect(() => {
-    if (!isSuperUser || !currentUser?.email) return;
-    fetchValidationProviders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperUser, currentUser?.email]);
-
-  const fetchAIStatus = async () => {
-    setLoadingAiStatus(true);
-    try {
-      const response = await fetch('/api/getProviderStatus');
-      const data = await response.json();
-      
-      if (data.success) {
-        // Convert array to object for compatibility
-        const providersObj = {};
-        data.providers.forEach(p => {
-          providersObj[p.name] = {
-            available: p.available,
-            status: p.status,
-            model: p.model,
-            error: p.error,
-            errorType: p.errorType,
-            label: p.label
-          };
-        });
-        
-        setAiStatus(providersObj);
-        
-        // Behåll default "random" om användaren inte har valt något annat
-        if (!aiProvider) {
-          const available = data.providers.find(p => p.available);
-          if (available) {
-            setAiProvider(available.name);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch AI status:', error);
-      setAiStatus({
-        gemini: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        anthropic: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        openai: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        mistral: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        groq: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        openrouter: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        together: { available: false, status: 'error', error: 'Kunde inte hämta status' },
-        fireworks: { available: false, status: 'error', error: 'Kunde inte hämta status' }
-      });
-    } finally {
-      setLoadingAiStatus(false);
-    }
-  };
-
-  const fetchValidationProviders = async () => {
-    setValidationProvidersLoading(true);
-    try {
-      const response = await fetch('/api/getProviderSettings', {
-        headers: {
-          'x-user-email': currentUser?.email || ''
-        }
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Kunde inte hämta provider-inställningar');
-      }
-
-      const purposes = data.settings?.purposes?.validation || {};
-      const providers = data.settings?.providers || {};
-      const enabledValidationProviders = Object.entries(providers)
-        .filter(([, config]) => config?.hasKey)
-        .filter(([provider]) => purposes[provider] !== false)
-        .map(([provider]) => provider);
-
-      setValidationProviders(enabledValidationProviders);
-    } catch (error) {
-      console.error('Failed to fetch provider settings:', error);
-      setValidationProviders([]);
-    } finally {
-      setValidationProvidersLoading(false);
-    }
-  };
-
   const waitForValidationCompletion = useCallback(async (questionIds, generatorProvider) => {
     if (!Array.isArray(questionIds) || questionIds.length === 0) return;
 
@@ -2660,6 +2532,134 @@ const AdminQuestionsPage = () => {
       poll();
     }
   }, [validationProviders]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const idsParam = params.get('ids');
+    const taskIdParam = params.get('taskId');
+
+    if (idsParam) {
+      const ids = idsParam
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const nextKey = ids.join(',');
+      const currentKey = idFilter ? Array.from(idFilter).join(',') : '';
+      if (nextKey !== currentKey) {
+        setIdFilter(ids.length > 0 ? new Set(ids) : null);
+        setIdFilterTaskId(taskIdParam || null);
+        setCurrentPage(1);
+      }
+      if (ids.length > 0) {
+        questionService.refreshQuestionsByIds(ids);
+        if (taskIdParam) {
+          waitForValidationCompletion(ids, null);
+        }
+      }
+    } else if (idFilter) {
+      setIdFilter(null);
+      setIdFilterTaskId(null);
+      setCurrentPage(1);
+    }
+  }, [location.search, idFilter, waitForValidationCompletion]);
+
+  // Listen for background task updates to update validation status
+  useEffect(() => {
+    if (!isSuperUser) return;
+
+  // TODO: Replace legacy backgroundTasks subscription with API polling or local state updates
+    // For now, skip this logic. All background task state should be managed via API or local state.
+  }, [isSuperUser, individualValidationTasks]);
+
+  // Hämta AI-status när AI-dialogen öppnas
+  useEffect(() => {
+    if (showAIDialog && !aiStatus) {
+      fetchAIStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAIDialog]);
+
+  useEffect(() => {
+    if (!isSuperUser || !currentUser?.email) return;
+    fetchValidationProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperUser, currentUser?.email]);
+
+  const fetchAIStatus = async () => {
+    setLoadingAiStatus(true);
+    try {
+      const response = await fetch('/api/getProviderStatus');
+      const data = await response.json();
+      
+      if (data.success) {
+        // Convert array to object for compatibility
+        const providersObj = {};
+        data.providers.forEach(p => {
+          providersObj[p.name] = {
+            available: p.available,
+            status: p.status,
+            model: p.model,
+            error: p.error,
+            errorType: p.errorType,
+            label: p.label
+          };
+        });
+        
+        setAiStatus(providersObj);
+        
+        // Behåll default "random" om användaren inte har valt något annat
+        if (!aiProvider) {
+          const available = data.providers.find(p => p.available);
+          if (available) {
+            setAiProvider(available.name);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch AI status:', error);
+      setAiStatus({
+        gemini: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        anthropic: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        openai: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        mistral: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        groq: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        openrouter: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        together: { available: false, status: 'error', error: 'Kunde inte hämta status' },
+        fireworks: { available: false, status: 'error', error: 'Kunde inte hämta status' }
+      });
+    } finally {
+      setLoadingAiStatus(false);
+    }
+  };
+
+  const fetchValidationProviders = async () => {
+    setValidationProvidersLoading(true);
+    try {
+      const response = await fetch('/api/getProviderSettings', {
+        headers: {
+          'x-user-email': currentUser?.email || ''
+        }
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Kunde inte hämta provider-inställningar');
+      }
+
+      const purposes = data.settings?.purposes?.validation || {};
+      const providers = data.settings?.providers || {};
+      const enabledValidationProviders = Object.entries(providers)
+        .filter(([, config]) => config?.hasKey)
+        .filter(([provider]) => purposes[provider] !== false)
+        .map(([provider]) => provider);
+
+      setValidationProviders(enabledValidationProviders);
+    } catch (error) {
+      console.error('Failed to fetch provider settings:', error);
+      setValidationProviders([]);
+    } finally {
+      setValidationProvidersLoading(false);
+    }
+  };
 
   // Samla kategorier, målgrupper m.m. för filter
   const categorySet = new Set();
